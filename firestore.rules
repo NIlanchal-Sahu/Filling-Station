@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isManager() {
+      return isSignedIn() && myRole() == "manager";
+    }
+
+    function isOperator() {
+      return isSignedIn() && myRole() == "operator";
+    }
+
+    function shiftData(shiftId) {
+      return get(/databases/$(database)/documents/shifts/$(shiftId)).data;
+    }
+
+    function ownsShift(shiftId) {
+      return isSignedIn() && shiftData(shiftId).operatorId == request.auth.uid;
+    }
+
+    /* Users — sync with Firebase Auth uid as document id */
+    match /users/{userId} {
+      allow read: if isSignedIn() && (userId == request.auth.uid || isManager());
+      allow write: if isManager();
+    }
+
+    match /fuelTypes/{id} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    match /nozzles/{id} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    /* Shifts */
+    match /shifts/{shiftId} {
+      allow read: if isManager() || ownsShift(shiftId);
+      allow create: if (isManager() || (isOperator() && request.resource.data.operatorId == request.auth.uid))
+        && request.resource.data.status in ["open", "closed"];
+      allow update, delete: if isManager() || (isOperator() && resource.data.operatorId == request.auth.uid);
+    }
+
+    /* Shift readings: operator for own shift only; manager all */
+    match /shiftReadings/{id} {
+      allow read: if isManager() || (isOperator() && ownsShift(resource.data.shiftId));
+      allow create: if isManager() || (isOperator() && ownsShift(request.resource.data.shiftId));
+      allow update, delete: if isManager() || (isOperator() && ownsShift(resource.data.shiftId));
+    }
+
+    /* Reconciliations */
+    match /shiftReconciliations/{id} {
+      allow read: if isManager() || (isOperator() && resource.data.operatorId == request.auth.uid);
+      allow create: if isManager() || (isOperator() && request.resource.data.operatorId == request.auth.uid);
+      /* Operators may only change pending recons; managers handle approve/reject/lock. */
+      allow update, delete: if isManager() || (isOperator() && resource.data.operatorId == request.auth.uid
+        && resource.data.status == "pending");
+    }
+
+    /* Credit: primarily manager. Operators may create a sale line tied to their own shift (end-of-shift credit). */
+    match /creditCustomers/{id} {
+      allow read, write: if isManager();
+    }
+    match /creditSales/{id} {
+      allow read: if isManager() || (isOperator() && ownsShift(resource.data.shiftId));
+      allow create: if isManager() || (isOperator() && ownsShift(request.resource.data.shiftId)
+        && request.resource.data.keys().hasAll(["customerId", "shiftId", "date", "amount"]));
+      allow update, delete: if isManager();
+    }
+    match /creditPayments/{id} {
+      allow read, write: if isManager();
+    }
+
+    /* Ledger: manager only */
+    match /ledgerEntries/{id} {
+      allow read, write: if isManager();
+    }
+
+  }
+}

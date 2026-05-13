@@ -1,22 +1,35 @@
-# Dependencies
-node_modules/
-.next/
-dist/
-.expo/
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Environment
+node_modules
+dist
+dist-ssr
+.next/
+.expo/
+*.local
 .env
-.env.local
 .env.*.local
 
-# IDE
-.idea/
-.vscode/
-*.swp
+# Generated from .env (npm run firebase:sync-project); or copy .firebaserc.example
+.firebaserc
 
-# OS
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
 Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Build
 *.tsbuildinfo

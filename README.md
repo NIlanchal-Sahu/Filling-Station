@@ -1,92 +1,98 @@
-# Pump-Store (LocalJob) — Student Job Marketplace
+﻿# PumpStock
 
-A full-stack platform connecting **students, freshers, and part-time workers** with **local SMB employers**.
+Web app for petrol pump operations: shifts and meter readings, end-of-shift reconciliation, credit customers, cash/expense ledger, and manager reports. Built with **React**, **TypeScript**, **Vite**, **MUI**, and **Firebase** (Auth + Firestore), with an **offline local demo** mode for development.
 
-## Stack
+## Quick start (local)
 
-| Layer | Technology |
-|-------|------------|
-| Web | Next.js 15, React, TypeScript, Tailwind, shadcn/ui |
-| Mobile | React Native (Expo) |
-| API | NestJS, Socket.io |
-| Database | PostgreSQL + Prisma |
-| Auth | JWT, Google OAuth, OTP |
-| Storage | AWS S3 |
-| Payments | Razorpay, Stripe |
-| Maps | Google Maps API |
-| Push | Firebase Cloud Messaging |
-
-## Project Structure
-
-```
-local-job/
-├── backend/          # NestJS API
-├── frontend/         # Next.js 15 web app
-├── mobile/           # Expo React Native app
-├── docs/             # Architecture, API, deployment
-└── docker-compose.yml
-```
-
-## Quick Start
-
-### Prerequisites
-
-- Node.js 20+
-- Docker (for PostgreSQL) or local PostgreSQL
-- npm
-
-### 1. Database
-
-```bash
-docker compose up -d
-```
-
-### 2. Backend
-
-```bash
-cd backend
-cp .env.example .env
-npm install
-npx prisma migrate dev
-npx prisma db seed
-npm run start:dev
-```
-
-API runs at `http://localhost:3001`
-
-### 3. Web Frontend
-
-```bash
-cd frontend
-cp .env.example .env.local
+```powershell
+cd C:\Projects\pumpStock
 npm install
 npm run dev
 ```
 
-Web runs at `http://localhost:3000`
+Open the URL Vite prints (usually **http://localhost:5173/**).
 
-### 4. Mobile
+### Local demo (no Firebase)
 
-```bash
-cd mobile
-cp .env.example .env
-npm install
-npx expo start
+If you have **no** `VITE_FIREBASE_*` variables set, **`npm run dev`** already runs in **local demo** mode: data is stored in this browser (`localStorage` / `sessionStorage`).
+
+Optional: copy `.env.example` to `.env` and set:
+
+```env
+VITE_LOCAL_DEMO=true
 ```
 
-## Documentation
+Leave all `VITE_FIREBASE_*` lines empty for demo.
 
-- [System Architecture](./docs/ARCHITECTURE.md)
-- [API Reference](./docs/API.md)
-- [UI Wireframes](./docs/WIREFRAMES.md)
-- [Deployment Guide](./docs/DEPLOYMENT.md)
+**Demo sign-in** (any password):
 
-## User Roles
+| Email                 | Role     |
+|-----------------------|----------|
+| `manager@demo.local`  | Manager  |
+| `operator@demo.local` | Operator |
 
-- **Employer** — Post jobs, manage applicants, chat with candidates
-- **Student/Job Seeker** — Search jobs, apply, track applications
-- **Admin** — User/job moderation, analytics, verification
+### Production-style (Firebase)
+
+1. Create a Firebase project and enable **Authentication** (Email/Password) and **Firestore**.
+2. Copy `.env.example` to `.env` and fill every `VITE_FIREBASE_*` value from **Firebase Console ΓåÆ Project settings ΓåÆ Your apps**.
+3. Set `VITE_LOCAL_DEMO=` empty or `false` (do **not** use `true` if you want real Firebase).
+4. Run `npm run firebase:sync-project` to align `.firebaserc` with `VITE_FIREBASE_PROJECT_ID`.
+5. Deploy rules and indexes when ready:
+
+   ```powershell
+   npm run firebase:deploy:firestore
+   npm run firebase:deploy:hosting
+   ```
+
+   Hosting expects `dist` from `npm run build`.
+
+### Bootstrap data (recommended)
+
+After Auth is enabled (**Email/Password**) and you have a **service account** JSON (Console ΓåÆ Project settings ΓåÆ Service accounts ΓåÆ Generate new private key):
+
+1. Put Firebase config in `.env` (all `VITE_FIREBASE_*` values).
+2. Set an environment variable to the key file path, then run the seed script:
+
+   ```powershell
+   $env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\your-service-account.json"
+   npm run firebase:bootstrap -- --firestore-only
+   ```
+
+   That writes **fuel types** (PETROL / DIESEL / XP), **12 nozzles** (same layout as the local demo), and a **sample credit customer** ΓÇö safe to run more than once (`merge`).
+
+3. To also create **Firebase Auth** users and matching **`users/{uid}`** profiles, add to `.env` (never commit real passwords):
+
+   - `SEED_MANAGER_EMAIL` / `SEED_MANAGER_PASSWORD` / optional `SEED_MANAGER_NAME`
+   - `SEED_OPERATOR_EMAIL` / `SEED_OPERATOR_PASSWORD` / optional `SEED_OPERATOR_NAME`
+
+   Then run (same `GOOGLE_APPLICATION_CREDENTIALS` as above):
+
+   ```powershell
+   npm run firebase:bootstrap
+   ```
+
+   Sign in to the app with those emails and passwords. If you skip seeding, create Auth users manually and add Firestore `users/{uid}` docs with `role` `manager` or `operator` (uid must match Auth).
+
+## Scripts
+
+| Command | Purpose |
+|--------|---------|
+| `npm run dev` | Vite dev server |
+| `npm run build` | Production build ΓåÆ `dist/` |
+| `npm run preview` | Preview production build locally |
+| `npm run typecheck` | TypeScript check |
+| `npm run lint` | ESLint |
+| `npm run firebase:sync-project` | Write `.firebaserc` from env |
+| `npm run firebase:bootstrap` | Seed Firestore (+ optional Auth users via `SEED_*` in `.env`) |
+| `npm run firebase:deploy` | Deploy Firestore + Hosting |
+
+## Project layout (high level)
+
+- `src/pages/manager/` ΓÇö dashboard, **team**, credit, ledger, fuel prices, reports, reconciliation review
+- `src/pages/operator/` ΓÇö operator home
+- `src/pages/shifts/` ΓÇö start shift, end meters, reconciliation form
+- `src/localDemo/demoBackend.ts` ΓÇö in-browser persistence when not using Firebase
 
 ## License
 
-MIT
+Private / use per your organization.
