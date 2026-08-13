@@ -1,4 +1,4 @@
-# LocalJob — Student Job Marketplace
+# Pump-Store (LocalJob) — Student Job Marketplace
 
 A full-stack platform connecting **students, freshers, and part-time workers** with **local SMB employers**.
 
@@ -32,8 +32,8 @@ local-job/
 ### Prerequisites
 
 - Node.js 20+
-- Docker (for PostgreSQL)
-- pnpm or npm
+- Docker (for PostgreSQL) or local PostgreSQL
+- npm
 
 ### 1. Database
 
