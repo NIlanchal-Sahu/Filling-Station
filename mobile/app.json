@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "LocalJob",
+    "slug": "localjob",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "localjob",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#0A66C2"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.localjob.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A66C2"
+      },
+      "package": "com.localjob.app"
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

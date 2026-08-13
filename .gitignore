@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+.next/
+dist/
+.expo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.tsbuildinfo
