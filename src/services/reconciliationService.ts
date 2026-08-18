@@ -13,8 +13,10 @@ import {
 import { LOCAL_DEMO } from '@/config/appMode';
 import type { ReconciliationCreditLine, ShiftReconciliation } from '@/types/entities';
 import { COLLECTIONS, getDb } from '@/lib/firebase';
-import { createCreditSalesForReconciliation } from '@/services/creditSalesService';
+import { createCreditSalesForReconciliation, replaceCreditSalesForShift } from '@/services/creditSalesService';
 import { closeShift } from '@/services/shiftsService';
+import { notifyShiftSalesUpdated } from '@/utils/shiftSalesDisplay';
+import { notifyShiftStatusUpdated } from '@/utils/shiftStatusDisplay';
 import {
   demoCreateReconciliationWithClose,
   demoGetReconciliation,
@@ -22,6 +24,7 @@ import {
   demoListPendingReconciliations,
   demoSetReconciliationStatus,
   demoSetReconciliationUnlocked,
+  demoUpdatePendingReconciliation,
 } from '@/localDemo/demoBackend';
 
 export function parseCreditLineItems(raw: unknown): ReconciliationCreditLine[] {
@@ -124,7 +127,10 @@ export async function createReconciliationWithClose(input: {
   creditLineItems: ReconciliationCreditLine[];
 }): Promise<string> {
   if (LOCAL_DEMO) {
-    return demoCreateReconciliationWithClose(input);
+    const id = await demoCreateReconciliationWithClose(input);
+    notifyShiftSalesUpdated();
+    notifyShiftStatusUpdated();
+    return id;
   }
   const batch = writeBatch(getDb());
   const reconRef = doc(collection(getDb(), COLLECTIONS.shiftReconciliations));
@@ -156,6 +162,8 @@ export async function createReconciliationWithClose(input: {
     );
   }
   await closeShift(input.shiftId);
+  notifyShiftSalesUpdated();
+  notifyShiftStatusUpdated();
   return reconRef.id;
 }
 
@@ -165,7 +173,9 @@ export async function setReconciliationStatus(
   managerComment?: string,
 ): Promise<void> {
   if (LOCAL_DEMO) {
-    return demoSetReconciliationStatus(id, status, managerComment);
+    await demoSetReconciliationStatus(id, status, managerComment);
+    notifyShiftStatusUpdated();
+    return;
   }
   const r = doc(getDb(), COLLECTIONS.shiftReconciliations, id);
   await updateDoc(r, {
@@ -174,6 +184,55 @@ export async function setReconciliationStatus(
     locked: status === 'approved',
     updatedAt: serverTimestamp(),
   });
+  notifyShiftStatusUpdated();
+}
+
+export async function updatePendingReconciliation(
+  id: string,
+  input: {
+    shiftId: string;
+    totalSalesAmount: number;
+    paytmOnline: number;
+    iciciCard: number;
+    fleetCard: number;
+    creditAmount: number;
+    shortAmount: number;
+    cashAmount: number;
+    totalReceived: number;
+    difference: number;
+    creditLineItems: ReconciliationCreditLine[];
+  },
+): Promise<void> {
+  if (LOCAL_DEMO) {
+    await demoUpdatePendingReconciliation(id, input);
+    notifyShiftSalesUpdated();
+    notifyShiftStatusUpdated();
+    return;
+  }
+  const r = doc(getDb(), COLLECTIONS.shiftReconciliations, id);
+  const snap = await getDoc(r);
+  if (!snap.exists()) {
+    throw new Error('Reconciliation not found.');
+  }
+  const data = snap.data();
+  if (data.status !== 'pending') {
+    throw new Error('Only pending reconciliations can be edited.');
+  }
+  await updateDoc(r, {
+    totalSalesAmount: input.totalSalesAmount,
+    paytmOnline: input.paytmOnline,
+    iciciCard: input.iciciCard,
+    fleetCard: input.fleetCard,
+    creditAmount: input.creditAmount,
+    shortAmount: input.shortAmount,
+    cashAmount: input.cashAmount,
+    totalReceived: input.totalReceived,
+    difference: input.difference,
+    creditLineItems: input.creditLineItems,
+    updatedAt: serverTimestamp(),
+  });
+  await replaceCreditSalesForShift(input.shiftId, input.creditLineItems);
+  notifyShiftSalesUpdated();
 }
 
 export async function setReconciliationUnlocked(

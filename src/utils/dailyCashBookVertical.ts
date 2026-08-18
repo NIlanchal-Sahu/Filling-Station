@@ -14,6 +14,38 @@ export function calendarIsoForShift(shift: Shift | null | undefined): string {
   return format(shift.startTime.toDate(), 'yyyy-MM-dd');
 }
 
+/** Pump day for a reconciliation: shift calendar, else shift start, else when it was submitted. */
+export function calendarIsoForReconciliation(
+  recon: ShiftReconciliation,
+  shift: Shift | null | undefined,
+): string {
+  const fromShift = calendarIsoForShift(shift);
+  if (fromShift) return fromShift;
+  if (recon.createdAt?.toDate) {
+    return format(recon.createdAt.toDate(), 'yyyy-MM-dd');
+  }
+  return '';
+}
+
+/**
+ * Prefer the shift’s business day when it falls in the sheet range; otherwise use the
+ * submission date so a day’s sales still land on the row you are looking at.
+ */
+export function sheetDayIsoForReconciliation(
+  recon: ShiftReconciliation,
+  shift: Shift | null | undefined,
+  rangeStartIso: string,
+  rangeEndIso: string,
+): string {
+  const inRange = (iso: string) => iso !== '' && iso >= rangeStartIso && iso <= rangeEndIso;
+  const preferred = calendarIsoForReconciliation(recon, shift);
+  if (inRange(preferred)) return preferred;
+  const submitted =
+    recon.createdAt?.toDate != null ? format(recon.createdAt.toDate(), 'yyyy-MM-dd') : '';
+  if (inRange(submitted)) return submitted;
+  return preferred;
+}
+
 /** One reconciliation per shift (latest non-rejected by created time). */
 export function latestReconciliationsPerShift(recons: ShiftReconciliation[]): ShiftReconciliation[] {
   const byShift = new Map<string, ShiftReconciliation>();
@@ -34,7 +66,7 @@ export function reconsForCalendarDay(
 ): ShiftReconciliation[] {
   const latest = latestReconciliationsPerShift(recons);
   return latest.filter(
-    (r) => calendarIsoForShift(shiftByShiftId.get(r.shiftId) ?? undefined) === iso,
+    (r) => sheetDayIsoForReconciliation(r, shiftByShiftId.get(r.shiftId) ?? undefined, iso, iso) === iso,
   );
 }
 
@@ -70,7 +102,8 @@ export async function buildVerticalCashBookForDay(
   const dayLedger = ledgerEntriesForCalendarDay(dateIso, ledgerAll);
   const dayRecons = reconsForCalendarDay(dateIso, recons, shiftByShiftId);
 
-  const shiftIdsOnDay = shiftIdsForCalendarIso(dateIso, shiftByShiftId);
+  const fromReconShifts = [...new Set(dayRecons.map((r) => r.shiftId))];
+  const shiftIdsOnDay = [...new Set([...shiftIdsForCalendarIso(dateIso, shiftByShiftId), ...fromReconShifts])];
   const meter = await summarizeMeterSalesForShifts(shiftIdsOnDay);
   const reconTotalSales = dayRecons.reduce((s, r) => s + r.totalSalesAmount, 0);
   const totalSales =

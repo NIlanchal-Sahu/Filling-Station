@@ -14,12 +14,15 @@ import {
   Typography,
   Paper,
 } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { listPendingReconciliations, setReconciliationStatus } from '@/services/reconciliationService';
 import { getUser } from '@/services/usersService';
 import type { ShiftReconciliation } from '@/types/entities';
 import { getShift } from '@/services/shiftsService';
+import { getMachineLabelForShift } from '@/services/shiftReadingsService';
 
 function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -148,6 +151,16 @@ export function ReconciliationReviewPage() {
                 />
                 <Stack direction="row" spacing={1.5} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
                   <Button
+                    component={RouterLink}
+                    to={`/shifts/${r.shiftId}/reconcile?edit=1`}
+                    size="medium"
+                    variant="outlined"
+                    startIcon={<EditOutlinedIcon />}
+                    sx={{ borderRadius: 1.5 }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
                     size="medium"
                     color="success"
                     variant="contained"
@@ -197,12 +210,14 @@ function ReconciliationCardHeader({ r }: { r: ShiftReconciliation }) {
   const [opName, setOpName] = useState('');
   const [label, setLabel] = useState('');
   const [pumpAttendants, setPumpAttendants] = useState<string[]>([]);
+  const [machineLabel, setMachineLabel] = useState('—');
 
   useEffect(() => {
     let ok = true;
     (async () => {
       const u = await getUser(r.operatorId);
       const sh = await getShift(r.shiftId);
+      const machines = await getMachineLabelForShift(r.shiftId);
       if (ok) {
         setOpName(u?.name ?? r.operatorId);
         const cal =
@@ -215,6 +230,7 @@ function ReconciliationCardHeader({ r }: { r: ShiftReconciliation }) {
         const base = sh?.shiftLabel ?? '';
         setLabel(cal ? `${base} · ${cal}` : base);
         setPumpAttendants(parsePumpAttendantNames(sh?.pumpAttendants));
+        setMachineLabel(machines);
       }
     })();
     return () => {
@@ -235,6 +251,15 @@ function ReconciliationCardHeader({ r }: { r: ShiftReconciliation }) {
             Shift id: {r.shiftId.length > 14 ? `${r.shiftId.slice(0, 10)}…` : r.shiftId}
           </Typography>
         </Stack>
+      </Box>
+
+      <Box>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.04em' }}>
+          Machine
+        </Typography>
+        <Typography variant="body2" sx={{ fontWeight: 600, mt: 0.5 }}>
+          {machineLabel}
+        </Typography>
       </Box>
 
       <Box>

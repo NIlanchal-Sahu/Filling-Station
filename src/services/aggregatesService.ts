@@ -1,4 +1,4 @@
-import { listReadingsForShift } from '@/services/shiftReadingsService';
+import { listReadingsForShift, getMachineLabelForShift } from '@/services/shiftReadingsService';
 import { getNozzle } from '@/services/nozzlesService';
 import { getFuelType } from '@/services/fuelTypesService';
 import { getReconciliationForShift } from '@/services/reconciliationService';
@@ -12,9 +12,11 @@ import { getUser } from '@/services/usersService';
 import { listAllReconciliations, listReconciliationsInWindow } from '@/services/reportsHelpers';
 import { listAllLedgerForBalance } from '@/services/ledgerService';
 import type { LedgerEntry } from '@/types/entities';
+import { SHIFT_LABELS } from '@/types/entities';
+import { fuelStockDisplayMeta } from '@/utils/fuelStockDisplay';
 import { latestReconciliationsPerShift } from '@/utils/dailyCashBookVertical';
 import { totalCashFromMeterAndChannels, roundMoney2 } from '@/utils/meterSalesByFuel';
-import { eachDayOfInterval, format } from 'date-fns';
+import { eachDayOfInterval, format, parseISO } from 'date-fns';
 
 function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -140,6 +142,7 @@ export type PumpAttendantAttendanceRow = {
   pumpBoyGirl: string;
   shiftLabel: string;
   operatorName: string;
+  machineLabel: string;
   /** Local `yyyy-MM-dd HH:mm` */
   startAt: string;
   endAt: string;
@@ -190,6 +193,7 @@ export async function getPumpAttendantAttendanceRowsInRange(
     const endAt = format(sh.endTime.toDate(), 'yyyy-MM-dd HH:mm');
     const remarks = (sh.notes ?? '').trim().replace(/\s+/g, ' ');
     const shiftLabel = sh.shiftLabel?.trim() || '—';
+    const machineLabel = await getMachineLabelForShift(sh.id);
 
     const names = parsePumpAttendants(sh.pumpAttendants ?? '');
     if (names.length === 0) {
@@ -199,6 +203,7 @@ export async function getPumpAttendantAttendanceRowsInRange(
         pumpBoyGirl: '—',
         shiftLabel,
         operatorName,
+        machineLabel,
         startAt,
         endAt,
         remarks,
@@ -213,6 +218,7 @@ export async function getPumpAttendantAttendanceRowsInRange(
         pumpBoyGirl: nm,
         shiftLabel,
         operatorName,
+        machineLabel,
         startAt,
         endAt,
         remarks,
@@ -385,4 +391,267 @@ export async function getOperatorPerformanceInRange(
     }
   }
   return Array.from(byOp.values());
+}
+
+const SALES_EPS = 0.01;
+
+export type ShiftSalesBucket = {
+  shiftKey: 'shift1' | 'shift2';
+  displayName: string;
+  shiftLabel: string;
+  totalAmount: number;
+  totalLiters: number;
+  transactionCount: number;
+  /** Closed shift to open for detail (highest sales in bucket). */
+  shiftId: string | null;
+};
+
+export type FuelShiftSalesRow = {
+  shortCode: 'MS' | 'HSD' | 'XP';
+  shift1Liters: number;
+  shift1Amount: number;
+  shift2Liters: number;
+  shift2Amount: number;
+  totalLiters: number;
+  totalAmount: number;
+};
+
+export type TodaySalesByShiftSummary = {
+  pumpDayIso: string;
+  shift1: ShiftSalesBucket;
+  shift2: ShiftSalesBucket;
+  todayTotal: {
+    totalAmount: number;
+    totalLiters: number;
+    transactionCount: number;
+  };
+  fuelRows: FuelShiftSalesRow[];
+};
+
+function shiftSlot(label: string): 'shift1' | 'shift2' | 'other' {
+  const t = label.trim();
+  if (t === SHIFT_LABELS[0]) return 'shift1';
+  if (t === SHIFT_LABELS[1]) return 'shift2';
+  return 'other';
+}
+
+function emptyShiftBucket(key: 'shift1' | 'shift2'): ShiftSalesBucket {
+  const shiftLabel = key === 'shift1' ? SHIFT_LABELS[0] : SHIFT_LABELS[1];
+  return {
+    shiftKey: key,
+    displayName: key === 'shift1' ? 'Shift 1' : 'Shift 2',
+    shiftLabel,
+    totalAmount: 0,
+    totalLiters: 0,
+    transactionCount: 0,
+    shiftId: null,
+  };
+}
+
+function pickPrimaryShift(current: { shiftId: string | null; leadAmt: number }, shiftId: string, amt: number): void {
+  if (amt > current.leadAmt) {
+    current.leadAmt = amt;
+    current.shiftId = shiftId;
+  }
+}
+
+/** Closed-shift meter sales grouped into Shift 1 / Shift 2 for a pump business day. */
+export async function getTodaySalesByShift(pumpDay: Date): Promise<TodaySalesByShiftSummary> {
+  const pumpDayIso = format(pumpDay, 'yyyy-MM-dd');
+  const shifts = await listClosedShiftsByPumpDayRange(pumpDay, pumpDay);
+
+  const shift1 = emptyShiftBucket('shift1');
+  const shift2 = emptyShiftBucket('shift2');
+
+  const fuelAcc: Record<'MS' | 'HSD' | 'XP', { s1L: number; s1A: number; s2L: number; s2A: number }> = {
+    MS: { s1L: 0, s1A: 0, s2L: 0, s2A: 0 },
+    HSD: { s1L: 0, s1A: 0, s2L: 0, s2A: 0 },
+    XP: { s1L: 0, s1A: 0, s2L: 0, s2A: 0 },
+  };
+
+  let totalAmount = 0;
+  let totalLiters = 0;
+  let totalTx = 0;
+  const shift1Lead = { shiftId: null as string | null, leadAmt: 0 };
+  const shift2Lead = { shiftId: null as string | null, leadAmt: 0 };
+
+  for (const sh of shifts) {
+    const slot = shiftSlot(sh.shiftLabel);
+    const readings = await listReadingsForShift(sh.id);
+    let shiftAmount = 0;
+    let shiftLiters = 0;
+    let shiftTx = 0;
+
+    for (const r of readings) {
+      const liters = Number(r.finalSalesLiters ?? 0);
+      const amt = Number(r.totalAmount ?? 0);
+      if (liters <= SALES_EPS && amt <= SALES_EPS) continue;
+
+      shiftTx += 1;
+      shiftLiters += liters;
+      shiftAmount += amt;
+
+      const nozzle = await getNozzle(r.nozzleId);
+      const ft = nozzle ? await getFuelType(nozzle.fuelTypeId) : null;
+      const code = fuelStockDisplayMeta(ft?.name ?? '').shortCode;
+      if (code === 'MS' || code === 'HSD' || code === 'XP') {
+        if (slot === 'shift1') {
+          fuelAcc[code].s1L += liters;
+          fuelAcc[code].s1A += amt;
+        } else if (slot === 'shift2') {
+          fuelAcc[code].s2L += liters;
+          fuelAcc[code].s2A += amt;
+        }
+      }
+    }
+
+    totalAmount += shiftAmount;
+    totalLiters += shiftLiters;
+    totalTx += shiftTx;
+
+    if (slot === 'shift1') {
+      shift1.totalAmount += shiftAmount;
+      shift1.totalLiters += shiftLiters;
+      shift1.transactionCount += shiftTx;
+      pickPrimaryShift(shift1Lead, sh.id, shiftAmount);
+    } else if (slot === 'shift2') {
+      shift2.totalAmount += shiftAmount;
+      shift2.totalLiters += shiftLiters;
+      shift2.transactionCount += shiftTx;
+      pickPrimaryShift(shift2Lead, sh.id, shiftAmount);
+    }
+  }
+
+  shift1.shiftId = shift1Lead.shiftId;
+  shift2.shiftId = shift2Lead.shiftId;
+
+  shift1.totalAmount = pivotRound(shift1.totalAmount);
+  shift1.totalLiters = pivotRound(shift1.totalLiters);
+  shift2.totalAmount = pivotRound(shift2.totalAmount);
+  shift2.totalLiters = pivotRound(shift2.totalLiters);
+
+  const fuelRows: FuelShiftSalesRow[] = (['MS', 'HSD', 'XP'] as const).map((shortCode) => {
+    const f = fuelAcc[shortCode];
+    const shift1Liters = pivotRound(f.s1L);
+    const shift1Amount = pivotRound(f.s1A);
+    const shift2Liters = pivotRound(f.s2L);
+    const shift2Amount = pivotRound(f.s2A);
+    return {
+      shortCode,
+      shift1Liters,
+      shift1Amount,
+      shift2Liters,
+      shift2Amount,
+      totalLiters: pivotRound(shift1Liters + shift2Liters),
+      totalAmount: pivotRound(shift1Amount + shift2Amount),
+    };
+  });
+
+  return {
+    pumpDayIso,
+    shift1,
+    shift2,
+    todayTotal: {
+      totalAmount: pivotRound(totalAmount),
+      totalLiters: pivotRound(totalLiters),
+      transactionCount: totalTx,
+    },
+    fuelRows,
+  };
+}
+
+export type FuelSalesChartRow = {
+  shortCode: 'MS' | 'HSD' | 'XP';
+  displayName: string;
+  liters: number;
+  amount: number;
+  contributionPercent: number;
+};
+
+export type SalesByFuelChartData = {
+  fromIso: string;
+  toIso: string;
+  rows: FuelSalesChartRow[];
+  totalLiters: number;
+  totalAmount: number;
+  reconciledShiftCount: number;
+};
+
+const CHART_FUEL_CODES = ['MS', 'HSD', 'XP'] as const;
+
+/** Meter sales by MS/HSD/XP from closed shifts with submitted reconciliation. */
+export async function getSalesByFuelForRange(fromIso: string, toIso: string): Promise<SalesByFuelChartData> {
+  const from = parseISO(`${fromIso}T12:00:00`);
+  const to = parseISO(`${toIso}T12:00:00`);
+  if (from.getTime() > to.getTime()) {
+    return {
+      fromIso,
+      toIso,
+      rows: CHART_FUEL_CODES.map((code) => ({
+        shortCode: code,
+        displayName: fuelStockDisplayMeta(code).displayName,
+        liters: 0,
+        amount: 0,
+        contributionPercent: 0,
+      })),
+      totalLiters: 0,
+      totalAmount: 0,
+      reconciledShiftCount: 0,
+    };
+  }
+
+  const shifts = await listClosedShiftsByPumpDayRange(from, to);
+  const acc: Record<(typeof CHART_FUEL_CODES)[number], { liters: number; amount: number }> = {
+    MS: { liters: 0, amount: 0 },
+    HSD: { liters: 0, amount: 0 },
+    XP: { liters: 0, amount: 0 },
+  };
+  let reconciledShiftCount = 0;
+
+  for (const sh of shifts) {
+    const recon = await getReconciliationForShift(sh.id);
+    if (!recon) continue;
+    reconciledShiftCount += 1;
+
+    const readings = await listReadingsForShift(sh.id);
+    for (const r of readings) {
+      const liters = Number(r.finalSalesLiters ?? 0);
+      const amt = Number(r.totalAmount ?? 0);
+      if (liters <= SALES_EPS && amt <= SALES_EPS) continue;
+
+      const nozzle = await getNozzle(r.nozzleId);
+      const ft = nozzle ? await getFuelType(nozzle.fuelTypeId) : null;
+      const code = fuelStockDisplayMeta(ft?.name ?? '').shortCode;
+      if (code === 'MS' || code === 'HSD' || code === 'XP') {
+        acc[code].liters += liters;
+        acc[code].amount += amt;
+      }
+    }
+  }
+
+  const totalLiters = pivotRound(acc.MS.liters + acc.HSD.liters + acc.XP.liters);
+  const totalAmount = pivotRound(acc.MS.amount + acc.HSD.amount + acc.XP.amount);
+
+  const rows: FuelSalesChartRow[] = CHART_FUEL_CODES.map((code) => {
+    const liters = pivotRound(acc[code].liters);
+    const amount = pivotRound(acc[code].amount);
+    const contributionPercent =
+      totalAmount > 0 ? Math.round((amount / totalAmount) * 1000) / 10 : 0;
+    return {
+      shortCode: code,
+      displayName: fuelStockDisplayMeta(code).displayName,
+      liters,
+      amount,
+      contributionPercent,
+    };
+  });
+
+  return {
+    fromIso,
+    toIso,
+    rows,
+    totalLiters,
+    totalAmount,
+    reconciledShiftCount,
+  };
 }

@@ -16,6 +16,101 @@ export interface FuelType {
   name: string;
   currentRate: number;
   lastUpdatedAt: Timestamp;
+  /** Tank capacity in liters (optional until configured). */
+  tankCapacityLiters?: number;
+  /** Minimum safe stock before refill alert. */
+  reserveLiters?: number;
+  /** Latest dip reading in liters. */
+  currentStockLiters?: number;
+  /** Latest physical dip-stick reading in centimetres. */
+  lastDipCm?: number | null;
+  lastDipAt?: Timestamp | null;
+}
+
+export type FuelStockHealth = 'healthy' | 'low' | 'critical';
+
+export type DipKind = 'opening' | 'closing';
+
+export interface FuelTankDipReading {
+  id: string;
+  fuelTypeId: string;
+  /** Physical dip-stick reading in centimetres. */
+  dipCm: number;
+  /** Stock in liters derived from calibration chart. */
+  dipLiters: number;
+  /** Pump business day (yyyy-MM-dd). */
+  pumpDayIso: string;
+  dipKind: DipKind;
+  recordedAt: Timestamp;
+  recordedBy?: string;
+  notes?: string;
+}
+
+export interface FuelReceipt {
+  id: string;
+  fuelTypeId: string;
+  pumpDayIso: string;
+  liters: number;
+  supplier?: string;
+  invoiceNo?: string;
+  recordedBy?: string;
+  notes?: string;
+  recordedAt: Timestamp;
+}
+
+export interface DailyFuelStockRow {
+  pumpDayIso: string;
+  fuelTypeId: string;
+  displayName: string;
+  shortCode: string;
+  openingDipCm: number | null;
+  openingStockLiters: number;
+  closingDipCm: number | null;
+  closingStockLiters: number | null;
+  currentDipCm: number | null;
+  currentStockLiters: number;
+  salesLiters: number;
+  receiptLiters: number;
+  expectedStockLiters: number;
+  actualStockLiters: number | null;
+  variationLiters: number | null;
+  availablePercent: number;
+  health: FuelStockHealth;
+  dipEnteredToday: boolean;
+  variationAlert: boolean;
+  lowStockAlert: boolean;
+  tankCapacityLiters: number;
+  reserveLiters: number;
+}
+
+export interface TankStockDaySummary {
+  pumpDayIso: string;
+  rows: DailyFuelStockRow[];
+  alerts: string[];
+}
+
+export interface FuelStockItem {
+  fuelTypeId: string;
+  displayName: string;
+  shortCode: string;
+  currentStockLiters: number;
+  /** Latest dip-stick reading in cm (e.g. 96.6). */
+  currentDipCm: number | null;
+  tankCapacityLiters: number;
+  reserveLiters: number;
+  availablePercent: number;
+  health: FuelStockHealth;
+  lastDipAt: Timestamp | null;
+  updatedToday: boolean;
+  atOrBelowReserve: boolean;
+}
+
+export interface FuelStockOverview {
+  items: FuelStockItem[];
+  totalStockLiters: number;
+  totalCapacityLiters: number;
+  overallUtilizationPercent: number;
+  hasData: boolean;
 }
 
 export interface Nozzle {

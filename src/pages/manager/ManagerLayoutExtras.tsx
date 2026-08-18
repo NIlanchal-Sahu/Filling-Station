@@ -4,9 +4,11 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const links = [
   { to: '/manager', label: 'Home' },
+  { to: '/manager/team', label: 'Team' },
   { to: '/manager/credit', label: 'Credit' },
   { to: '/manager/ledger', label: 'Ledger' },
   { to: '/manager/daily-sheet', label: 'Daily sheet' },
+  { to: '/manager/fuel-stock/daily', label: 'Fuel stock' },
   { to: '/manager/fuel', label: 'Fuel prices' },
   { to: '/manager/reports', label: 'Reports' },
   { to: '/manager/reconciliations', label: 'Reconciliations' },

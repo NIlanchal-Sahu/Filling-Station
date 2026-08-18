@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   alpha,
   Alert,
@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import { format } from 'date-fns';
+import { useSearchParams } from 'react-router-dom';
 import { listClosedShiftsInEndTimeWindow } from '@/services/shiftsService';
 import {
   getDailySalesFuelPivot,
@@ -34,7 +35,18 @@ import { listAllCreditSales } from '@/services/creditSalesService';
 import { listAllCreditPayments } from '@/services/creditPaymentsService';
 import { listExpensesInRange, listLedgerInRange } from '@/services/ledgerService';
 import { downloadCsv } from '@/utils/csvExport';
+import { getDailyFuelStockReport } from '@/services/fuelStockReconciliationService';
 import { getReconciliationForShift } from '@/services/reconciliationService';
+import {
+  getCashBankCollectionDailyRows,
+  getCashBankCollectionShiftDetails,
+  getCashBankCollectionSummary,
+  type CashBankCollectionDailyRow,
+  type CashBankCollectionShiftDetailRow,
+  type CashBankCollectionSummary,
+} from '@/services/collectionSummaryService';
+import { CashBankCollectionReportPanel } from '@/pages/manager/CashBankCollectionReportPanel';
+import type { DailyFuelStockRow } from '@/types/entities';
 
 function fmtInr(n: number): string {
   return n.toLocaleString('en-IN', {
@@ -48,9 +60,10 @@ function fmtRupeesCell(n: number): string {
   return `₹ ${t}`;
 }
 
-type TabId = 0 | 1 | 2 | 3 | 4;
+type TabId = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export function ReportsPage() {
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<TabId>(0);
   const [from, setFrom] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [to, setTo] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -75,6 +88,17 @@ export function ReportsPage() {
   const [expTot, setExpTot] = useState<Record<string, number>>({});
   const [custFilter, setCustFilter] = useState('');
   const [attendanceRows, setAttendanceRows] = useState<PumpAttendantAttendanceRow[]>([]);
+  const [stockRows, setStockRows] = useState<DailyFuelStockRow[]>([]);
+  const [stockReportKind, setStockReportKind] = useState<'daily' | 'tank' | 'variation' | 'monthly'>('daily');
+  const [collectionSummary, setCollectionSummary] = useState<CashBankCollectionSummary | null>(null);
+  const [collectionDailyRows, setCollectionDailyRows] = useState<CashBankCollectionDailyRow[]>([]);
+  const [collectionShiftDetails, setCollectionShiftDetails] = useState<CashBankCollectionShiftDetailRow[]>([]);
+
+  useEffect(() => {
+    if (searchParams.get('report') === 'collections') {
+      setTab(6);
+    }
+  }, [searchParams]);
 
   const showOtherFuelCol = useMemo(
     () =>
@@ -167,6 +191,17 @@ export function ReportsPage() {
         });
         setExpRows(r);
         setExpTot(t);
+      } else if (tab === 5) {
+        setStockRows(await getDailyFuelStockReport(from, to));
+      } else if (tab === 6) {
+        const [summary, daily, shifts] = await Promise.all([
+          getCashBankCollectionSummary(from, to),
+          getCashBankCollectionDailyRows(from, to),
+          getCashBankCollectionShiftDetails(from, to),
+        ]);
+        setCollectionSummary(summary);
+        setCollectionDailyRows(daily);
+        setCollectionShiftDetails(shifts);
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Report failed');
@@ -222,6 +257,8 @@ export function ReportsPage() {
             <Tab label="Pump boys / girls" />
             <Tab label="Credit" />
             <Tab label="Expenses" />
+            <Tab label="Fuel stock" />
+            <Tab label="Cash & bank" />
           </Tabs>
         </Box>
         <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, p: 2, alignItems: 'center' }}>
@@ -251,6 +288,22 @@ export function ReportsPage() {
               onChange={(e) => setCustFilter(e.target.value)}
               sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             />
+          )}
+          {tab === 5 && (
+            <TextField
+              select
+              size="small"
+              label="Report type"
+              value={stockReportKind}
+              onChange={(e) => setStockReportKind(e.target.value as typeof stockReportKind)}
+              slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            >
+              <option value="daily">Daily dip report</option>
+              <option value="tank">Tank stock report</option>
+              <option value="variation">Variation report</option>
+              <option value="monthly">Monthly reconciliation</option>
+            </TextField>
           )}
           <Box sx={{ flex: 1 }} />
           <Chip
@@ -480,7 +533,7 @@ export function ReportsPage() {
                   borderRadius: 1,
                 }}
               >
-                <Table size="small" sx={{ minWidth: 720 }}>
+                <Table size="small" sx={{ minWidth: 820 }}>
                   <TableHead>
                     <TableRow
                       sx={{
@@ -497,6 +550,7 @@ export function ReportsPage() {
                       <TableCell>Date</TableCell>
                       <TableCell>Pump boy / girl</TableCell>
                       <TableCell>Shift</TableCell>
+                      <TableCell>Machine</TableCell>
                       <TableCell>Operator</TableCell>
                       <TableCell>Start</TableCell>
                       <TableCell>End</TableCell>
@@ -514,6 +568,7 @@ export function ReportsPage() {
                         <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{r.dateLabel}</TableCell>
                         <TableCell sx={{ fontWeight: 500 }}>{r.pumpBoyGirl}</TableCell>
                         <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.shiftLabel}</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>{r.machineLabel}</TableCell>
                         <TableCell>{r.operatorName}</TableCell>
                         <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{r.startAt}</TableCell>
                         <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{r.endAt}</TableCell>
@@ -540,6 +595,7 @@ export function ReportsPage() {
                       'Date_DDMMYYYY',
                       'Pump_boy_girl',
                       'Shift',
+                      'Machine',
                       'Operator',
                       'Start_local',
                       'End_local',
@@ -550,6 +606,7 @@ export function ReportsPage() {
                       r.dateLabel,
                       r.pumpBoyGirl,
                       r.shiftLabel,
+                      r.machineLabel,
                       r.operatorName,
                       r.startAt,
                       r.endAt,
@@ -643,6 +700,92 @@ export function ReportsPage() {
             Export
           </Button>
         </Box>
+      )}
+
+      {tab === 5 && (
+        <Box>
+          <Typography variant="subtitle1" gutterBottom>
+            {stockReportKind === 'daily' && 'Daily dip report — dip readings and calculated stock'}
+            {stockReportKind === 'tank' && 'Tank stock report — opening, sales, receipts, expected vs actual'}
+            {stockReportKind === 'variation' && 'Variation report — rows where |variation| exceeds limit or dip missing'}
+            {stockReportKind === 'monthly' && 'Monthly stock reconciliation — full period summary'}
+          </Typography>
+          <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 900 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Date</TableCell>
+                  <TableCell>Fuel</TableCell>
+                  <TableCell align="right">Dip (cm)</TableCell>
+                  <TableCell align="right">Opening (L)</TableCell>
+                  <TableCell align="right">Sales (L)</TableCell>
+                  <TableCell align="right">Purchase (L)</TableCell>
+                  <TableCell align="right">Expected (L)</TableCell>
+                  <TableCell align="right">Actual (L)</TableCell>
+                  <TableCell align="right">Variation (L)</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {stockRows
+                  .filter((r) => {
+                    if (stockReportKind === 'variation') {
+                      return r.variationAlert || !r.dipEnteredToday;
+                    }
+                    return true;
+                  })
+                  .map((r) => (
+                    <TableRow key={`${r.pumpDayIso}-${r.fuelTypeId}`}>
+                      <TableCell>{r.pumpDayIso}</TableCell>
+                      <TableCell>{r.shortCode}</TableCell>
+                      <TableCell align="right">{r.closingDipCm ?? r.currentDipCm ?? '—'}</TableCell>
+                      <TableCell align="right">{r.openingStockLiters.toLocaleString('en-IN')}</TableCell>
+                      <TableCell align="right">{r.salesLiters.toLocaleString('en-IN')}</TableCell>
+                      <TableCell align="right">{r.receiptLiters.toLocaleString('en-IN')}</TableCell>
+                      <TableCell align="right">{r.expectedStockLiters.toLocaleString('en-IN')}</TableCell>
+                      <TableCell align="right">
+                        {r.actualStockLiters != null ? r.actualStockLiters.toLocaleString('en-IN') : '—'}
+                      </TableCell>
+                      <TableCell align="right">
+                        {r.variationLiters != null ? r.variationLiters.toLocaleString('en-IN') : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Button
+            size="small"
+            sx={{ mt: 1 }}
+            onClick={() =>
+              downloadCsv(
+                `fuel_stock_${stockReportKind}.csv`,
+                ['Date', 'Fuel', 'DipCm', 'Opening', 'Sales', 'Purchase', 'Expected', 'Actual', 'Variation'],
+                stockRows.map((r) => [
+                  r.pumpDayIso,
+                  r.shortCode,
+                  r.closingDipCm ?? r.currentDipCm ?? '',
+                  r.openingStockLiters,
+                  r.salesLiters,
+                  r.receiptLiters,
+                  r.expectedStockLiters,
+                  r.actualStockLiters ?? '',
+                  r.variationLiters ?? '',
+                ]),
+              )
+            }
+          >
+            Export CSV
+          </Button>
+        </Box>
+      )}
+      {tab === 6 && (
+        <CashBankCollectionReportPanel
+          fromIso={from}
+          toIso={to}
+          summary={collectionSummary}
+          dailyRows={collectionDailyRows}
+          shiftDetails={collectionShiftDetails}
+        />
       )}
     </Stack>
   );

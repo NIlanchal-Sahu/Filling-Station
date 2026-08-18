@@ -18,6 +18,7 @@ import {
   demoListNozzles,
   demoSetNozzleActive,
 } from '@/localDemo/demoBackend';
+import { compareNozzleOrder } from '@/utils/nozzleSort';
 
 function mapNozzle(id: string, data: DocumentData): Nozzle {
   return {
@@ -38,10 +39,7 @@ export async function listNozzles(activeOnly = true): Promise<Nozzle[]> {
   const snap = await getDocs(qy);
   return snap.docs
     .map((d) => mapNozzle(d.id, d.data()))
-    .sort(
-      (a, b) =>
-        a.machineNumber.localeCompare(b.machineNumber) || a.nozzleNumber.localeCompare(b.nozzleNumber),
-    );
+    .sort((a, b) => compareNozzleOrder(a, b));
 }
 
 export async function getNozzle(id: string): Promise<Nozzle | null> {

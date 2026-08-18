@@ -19,6 +19,7 @@ import {
   demoCreateManualCreditSale,
   demoListAllCreditSales,
   demoListSalesForCustomer,
+  demoReplaceCreditSalesForShift,
 } from '@/localDemo/demoBackend';
 
 /** Sentinel shift id for credit lines posted from customer detail (not tied to shift recon). */
@@ -40,6 +41,36 @@ function mapCreditSale(id: string, data: DocumentData): CreditSale {
     rateAtSale: data.rateAtSale != null ? Number(data.rateAtSale) : undefined,
     reference: data.reference ? String(data.reference) : undefined,
   };
+}
+
+export async function replaceCreditSalesForShift(
+  shiftId: string,
+  lines: ReconciliationCreditLine[],
+): Promise<void> {
+  if (LOCAL_DEMO) {
+    return demoReplaceCreditSalesForShift(shiftId, lines);
+  }
+  const ref = collection(getDb(), COLLECTIONS.creditSales);
+  const qy = query(ref, where('shiftId', '==', shiftId));
+  const snap = await getDocs(qy);
+  const batch = writeBatch(getDb());
+  for (const d of snap.docs) {
+    const data = d.data();
+    const refStr = data.reference ? String(data.reference) : '';
+    if (!refStr.startsWith('SHIFT_RECON:')) {
+      continue;
+    }
+    const customerId = String(data.customerId ?? '');
+    const amount = Number(data.amount ?? 0);
+    if (customerId && amount > 0) {
+      await bumpCustomerBalance(customerId, -amount);
+    }
+    batch.delete(d.ref);
+  }
+  await batch.commit();
+  if (lines.length > 0) {
+    await createCreditSalesForReconciliation('update', shiftId, lines);
+  }
 }
 
 export async function createCreditSalesForReconciliation(

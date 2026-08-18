@@ -18,6 +18,9 @@ import {
   demoListReadingsForShift,
   demoUpdateReadingsOnEnd,
 } from '@/localDemo/demoBackend';
+import { getNozzle } from '@/services/nozzlesService';
+import { compareNozzleOrder } from '@/utils/nozzleSort';
+import { formatMachineNumbers } from '@/utils/machineDisplay';
 
 function mapReading(id: string, data: DocumentData): ShiftReading {
   return {
@@ -35,13 +38,25 @@ function mapReading(id: string, data: DocumentData): ShiftReading {
 }
 
 export async function listReadingsForShift(shiftId: string): Promise<ShiftReading[]> {
+  let readings: ShiftReading[];
   if (LOCAL_DEMO) {
-    return demoListReadingsForShift(shiftId);
+    readings = await demoListReadingsForShift(shiftId);
+  } else {
+    const ref = collection(getDb(), COLLECTIONS.shiftReadings);
+    const qy = query(ref, where('shiftId', '==', shiftId));
+    const snap = await getDocs(qy);
+    readings = snap.docs.map((d) => mapReading(d.id, d.data()));
   }
-  const ref = collection(getDb(), COLLECTIONS.shiftReadings);
-  const qy = query(ref, where('shiftId', '==', shiftId));
-  const snap = await getDocs(qy);
-  return snap.docs.map((d) => mapReading(d.id, d.data()));
+
+  const paired = await Promise.all(
+    readings.map(async (r) => ({ r, n: await getNozzle(r.nozzleId) })),
+  );
+  paired.sort((a, b) => {
+    const af = a.n ?? { machineNumber: '999', nozzleNumber: '999' };
+    const bf = b.n ?? { machineNumber: '999', nozzleNumber: '999' };
+    return compareNozzleOrder(af, bf);
+  });
+  return paired.map((p) => p.r);
 }
 
 export async function getReading(id: string): Promise<ShiftReading | null> {
@@ -165,4 +180,20 @@ export function computeLiters(
   const totalLiters = Math.max(0, closing - opening);
   const finalSalesLiters = Math.max(0, totalLiters - test);
   return { totalLiters, finalSalesLiters };
+}
+
+/** Dispenser machines assigned to this shift via its nozzles (e.g. "M1" or "M1, M2"). */
+export async function getMachineLabelForShift(shiftId: string): Promise<string> {
+  const readings = await listReadingsForShift(shiftId);
+  if (readings.length === 0) return '—';
+
+  const machineNums: string[] = [];
+  for (const r of readings) {
+    const nozzle = await getNozzle(r.nozzleId);
+    if (nozzle?.machineNumber.trim()) {
+      machineNums.push(nozzle.machineNumber.trim());
+    }
+  }
+
+  return formatMachineNumbers(machineNums);
 }

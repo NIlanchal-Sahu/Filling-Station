@@ -19,7 +19,7 @@ import {
 } from '@mui/material';
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import { useShiftAccess } from '@/hooks/useShiftAccess';
-import { listReadingsForShift, updateReadingsOnEnd, computeLiters, getLastClosingForNozzle } from '@/services/shiftReadingsService';
+import { listReadingsForShift, updateReadingsOnEnd, computeLiters, getLastClosingForNozzle, getMachineLabelForShift } from '@/services/shiftReadingsService';
 import { getNozzle } from '@/services/nozzlesService';
 import { getFuelType } from '@/services/fuelTypesService';
 import { setShiftReadingsComplete } from '@/services/shiftsService';
@@ -50,6 +50,7 @@ export function EndMetersPage() {
   const [closeInputs, setCloseInputs] = useState<Record<string, string>>({});
   const [openInputs, setOpenInputs] = useState<Record<string, string>>({});
   const [testInputs, setTestInputs] = useState<Record<string, string>>({});
+  const [machineLabel, setMachineLabel] = useState('—');
 
   /**
    * Primitives-only dependency: shift object identity alone must not rerun the load effect
@@ -94,6 +95,7 @@ export function EndMetersPage() {
           return;
         }
         setRows(built);
+        setMachineLabel(await getMachineLabelForShift(shiftId));
 
         if (readingsLocked) {
           const ci: Record<string, string> = {};
@@ -277,10 +279,13 @@ export function EndMetersPage() {
         }}
       >
       {shift?.pumpAttendants?.trim() ? (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Pump attendants: <strong>{shift.pumpAttendants.trim()}</strong>
         </Typography>
       ) : null}
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        Machine: <strong>{machineLabel}</strong>
+      </Typography>
       {!shift.readingsCompleteAt && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           <strong>Opening</strong> carries from the latest saved closing. <strong>Closing</strong> is empty until you type

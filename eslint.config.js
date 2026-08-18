@@ -18,5 +18,9 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // Preset flags sync setLoading / void load() in effects; common & fine for this app until refactors.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   alpha,
@@ -16,6 +16,7 @@ import {
   TableBody,
   TableCell,
   TableContainer,
+  TableHead,
   TableRow,
   TextField,
   Typography,
@@ -24,8 +25,8 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import { format } from 'date-fns';
 import { useShiftAccess } from '@/hooks/useShiftAccess';
-import { listReadingsForShift } from '@/services/shiftReadingsService';
-import { getReconciliationForShift, createReconciliationWithClose } from '@/services/reconciliationService';
+import { listReadingsForShift, getMachineLabelForShift } from '@/services/shiftReadingsService';
+import { getReconciliationForShift, createReconciliationWithClose, updatePendingReconciliation } from '@/services/reconciliationService';
 import { getUser } from '@/services/usersService';
 import { createCustomer, listCreditCustomers } from '@/services/creditCustomersService';
 import { listFuelTypes } from '@/services/fuelTypesService';
@@ -41,6 +42,7 @@ import {
   totalCashFromMeterAndChannels,
 } from '@/utils/meterSalesByFuel';
 import type { ReconciliationCreditLine, FuelType, LedgerEntry } from '@/types/entities';
+import { creditSheetBodyCellSx, creditSheetHeaderCellSx } from '@/pages/manager/manualCreditSaleFormStyles';
 
 const EPS = 0.01;
 
@@ -62,8 +64,11 @@ function amountFromLitersAndRate(litersStr: string, rateStr: string): number {
 export function ReconciliationFormPage() {
   const { shiftId = '' } = useParams();
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isManagerEdit = searchParams.get('edit') === '1';
   const { shift, allowed, error: accessError, profile } = useShiftAccess(shiftId);
   const [operatorName, setOperatorName] = useState('');
+  const [machineLabel, setMachineLabel] = useState('—');
   const [totalSales, setTotalSales] = useState(0);
   const [existing, setExisting] = useState<Awaited<ReturnType<typeof getReconciliationForShift>>>(null);
   const [fuels, setFuels] = useState<FuelType[]>([]);
@@ -106,12 +111,13 @@ export function ReconciliationFormPage() {
 
         const needLedger = profile?.role === 'manager';
 
-        const [readings, u, r, fuelList, ledgerRows] = await Promise.all([
+        const [readings, u, r, fuelList, ledgerRows, machines] = await Promise.all([
           listReadingsForShift(shiftId),
           getUser(shift.operatorId),
           getReconciliationForShift(shiftId),
           listFuelTypes(),
           needLedger ? listLedgerInRange(windowStart, windowEnd) : Promise.resolve<LedgerEntry[]>([]),
+          getMachineLabelForShift(shiftId),
         ]);
         if (!ok) {
           return;
@@ -122,10 +128,31 @@ export function ReconciliationFormPage() {
         }
         setLedgerForDay(ledgerRows);
         setOperatorName(u?.name ?? shift.operatorId);
+        setMachineLabel(machines);
         setTotalSales(meter.total);
         setExisting(r);
         const sortedFuels = [...fuelList].sort((a, b) => a.name.localeCompare(b.name));
         setFuels(sortedFuels);
+        if (r && profile?.role === 'manager' && isManagerEdit && r.status === 'pending') {
+          setPaytm(String(r.paytmOnline));
+          setIcici(String(r.iciciCard));
+          setFleet(String(r.fleetCard));
+          setCredit(String(r.creditAmount));
+          setShort(String(r.shortAmount ?? 0));
+          if (r.creditLineItems.length > 0) {
+            const customers = await listCreditCustomers(true);
+            if (!ok) return;
+            const nameById = new Map(customers.map((c) => [c.id, c.name]));
+            setLines(
+              r.creditLineItems.map((line) => ({
+                partyName: nameById.get(line.customerId) ?? '',
+                fuelTypeId: line.fuelTypeId ?? sortedFuels[0]?.id ?? '',
+                liters: String(line.liters ?? 0),
+                ratePerL: String(line.rateAtSale ?? sortedFuels.find((f) => f.id === line.fuelTypeId)?.currentRate ?? 0),
+              })),
+            );
+          }
+        }
         if (sortedFuels.length > 0) {
           setLines((prev) =>
             prev.map((line) =>
@@ -149,7 +176,7 @@ export function ReconciliationFormPage() {
     return () => {
       ok = false;
     };
-  }, [shiftId, shift, allowed, profile?.role]);
+  }, [shiftId, shift, allowed, profile?.role, isManagerEdit]);
 
   const sumOtherChannels = useMemo(() => {
     const n = (v: string) => (Number.parseFloat(v) || 0);
@@ -223,7 +250,7 @@ export function ReconciliationFormPage() {
     if (!shift) {
       return;
     }
-    if (existing?.status === 'pending') {
+    if (existing?.status === 'pending' && !(profile?.role === 'manager' && isManagerEdit)) {
       setFormError('Reconciliation is already submitted and awaiting review.');
       return;
     }
@@ -344,6 +371,24 @@ export function ReconciliationFormPage() {
         }
       }
 
+      if (existing && profile?.role === 'manager' && isManagerEdit && existing.status === 'pending') {
+        await updatePendingReconciliation(existing.id, {
+          shiftId: shift.id,
+          totalSalesAmount: totalSales,
+          paytmOnline: Number(paytm),
+          iciciCard: Number(icici),
+          fleetCard: Number(fleet),
+          creditAmount: creditN,
+          shortAmount: Number.parseFloat(short) || 0,
+          cashAmount: cashAmountComputed,
+          totalReceived,
+          difference: totalReceived - totalSales,
+          creditLineItems,
+        });
+        nav('/manager/reconciliations', { replace: true });
+        return;
+      }
+
       await createReconciliationWithClose({
         shiftId: shift.id,
         operatorId: shift.operatorId,
@@ -385,15 +430,28 @@ export function ReconciliationFormPage() {
   if (loadErr) {
     return <Alert severity="error">{loadErr}</Alert>;
   }
-  if (existing && (existing.status === 'pending' || (existing.status === 'approved' && existing.locked))) {
+  if (existing && !(profile?.role === 'manager' && isManagerEdit && existing.status === 'pending')) {
+    if (existing.status === 'pending' || (existing.status === 'approved' && existing.locked)) {
+      return (
+        <Alert severity="info">
+          <Typography>
+            Reconciliation status: {existing.status}.{' '}
+            {existing.status === 'pending' && 'You cannot change it while it is under review.'}
+          </Typography>
+          <Button size="small" onClick={() => nav(profile?.role === 'manager' ? '/manager' : '/operator')}>
+            Back
+          </Button>
+        </Alert>
+      );
+    }
+  }
+
+  if (existing && isManagerEdit && profile?.role === 'manager' && existing.status !== 'pending') {
     return (
-      <Alert severity="info">
-        <Typography>
-          Reconciliation status: {existing.status}.{' '}
-          {existing.status === 'pending' && 'You cannot change it while it is under review.'}
-        </Typography>
-        <Button size="small" onClick={() => nav(profile?.role === 'manager' ? '/manager' : '/operator')}>
-          Back
+      <Alert severity="warning">
+        <Typography>Only pending reconciliations can be edited.</Typography>
+        <Button size="small" onClick={() => nav('/manager/reconciliations')} sx={{ mt: 1 }}>
+          Back to queue
         </Button>
       </Alert>
     );
@@ -427,6 +485,12 @@ export function ReconciliationFormPage() {
         </Typography>
       </Box>
 
+      {isManagerEdit && existing?.status === 'pending' ? (
+        <Alert severity="info" sx={{ borderRadius: 2 }}>
+          Editing a pending reconciliation — save to update the queue entry, then approve or reject from Reconciliations.
+        </Alert>
+      ) : null}
+
       <Paper
         component="form"
         onSubmit={handleSubmit}
@@ -449,6 +513,9 @@ export function ReconciliationFormPage() {
           Pump attendants: <strong>{shift.pumpAttendants.trim()}</strong>
         </Typography>
       ) : null}
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        Machine: <strong>{machineLabel}</strong>
+      </Typography>
       <TextField
         fullWidth
         label="Paytm / online (₹)"
@@ -588,103 +655,130 @@ export function ReconciliationFormPage() {
               Add fuel types under Manager → Fuel prices before you can split credit by fuel and litres.
             </Alert>
           ) : null}
+          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1.5, overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 720, borderCollapse: 'collapse' }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 160 }}>Party name</TableCell>
+                  <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 160 }}>Fuel</TableCell>
+                  <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 88 }} align="right">
+                    Litres
+                  </TableCell>
+                  <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 100 }} align="right">
+                    ₹ / L
+                  </TableCell>
+                  <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 96 }} align="right">
+                    Total
+                  </TableCell>
+                  <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 52 }} />
+                </TableRow>
+              </TableHead>
+              <TableBody>
           {lines.map((l, i) => {
             const lineTotal = amountFromLitersAndRate(l.liters, l.ratePerL);
             return (
-              <Stack
-                key={i}
-                direction={{ xs: 'column', md: 'row' }}
-                spacing={1}
-                sx={{ alignItems: { xs: 'stretch', md: 'flex-start' } }}
-              >
-                <TextField
-                  label="Party name"
-                  value={l.partyName}
-                  onChange={(e) =>
-                    setLines((p) => p.map((x, j) => (j === i ? { ...x, partyName: e.target.value } : x)))
-                  }
-                  fullWidth
-                  sx={{ flex: 1, minWidth: { md: 200 } }}
-                  placeholder="e.g. SSVM, ST.XAVIER"
-                  helperText="Type any name — matches an existing credit party or creates a new one."
-                />
-                <FormControl fullWidth sx={{ minWidth: { md: 140 } }}>
-                  <InputLabel id={`fuel-${i}`}>Fuel</InputLabel>
-                  <Select
-                    labelId={`fuel-${i}`}
-                    label="Fuel"
-                    value={l.fuelTypeId}
-                    onChange={(e) => {
-                      const v = e.target.value as string;
-                      const f = fuelById.get(v);
-                      setLines((p) =>
-                        p.map((x, j) =>
-                          j === i
-                            ? {
-                                ...x,
-                                fuelTypeId: v,
-                                ratePerL: f != null ? String(f.currentRate) : x.ratePerL,
-                              }
-                            : x,
-                        ),
-                      );
-                    }}
-                  >
-                    {fuels.map((f) => (
-                      <MenuItem key={f.id} value={f.id}>
-                        {f.name} (₹{f.currentRate.toFixed(2)}/L)
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <TextField
-                  label="Litres"
-                  value={l.liters}
-                  onChange={(e) =>
-                    setLines((p) => p.map((x, j) => (j === i ? { ...x, liters: e.target.value } : x)))
-                  }
-                  type="number"
-                  sx={{ minWidth: { md: 100 } }}
-                  slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
-                />
-                <TextField
-                  label="Price (₹/L)"
-                  value={l.ratePerL}
-                  onChange={(e) =>
-                    setLines((p) => p.map((x, j) => (j === i ? { ...x, ratePerL: e.target.value } : x)))
-                  }
-                  type="number"
-                  sx={{ minWidth: { md: 110 } }}
-                  slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
-                />
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+              <TableRow key={i}>
+                <TableCell sx={creditSheetBodyCellSx}>
                   <TextField
-                    label="Total (₹)"
-                    value={lineTotal.toFixed(2)}
-                    type="number"
-                    sx={{ minWidth: { md: 120 } }}
-                    slotProps={{
-                      input: { readOnly: true },
-                      htmlInput: { sx: { fontWeight: 600 } },
-                    }}
+                    label="Party name"
+                    value={l.partyName}
+                    onChange={(e) =>
+                      setLines((p) => p.map((x, j) => (j === i ? { ...x, partyName: e.target.value } : x)))
+                    }
+                    size="small"
+                    fullWidth
+                    placeholder="e.g. SSVM, ST.XAVIER"
+                    slotProps={{ inputLabel: { shrink: true } }}
                   />
-                  {lines.length > 1 && (
+                </TableCell>
+                <TableCell sx={creditSheetBodyCellSx}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel id={`fuel-${i}`} shrink={!!l.fuelTypeId}>
+                      Fuel
+                    </InputLabel>
+                    <Select
+                      labelId={`fuel-${i}`}
+                      label="Fuel"
+                      value={l.fuelTypeId}
+                      onChange={(e) => {
+                        const v = e.target.value as string;
+                        const f = fuelById.get(v);
+                        setLines((p) =>
+                          p.map((x, j) =>
+                            j === i
+                              ? {
+                                  ...x,
+                                  fuelTypeId: v,
+                                  ratePerL: f != null ? String(f.currentRate) : x.ratePerL,
+                                }
+                              : x,
+                          ),
+                        );
+                      }}
+                    >
+                      {fuels.map((f) => (
+                        <MenuItem key={f.id} value={f.id}>
+                          {f.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </TableCell>
+                <TableCell sx={creditSheetBodyCellSx}>
+                  <TextField
+                    label="Litres"
+                    value={l.liters}
+                    onChange={(e) =>
+                      setLines((p) => p.map((x, j) => (j === i ? { ...x, liters: e.target.value } : x)))
+                    }
+                    type="number"
+                    size="small"
+                    fullWidth
+                    slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: 0, step: 0.01 } }}
+                  />
+                </TableCell>
+                <TableCell sx={creditSheetBodyCellSx}>
+                  <TextField
+                    label="Price (₹/L)"
+                    value={l.ratePerL}
+                    onChange={(e) =>
+                      setLines((p) => p.map((x, j) => (j === i ? { ...x, ratePerL: e.target.value } : x)))
+                    }
+                    type="number"
+                    size="small"
+                    fullWidth
+                    slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: 0, step: 0.01 } }}
+                  />
+                </TableCell>
+                <TableCell sx={{ ...creditSheetBodyCellSx, pt: 1.75 }} align="right">
+                  <Typography variant="body2" fontWeight={700} sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    ₹{lineTotal.toFixed(2)}
+                  </Typography>
+                </TableCell>
+                <TableCell sx={creditSheetBodyCellSx} align="center">
+                  {lines.length > 1 ? (
                     <IconButton
                       type="button"
                       aria-label={`Remove allocation line ${i + 1}`}
                       color="inherit"
+                      size="small"
                       onClick={() =>
                         setLines((p) => (p.length <= 1 ? p : p.filter((_, j) => j !== i)))
                       }
-                      sx={{ mt: { md: '8px' } }}
                     >
-                      <DeleteOutlineIcon />
+                      <DeleteOutlineIcon fontSize="small" />
                     </IconButton>
-                  )}
-                </Stack>
-              </Stack>
+                  ) : null}
+                </TableCell>
+              </TableRow>
             );
           })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+            Type any party name — matches an existing credit customer or creates a new one.
+          </Typography>
           <Typography variant="caption" color="text.secondary">
             Sum of line totals: ₹ {creditLinesSum.toFixed(2)} (must match credit amount)
           </Typography>
@@ -693,7 +787,11 @@ export function ReconciliationFormPage() {
       {formError && <Alert severity="error">{formError}</Alert>}
       <Stack direction="row" spacing={2} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
         <Button type="submit" variant="contained" size="large" disabled={saving} sx={{ borderRadius: 1.5 }}>
-          {saving ? 'Submitting…' : 'Submit & close shift'}
+          {saving
+            ? 'Saving…'
+            : isManagerEdit && existing?.status === 'pending'
+              ? 'Save changes'
+              : 'Submit & close shift'}
         </Button>
         <Button type="button" variant="outlined" onClick={() => nav(-1)} sx={{ borderRadius: 1.5 }}>
           Back

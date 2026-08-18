@@ -16,6 +16,7 @@ import {
 import { LOCAL_DEMO } from '@/config/appMode';
 import type { Shift, ShiftStatus } from '@/types/entities';
 import { COLLECTIONS, getDb } from '@/lib/firebase';
+import { notifyShiftStatusUpdated } from '@/utils/shiftStatusDisplay';
 import { format } from 'date-fns';
 import {
   demoCloseShift,
@@ -210,7 +211,9 @@ export async function createShift(input: {
   pumpAttendants?: string;
 }): Promise<string> {
   if (LOCAL_DEMO) {
-    return demoCreateShift(input);
+    const id = await demoCreateShift(input);
+    notifyShiftStatusUpdated();
+    return id;
   }
   const ref = await addDoc(collection(getDb(), COLLECTIONS.shifts), {
     operatorId: input.operatorId,
@@ -223,6 +226,7 @@ export async function createShift(input: {
     notes: input.notes ?? null,
     pumpAttendants: input.pumpAttendants?.trim() || null,
   });
+  notifyShiftStatusUpdated();
   return ref.id;
 }
 

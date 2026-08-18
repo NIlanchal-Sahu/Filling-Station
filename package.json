@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "firebase:sync-project": "node scripts/sync-firebase-project.mjs",
+    "firebase:bootstrap": "node scripts/bootstrap-firebase.mjs",
     "firebase:deploy:firestore": "npx -y firebase-tools@latest deploy --only firestore",
     "firebase:deploy:hosting": "npx -y firebase-tools@latest deploy --only hosting",
     "firebase:deploy": "npx -y firebase-tools@latest deploy --only firestore,hosting"
@@ -34,6 +35,7 @@
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-admin": "^13.0.2",
     "globals": "^17.5.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",

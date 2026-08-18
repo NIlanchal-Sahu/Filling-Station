@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   alpha,
   Alert,
@@ -25,6 +25,8 @@ import { listActiveUsers, listUsersForManager } from '@/services/usersService';
 import { getLastClosingForNozzle, createInitialReadings } from '@/services/shiftReadingsService';
 import { createShift } from '@/services/shiftsService';
 import { SHIFT_LABELS, type Nozzle, type User } from '@/types/entities';
+import { compareNozzleOrder } from '@/utils/nozzleSort';
+import { formatMachineLabelFromNozzleSelection } from '@/utils/machineDisplay';
 import { requireNonEmpty } from '@/utils/validation';
 import { format } from 'date-fns';
 
@@ -99,6 +101,11 @@ export function StartShiftPage() {
     });
   }
 
+  const selectedMachineLabel = useMemo(
+    () => formatMachineLabelFromNozzleSelection(selected, nozzles),
+    [selected, nozzles],
+  );
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -122,7 +129,12 @@ export function StartShiftPage() {
         notes: notes || undefined,
         pumpAttendants: pt || undefined,
       });
-      const nozzleIds = Array.from(selected);
+      const nozzleIds = Array.from(selected).sort((aId, bId) => {
+        const a = nozzles.find((n) => n.id === aId);
+        const b = nozzles.find((n) => n.id === bId);
+        if (!a || !b) return 0;
+        return compareNozzleOrder(a, b);
+      });
       const opening: Record<string, number> = {};
       for (const nId of nozzleIds) {
         opening[nId] = await getLastClosingForNozzle(nId);
@@ -259,6 +271,9 @@ export function StartShiftPage() {
 
       <Typography variant="subtitle2" sx={{ mt: 2 }}>
         Assigned nozzles
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        Machine: <strong>{selectedMachineLabel}</strong>
       </Typography>
       <FormGroup>
         {nozzles.map((n) => (

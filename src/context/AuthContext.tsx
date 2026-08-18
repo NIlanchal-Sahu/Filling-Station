@@ -151,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
           ? String((e as { message?: string }).message ?? e)
           : 'Sign-in failed';
       setError(msg);
-      throw new Error(msg);
+      throw new Error(msg, { cause: e });
     } finally {
       setLoading(false);
     }
@@ -191,6 +191,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/** Hook used across the tree; fast-refresh wants components-only files. */
+// eslint-disable-next-line react-refresh/only-export-components -- useAuth is the public API for this module
 export function useAuth(): AuthState {
   const ctx = useContext(AuthContext);
   if (!ctx) {

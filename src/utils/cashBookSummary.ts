@@ -20,6 +20,14 @@ function openingBalanceMatch(entry: LedgerEntry): boolean {
   return /\bopening\b/.test(blob);
 }
 
+/** Credit party paid in cash (Credit → Receive payment, mode CASH). */
+export function isCreditCashReceived(entry: LedgerEntry): boolean {
+  if (entry.type !== 'income' || effectiveLedgerChannel(entry) !== 'cash') return false;
+  if (entry.relatedCreditPaymentId) return true;
+  const blob = `${entry.particulars} ${entry.paidToOrReceivedFrom}`.toLowerCase();
+  return blob.includes('due received');
+}
+
 /** Money leaving the physical drawer — cash paid out or deposited via bank from drawer. */
 function isDrawerOutflow(entry: LedgerEntry): boolean {
   if (entry.type !== 'expense') return false;
@@ -44,20 +52,81 @@ export function fmtInrDash(amount: number | null, alwaysShow = false): string {
   });
 }
 
-function outflowLabel(e: LedgerEntry): string {
-  return (e.paidToOrReceivedFrom.trim() || e.category || e.particulars || 'EXPENSE').toUpperCase();
+const EXCEL_PARTY_ROWS = [
+  'KALU BABU',
+  'LAXMI ANNA',
+  'MAITRI INFA',
+  'UNION BANK',
+  'SBI BANK',
+  'SRI PLASTIC',
+  'SWURA',
+  'SUNIL TRAVELS',
+] as const;
+
+function dashOr(n: number): number | null {
+  return Math.abs(n) > EPS ? n : null;
 }
 
-/** Matches common Excel cash-register row order below GROSS CASH. */
-function outflowSheetRank(e: LedgerEntry): number {
-  const cat = e.category.trim().toUpperCase();
-  if (cat === 'EXPENSES') return 10;
-  if (cat === 'SALARY') return 20;
-  if (cat.includes('ADVANCE')) return 30;
-  if (cat === 'LOCKER') return 40;
-  if (cat === 'ODD BALANCE' || cat.includes('ODD')) return 50;
-  if (cat === 'TRANSFER') return 60;
-  return 100;
+function matchExcelParty(namesRaw: string): string | null {
+  const n = namesRaw.trim().toUpperCase().replace(/\s+/g, ' ');
+  for (const p of EXCEL_PARTY_ROWS) {
+    if (n === p || n.includes(p)) return p;
+  }
+  return null;
+}
+
+function excelOutflowBuckets(ledgerSameDay: LedgerEntry[]) {
+  let expenses = 0;
+  let salary = 0;
+  let advanceSalary = 0;
+  let locker = 0;
+  let oddBalance = 0;
+  const parties: Record<string, number> = {};
+  for (const p of EXCEL_PARTY_ROWS) parties[p] = 0;
+  const extras: Record<string, number> = {};
+
+  for (const e of ledgerSameDay) {
+    if (!isDrawerOutflow(e) || e.amount < EPS) continue;
+    const cat = e.category.trim().toUpperCase();
+    if (cat === 'LOCKER') {
+      locker += e.amount;
+      continue;
+    }
+    if (cat === 'ODD BALANCE' || cat.includes('ODD')) {
+      oddBalance += e.amount;
+      continue;
+    }
+    if (cat === 'SALARY') {
+      salary += e.amount;
+      continue;
+    }
+    if (cat.includes('ADVANCE')) {
+      advanceSalary += e.amount;
+      continue;
+    }
+    const party = matchExcelParty(e.paidToOrReceivedFrom);
+    if (party) {
+      parties[party] += e.amount;
+      continue;
+    }
+    const name = e.paidToOrReceivedFrom.trim().toUpperCase().replace(/\s+/g, ' ');
+    if (name && cat === 'TRANSFER') {
+      extras[name] = (extras[name] ?? 0) + e.amount;
+      continue;
+    }
+    expenses += e.amount;
+  }
+
+  const paidOutSum = roundMoney2(
+    expenses +
+      salary +
+      advanceSalary +
+      locker +
+      oddBalance +
+      Object.values(parties).reduce((s, n) => s + n, 0) +
+      Object.values(extras).reduce((s, n) => s + n, 0),
+  );
+  return { expenses, salary, advanceSalary, locker, oddBalance, parties, extras, paidOutSum };
 }
 
 export function buildCashBookSummary(params: {
@@ -76,9 +145,13 @@ export function buildCashBookSummary(params: {
   sheetStyleOutflows?: boolean;
   /**
    * If set (e.g. daily sheet carry-forward opening), replaces ledger-derived opening total.
-   * Cash received still excludes lines detected as ledger “opening”.
    */
   openingBalanceOverride?: number | null;
+  /**
+   * When false, TOTAL CASH = sales − credit − Phone Pe − ICICI − Fleet (short is shown but not deducted).
+   * Default true (includes short).
+   */
+  subtractShortageFromTotalCash?: boolean;
 }): CashBookSummaryRow[] {
   const {
     totalSales,
@@ -89,8 +162,8 @@ export function buildCashBookSummary(params: {
     ledgerSameDay,
     explicitShortSum = 0,
     differenceSumForShort = 0,
-    sheetStyleOutflows = false,
     openingBalanceOverride,
+    subtractShortageFromTotalCash = true,
   } = params;
 
   const explicit = roundMoney2(Math.max(0, explicitShortSum));
@@ -102,7 +175,7 @@ export function buildCashBookSummary(params: {
     icici,
     fleet,
     credit,
-    shortageAmt,
+    subtractShortageFromTotalCash ? shortageAmt : 0,
   );
 
   const rows: CashBookSummaryRow[] = [];
@@ -146,9 +219,7 @@ export function buildCashBookSummary(params: {
 
   let cashReceived = 0;
   for (const e of ledgerSameDay) {
-    if (e.type !== 'income' || effectiveLedgerChannel(e) !== 'cash') continue;
-    if (openingBalanceMatch(e)) continue;
-    cashReceived += e.amount;
+    if (isCreditCashReceived(e)) cashReceived += e.amount;
   }
 
   rows.push({
@@ -161,8 +232,7 @@ export function buildCashBookSummary(params: {
   rows.push({
     key: 'cash-received',
     label: 'CASH RECEIVED',
-    amount: cashReceived,
-    alwaysShowAmount: true,
+    amount: cashReceived > EPS ? cashReceived : null,
   });
 
   const grossCash = totalCashDerived + opening + cashReceived;
@@ -174,25 +244,26 @@ export function buildCashBookSummary(params: {
     alwaysShowAmount: true,
   });
 
-  const outflows = ledgerSameDay
-    .filter((e) => isDrawerOutflow(e) && e.amount > EPS)
-    .sort((a, b) => {
-      if (sheetStyleOutflows) {
-        const ra = outflowSheetRank(a);
-        const rb = outflowSheetRank(b);
-        if (ra !== rb) return ra - rb;
-      }
-      return outflowLabel(a).localeCompare(outflowLabel(b));
-    });
+  const buckets = excelOutflowBuckets(ledgerSameDay);
 
-  let paidOutSum = 0;
-  for (const e of outflows) {
-    const label = outflowLabel(e);
-    rows.push({ key: `out-${e.id}`, label, amount: e.amount });
-    paidOutSum += e.amount;
+  rows.push({ key: 'expenses', label: 'EXPENSES', amount: dashOr(buckets.expenses) });
+  rows.push({ key: 'salary', label: 'SALARY', amount: dashOr(buckets.salary) });
+  rows.push({ key: 'advance', label: 'ADVANCE SALARY', amount: dashOr(buckets.advanceSalary) });
+  rows.push({ key: 'locker', label: 'LOCKER', amount: dashOr(buckets.locker) });
+  rows.push({ key: 'odd', label: 'ODD BALANCE', amount: dashOr(buckets.oddBalance) });
+  for (const p of EXCEL_PARTY_ROWS) {
+    const amt = buckets.parties[p] ?? 0;
+    if (amt > EPS) {
+      rows.push({ key: `party-${p}`, label: p, amount: amt });
+    }
+  }
+  for (const [name, amt] of Object.entries(buckets.extras).sort(([a], [b]) => a.localeCompare(b))) {
+    if (amt > EPS) {
+      rows.push({ key: `party-x-${name}`, label: name, amount: amt });
+    }
   }
 
-  const closing = grossCash - paidOutSum;
+  const closing = grossCash - buckets.paidOutSum;
   rows.push({
     key: 'closing',
     label: 'CLOSING BALANCE IN CASH',

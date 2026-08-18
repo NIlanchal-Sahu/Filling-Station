@@ -31,6 +31,13 @@ const ReportsPage = lazy(() => import('@/pages/manager/ReportsPage').then((m) =>
 const FuelPricesPage = lazy(() =>
   import('@/pages/manager/FuelPricesPage').then((m) => ({ default: m.FuelPricesPage })),
 );
+const TeamPage = lazy(() => import('@/pages/manager/TeamPage').then((m) => ({ default: m.TeamPage })));
+const DailyDipEntryPage = lazy(() =>
+  import('@/pages/manager/DailyDipEntryPage').then((m) => ({ default: m.DailyDipEntryPage })),
+);
+const FuelStockHistoryPage = lazy(() =>
+  import('@/pages/manager/FuelStockHistoryPage').then((m) => ({ default: m.FuelStockHistoryPage })),
+);
 const ReconciliationReviewPage = lazy(() =>
   import('@/pages/manager/ReconciliationReviewPage').then((m) => ({ default: m.ReconciliationReviewPage })),
 );
@@ -67,11 +74,14 @@ export default function App() {
           <Route element={<ProtectedRoute requireRole="manager" />}>
             <Route path="manager" element={<ManagerLayoutWithNav />}>
               <Route index element={<ManagerDashboardPage />} />
+              <Route path="team" element={<TeamPage />} />
               <Route path="credit" element={<CreditCustomersPage />} />
               <Route path="credit/:id" element={<CustomerDetailPage />} />
               <Route path="ledger" element={<LedgerPage />} />
               <Route path="daily-sheet" element={<DailyCashSheetPage />} />
               <Route path="fuel" element={<FuelPricesPage />} />
+              <Route path="fuel-stock/daily" element={<DailyDipEntryPage />} />
+              <Route path="fuel-stock/:fuelTypeId" element={<FuelStockHistoryPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="reconciliations" element={<ReconciliationReviewPage />} />
             </Route>

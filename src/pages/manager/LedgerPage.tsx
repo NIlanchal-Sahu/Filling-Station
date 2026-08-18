@@ -473,11 +473,16 @@ export function LedgerPage() {
                   </TableCell>
                   <TableCell sx={sheetCellSx}>
                     <TextField
-                      placeholder="Party / account"
+                      placeholder="Person or bank"
                       value={entryNames}
                       onChange={(e) => setEntryNames(e.target.value)}
                       size="small"
                       fullWidth
+                      helperText={
+                        entryPaidOut
+                          ? 'Use category TRANSFER (or OTHER) — name appears on Daily sheet'
+                          : undefined
+                      }
                       sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
                     />
                   </TableCell>

@@ -24,6 +24,7 @@ import {
   Typography,
   useTheme,
 } from '@mui/material';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
@@ -31,20 +32,24 @@ import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { Link as RouterLink } from 'react-router-dom';
 import { format } from 'date-fns';
 
+import { downloadCsv } from '@/utils/csvExport';
+
 import { listLedgerInRange } from '@/services/ledgerService';
 import { listAllReconciliations } from '@/services/reportsHelpers';
 import { getShift, listShiftsForCashSheetMerge } from '@/services/shiftsService';
 import type { LedgerEntry, Shift, ShiftReconciliation } from '@/types/entities';
 import {
   buildDailyCashSheet,
-  DEFAULT_PARTY_SHEET_KEYS,
   fmtSheet,
 } from '@/utils/dailyCashSheet';
+import { calendarIsoForShift } from '@/utils/dailyCashBookVertical';
+import { roundMoney2, summarizeMeterSalesForShift } from '@/utils/meterSalesByFuel';
 import type { CashBookSummaryRow } from '@/utils/cashBookSummary';
 import {
   buildVerticalCashBookForDay,
   cashBookAmtDisplay,
 } from '@/utils/dailyCashBookVertical';
+import { downloadCashBookCsv, downloadCashBookExcel, downloadCashBookPdf } from '@/utils/cashBookExport';
 
 const headerSx = {
   fontWeight: 700,
@@ -128,7 +133,24 @@ export function DailyCashSheetPage() {
           }
         }
 
-        const built = buildDailyCashSheet({ start: fromD, end: toD }, ledger, recons, shiftByShiftId);
+        const meterSalesByIso = new Map<string, number>();
+        for (const [id, sh] of shiftByShiftId) {
+          if (cancelled || !sh) continue;
+          const iso = calendarIsoForShift(sh);
+          if (!iso) continue;
+          const meter = await summarizeMeterSalesForShift(id);
+          if (meter.total <= 0) continue;
+          meterSalesByIso.set(iso, roundMoney2((meterSalesByIso.get(iso) ?? 0) + meter.total));
+        }
+
+        const built = buildDailyCashSheet(
+          { start: fromD, end: toD },
+          ledger,
+          recons,
+          shiftByShiftId,
+          undefined,
+          meterSalesByIso,
+        );
         setRows(built);
         setSheetCache({ ledger, recons, shiftByShiftId });
       } catch (e) {
@@ -146,7 +168,17 @@ export function DailyCashSheetPage() {
     };
   }, [fromIso, toIso, rangeOk, refreshNonce]);
 
-  const partyKeys = DEFAULT_PARTY_SHEET_KEYS;
+  const partyKeys = useMemo(() => {
+    const names = new Set<string>();
+    for (const r of rows) {
+      for (const p of r.partyPayouts) {
+        if (p.name.trim()) names.add(p.name);
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const emptyColSpan = 20 + partyKeys.length;
 
   const cashBookDialogLabel = cashBookDlg
     ? format(new Date(cashBookDlg.iso + 'T12:00:00'), 'dd-MMM-yyyy')
@@ -190,8 +222,6 @@ export function DailyCashSheetPage() {
     };
   }, [cashBookDlg, sheetCache]);
 
-  const emptyColSpan = 14 + partyKeys.length;
-
   const rangeSummary = useMemo(() => {
     if (!rangeOk) {
       return { calendarDays: 0 };
@@ -230,10 +260,9 @@ export function DailyCashSheetPage() {
               Daily cash sheet
             </Typography>
             <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 720 }}>
-              Excel-style pivot: one row per calendar day. <strong>Total cash</strong> uses the same rule as{' '}
-              <strong>Ledger</strong> cash in hand: meter sales − PhonePe − ICICI − Fleet − credit − short (latest
-              reconciliation per shift). The rightmost <strong>Cash in hand</strong> column is what remains after your
-              named bank / party payouts for that day.
+              Excel-style pivot: one row per calendar day. <strong>Total cash</strong> = total sales − less credit −
+              Phone Pe − ICICI − Fleet − short (latest reconciliation per shift). The rightmost{' '}
+              <strong>Cash in hand</strong> column is what remains after named bank / party payouts for that day.
             </Typography>
           </Box>
 
@@ -276,6 +305,67 @@ export function DailyCashSheetPage() {
                   sx={{ borderRadius: 1.5, color: 'text.primary', borderColor: alpha('#fff', 0.5) }}
                 >
                   Reload data
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<FileDownloadOutlinedIcon />}
+                  disabled={loading || rows.length === 0}
+                  onClick={() => {
+                    const headers = [
+                      'DATE',
+                      'OPENING BALANCE',
+                      'TOTAL SALES',
+                      'LESS CREDIT',
+                      'PHONE PE',
+                      'ICICI BANK',
+                      'FLEET CARD',
+                      'SHORT',
+                      'TOTAL CASH',
+                      'EXPENSES',
+                      'SALARY',
+                      'ADVANCE SALARY',
+                      'BALANCE CASH',
+                      'CASH RECEIVED',
+                      'TOTAL CASH 2',
+                      'LOCKER',
+                      'ODD BALANCE',
+                      'SUBTOTAL (PRE-BANK)',
+                      ...partyKeys,
+                      'CASH IN HAND',
+                    ];
+                    downloadCsv(
+                      `daily-cash-sheet_${fromIso}_to_${toIso}.csv`,
+                      headers,
+                      rows.map((r) => {
+                        const partyAmt = Object.fromEntries(r.partyPayouts.map((p) => [p.name, p.amount]));
+                        return [
+                          r.dateLabel,
+                          fmtSheet(r.openingBalance),
+                          fmtSheet(r.totalSales),
+                          fmtSheet(r.lessCredit),
+                          fmtSheet(r.phonePe),
+                          fmtSheet(r.iciciBank),
+                          fmtSheet(r.fleetCard),
+                          fmtSheet(r.shortAmount),
+                          fmtSheet(r.totalCashShift),
+                          fmtSheet(r.expenses),
+                          fmtSheet(r.salary),
+                          fmtSheet(r.advanceSalary),
+                          fmtSheet(r.balanceCash),
+                          fmtSheet(r.cashAdjustColumn),
+                          fmtSheet(r.totalCash2),
+                          fmtSheet(r.locker),
+                          fmtSheet(r.oddBalance),
+                          fmtSheet(r.cashInHand),
+                          ...partyKeys.map((k) => fmtSheet(partyAmt[k] ?? 0)),
+                          fmtSheet(r.closingBalance),
+                        ];
+                      }),
+                    );
+                  }}
+                  sx={{ borderRadius: 1.5, color: 'text.primary', borderColor: alpha('#fff', 0.5) }}
+                >
+                  Download CSV
                 </Button>
                 <Button
                   component={RouterLink}
@@ -340,7 +430,7 @@ export function DailyCashSheetPage() {
               <Chip label="Scroll → for banks / parties; last column = cash in hand" size="small" variant="outlined" sx={{ fontWeight: 600 }} />
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 420 }}>
-              Date column stays fixed while scrolling. Values follow the same column names as your station spreadsheet.
+              Date column stays fixed while scrolling. Person names from Ledger payouts appear as extra columns.
             </Typography>
           </Stack>
           <Box sx={{ overflowX: 'auto' }}>
@@ -364,6 +454,24 @@ export function DailyCashSheetPage() {
                       Opening balance
                     </TableCell>
                     <TableCell sx={headerSx} align="right">
+                      Total sales
+                    </TableCell>
+                    <TableCell sx={headerSx} align="right">
+                      Less credit
+                    </TableCell>
+                    <TableCell sx={headerSx} align="right">
+                      Phone Pe
+                    </TableCell>
+                    <TableCell sx={headerSx} align="right">
+                      ICICI Bank
+                    </TableCell>
+                    <TableCell sx={headerSx} align="right">
+                      Fleet card
+                    </TableCell>
+                    <TableCell sx={headerSx} align="right">
+                      Short
+                    </TableCell>
+                    <TableCell sx={headerSx} align="right">
                       Total cash
                     </TableCell>
                     <TableCell sx={headerSx} align="right">
@@ -379,7 +487,7 @@ export function DailyCashSheetPage() {
                       Balance cash
                     </TableCell>
                     <TableCell sx={headerSx} align="right">
-                      Cash adj.
+                      Cash received
                     </TableCell>
                     <TableCell sx={headerSx} align="right">
                       Total cash 2
@@ -417,6 +525,7 @@ export function DailyCashSheetPage() {
                     rows.map((r, idx) => {
                       const stripeBg =
                         idx % 2 === 1 ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.1 : 0.045) : undefined;
+                      const partyAmt = Object.fromEntries(r.partyPayouts.map((p) => [p.name, p.amount]));
                       return (
                         <TableRow key={r.dateIso} sx={{ ...(stripeBg ? { bgcolor: stripeBg } : {}) }}>
                           <TableCell
@@ -436,6 +545,24 @@ export function DailyCashSheetPage() {
                             {fmtSheet(r.openingBalance)}
                           </TableCell>
                           <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
+                            {fmtSheet(r.totalSales)}
+                          </TableCell>
+                          <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
+                            {fmtSheet(r.lessCredit)}
+                          </TableCell>
+                          <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
+                            {fmtSheet(r.phonePe)}
+                          </TableCell>
+                          <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
+                            {fmtSheet(r.iciciBank)}
+                          </TableCell>
+                          <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
+                            {fmtSheet(r.fleetCard)}
+                          </TableCell>
+                          <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
+                            {fmtSheet(r.shortAmount)}
+                          </TableCell>
+                          <TableCell sx={{ ...cellSx, bgcolor: stripeBg, fontWeight: 700 }} align="right">
                             {fmtSheet(r.totalCashShift)}
                           </TableCell>
                           <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
@@ -467,7 +594,7 @@ export function DailyCashSheetPage() {
                           </TableCell>
                           {partyKeys.map((k) => (
                             <TableCell key={`${r.dateIso}-${k}`} sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
-                              {fmtSheet(r.parties[k] ?? 0)}
+                              {fmtSheet(partyAmt[k] ?? 0)}
                             </TableCell>
                           ))}
                           <TableCell sx={{ ...cellSx, bgcolor: stripeBg, fontWeight: 700 }} align="right">
@@ -540,14 +667,16 @@ export function DailyCashSheetPage() {
                       key={line.key}
                       sx={{
                         '&:last-child td': { borderBottom: 0 },
-                        bgcolor: line.bold ? (t) => alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.12 : 0.06) : 'transparent',
+                        bgcolor: line.bold
+                          ? (t) => alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.12 : 0.06)
+                          : 'transparent',
                       }}
                     >
                       <TableCell
                         sx={{
                           fontWeight: line.bold ? 700 : 400,
                           borderColor: 'divider',
-                          py: 1,
+                          py: 0.85,
                         }}
                       >
                         {line.label}
@@ -558,7 +687,8 @@ export function DailyCashSheetPage() {
                           fontWeight: line.bold ? 700 : 400,
                           borderColor: 'divider',
                           fontVariantNumeric: 'tabular-nums',
-                          py: 1,
+                          py: 0.85,
+                          whiteSpace: 'nowrap',
                         }}
                       >
                         {cashBookAmtDisplay(line)}
@@ -572,29 +702,67 @@ export function DailyCashSheetPage() {
           {!cashBookDlgLoading ? (
             <>
               <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block', lineHeight: 1.6 }}>
-                Opening balance matches this row in the pivot; other lines enumerate paid-out ledger entries for the day.
+                Total cash = total sales − Phone Pe − ICICI − Fleet − credit − short. Cash received is credit collected
+                in cash. Closing = gross cash minus expenses, salary, locker, and named payouts.
               </Typography>
             </>
           ) : null}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 2, gap: 1 }}>
-          <Button onClick={() => setCashBookDlg(null)} sx={{ borderRadius: 1.5 }}>
-            Close
-          </Button>
-          <Button
-            component={RouterLink}
-            variant="contained"
-            color="secondary"
-            to={
-              cashBookDlg
-                ? `/manager/ledger?from=${encodeURIComponent(cashBookDlg.iso)}&to=${encodeURIComponent(cashBookDlg.iso)}`
-                : '/manager/ledger'
-            }
-            onClick={() => setCashBookDlg(null)}
-            sx={{ borderRadius: 1.5 }}
-          >
-            Edit in ledger
-          </Button>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 2, gap: 1, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={cashBookDlgLoading || cashBookDialogRows.length === 0}
+              onClick={() => {
+                if (cashBookDlg) downloadCashBookCsv(cashBookDialogLabel, cashBookDialogRows);
+              }}
+              sx={{ borderRadius: 1.5 }}
+            >
+              CSV
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={cashBookDlgLoading || cashBookDialogRows.length === 0}
+              onClick={() => {
+                if (cashBookDlg) downloadCashBookExcel(cashBookDialogLabel, cashBookDialogRows);
+              }}
+              sx={{ borderRadius: 1.5 }}
+            >
+              Excel
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={cashBookDlgLoading || cashBookDialogRows.length === 0}
+              onClick={() => {
+                if (cashBookDlg) downloadCashBookPdf(cashBookDialogLabel, cashBookDialogRows);
+              }}
+              sx={{ borderRadius: 1.5 }}
+            >
+              PDF
+            </Button>
+          </Stack>
+          <Stack direction="row" spacing={1}>
+            <Button onClick={() => setCashBookDlg(null)} sx={{ borderRadius: 1.5 }}>
+              Close
+            </Button>
+            <Button
+              component={RouterLink}
+              variant="contained"
+              color="secondary"
+              to={
+                cashBookDlg
+                  ? `/manager/ledger?from=${encodeURIComponent(cashBookDlg.iso)}&to=${encodeURIComponent(cashBookDlg.iso)}`
+                  : '/manager/ledger'
+              }
+              onClick={() => setCashBookDlg(null)}
+              sx={{ borderRadius: 1.5 }}
+            >
+              Edit in ledger
+            </Button>
+          </Stack>
         </DialogActions>
       </Dialog>
     </Stack>

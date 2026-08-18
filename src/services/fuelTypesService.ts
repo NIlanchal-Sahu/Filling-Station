@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
 import type { FuelType } from '@/types/entities';
+import { DEFAULT_TANK_CAPACITY_LITERS } from '@/utils/fuelStockDisplay';
 import { COLLECTIONS, getDb } from '@/lib/firebase';
 import {
   demoCreateFuelType,
@@ -24,6 +25,15 @@ function mapFuelType(id: string, data: DocumentData): FuelType {
     name: String(data.name ?? ''),
     currentRate: Number(data.currentRate ?? 0),
     lastUpdatedAt: data.lastUpdatedAt,
+    tankCapacityLiters:
+      data.tankCapacityLiters != null
+        ? Number(data.tankCapacityLiters)
+        : DEFAULT_TANK_CAPACITY_LITERS,
+    reserveLiters: data.reserveLiters != null ? Number(data.reserveLiters) : undefined,
+    currentStockLiters:
+      data.currentStockLiters != null ? Number(data.currentStockLiters) : undefined,
+    lastDipCm: data.lastDipCm != null ? Number(data.lastDipCm) : null,
+    lastDipAt: data.lastDipAt ?? null,
   };
 }
 
@@ -55,6 +65,7 @@ export async function createFuelType(name: string, currentRate: number): Promise
   const ref = await addDoc(collection(getDb(), COLLECTIONS.fuelTypes), {
     name,
     currentRate,
+    tankCapacityLiters: DEFAULT_TANK_CAPACITY_LITERS,
     lastUpdatedAt: serverTimestamp(),
   });
   return ref.id;

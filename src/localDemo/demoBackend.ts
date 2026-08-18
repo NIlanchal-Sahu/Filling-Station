@@ -7,6 +7,10 @@ import type {
   CreditPaymentMode,
   CreditSale,
   FuelType,
+  FuelStockOverview,
+  FuelTankDipReading,
+  FuelReceipt,
+  DipKind,
   LedgerEntry,
   LedgerType,
   Nozzle,
@@ -18,12 +22,20 @@ import type {
   UserRole,
 } from '@/types/entities';
 import {
+  buildFuelStockItem,
+  DEFAULT_TANK_CAPACITY_LITERS,
+  notifyFuelStockUpdated,
+  sortFuelStockItems,
+} from '@/utils/fuelStockDisplay';
+import { dipCmFromLiters, litersFromDipCm } from '@/utils/fuelTankCalibration';
+import {
   creditPaymentModeLabel,
   creditPaymentModeLedgerChannel,
   normalizeCreditPaymentMode,
 } from '@/types/entities';
 
-const STORAGE_KEY = 'pumpstock-local-demo-v8';
+const STORAGE_KEY = 'pumpstock-local-demo-v11';
+const TANK_STOCK_CLEAN_FLAG = 'pumpstock-tank-stock-cleared-v11';
 
 type StoredUser = {
   name: string;
@@ -31,7 +43,36 @@ type StoredUser = {
   phone?: string | null;
   isActive: boolean;
 };
-type StoredFuelType = { name: string; currentRate: number; lastUpdatedMs: number };
+type StoredFuelType = {
+  name: string;
+  currentRate: number;
+  lastUpdatedMs: number;
+  tankCapacityLiters?: number;
+  reserveLiters?: number;
+  currentStockLiters?: number;
+  lastDipCm?: number | null;
+  lastDipMs?: number | null;
+};
+type StoredFuelTankDip = {
+  fuelTypeId: string;
+  dipCm?: number | null;
+  dipLiters: number;
+  pumpDayIso?: string | null;
+  dipKind?: string | null;
+  recordedMs: number;
+  recordedBy?: string | null;
+  notes?: string | null;
+};
+type StoredFuelReceipt = {
+  fuelTypeId: string;
+  pumpDayIso: string;
+  liters: number;
+  supplier?: string | null;
+  invoiceNo?: string | null;
+  recordedMs: number;
+  recordedBy?: string | null;
+  notes?: string | null;
+};
 type StoredNozzle = {
   machineNumber: string;
   nozzleNumber: string;
@@ -122,6 +163,8 @@ type StoredLedger = {
 type Rows = {
   users: Record<string, StoredUser>;
   fuelTypes: Record<string, StoredFuelType>;
+  fuelTankDips: Record<string, StoredFuelTankDip>;
+  fuelReceipts: Record<string, StoredFuelReceipt>;
   nozzles: Record<string, StoredNozzle>;
   shifts: Record<string, StoredShift>;
   shiftReadings: Record<string, StoredReading>;
@@ -138,6 +181,8 @@ function emptyRows(): Rows {
   return {
     users: {},
     fuelTypes: {},
+    fuelTankDips: {},
+    fuelReceipts: {},
     nozzles: {},
     shifts: {},
     shiftReadings: {},
@@ -167,9 +212,13 @@ function ensureLoaded(): void {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<Rows> & { loans?: unknown; loanRepayments?: unknown };
-      const { loans: _omitLoans, loanRepayments: _omitLoanRepayments, ...rest } = parsed;
-      row = { ...emptyRows(), ...rest };
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      delete parsed.loans;
+      delete parsed.loanRepayments;
+      row = { ...emptyRows(), ...(parsed as Partial<Rows>) };
+      if (!row.fuelTankDips) row.fuelTankDips = {};
+      if (!row.fuelReceipts) row.fuelReceipts = {};
+      ensureTankDefaults();
     } else {
       seed();
       persist();
@@ -180,14 +229,104 @@ function ensureLoaded(): void {
   }
 }
 
+function seedTankConfig(now: number): void {
+  row.fuelTypes['fuel-p'] = {
+    name: 'PETROL',
+    currentRate: 107.9,
+    lastUpdatedMs: now,
+    tankCapacityLiters: DEFAULT_TANK_CAPACITY_LITERS,
+    reserveLiters: 2_000,
+  };
+  row.fuelTypes['fuel-d'] = {
+    name: 'DIESEL',
+    currentRate: 95.8,
+    lastUpdatedMs: now,
+    tankCapacityLiters: DEFAULT_TANK_CAPACITY_LITERS,
+    reserveLiters: 1_500,
+  };
+  row.fuelTypes['fuel-x'] = {
+    name: 'XP',
+    currentRate: 112.5,
+    lastUpdatedMs: now,
+    tankCapacityLiters: DEFAULT_TANK_CAPACITY_LITERS,
+    reserveLiters: 1_000,
+  };
+}
+
+/** Remove all seeded / legacy tank dips, receipts, and stock readings. */
+function clearTankStockDemoData(): void {
+  row.fuelTankDips = {};
+  row.fuelReceipts = {};
+  for (const ft of Object.values(row.fuelTypes)) {
+    delete ft.currentStockLiters;
+    delete ft.lastDipCm;
+    delete ft.lastDipMs;
+  }
+}
+
+function ensureTankDefaults(): void {
+  const reserveByFuel: Record<string, number> = {
+    'fuel-p': 2_000,
+    'fuel-d': 1_500,
+    'fuel-x': 1_000,
+  };
+
+  let changed = false;
+
+  if (typeof localStorage !== 'undefined' && !localStorage.getItem(TANK_STOCK_CLEAN_FLAG)) {
+    clearTankStockDemoData();
+    localStorage.setItem(TANK_STOCK_CLEAN_FLAG, '1');
+    changed = true;
+  }
+
+  for (const [id, ft] of Object.entries(row.fuelTypes)) {
+    if (ft.tankCapacityLiters !== DEFAULT_TANK_CAPACITY_LITERS) {
+      ft.tankCapacityLiters = DEFAULT_TANK_CAPACITY_LITERS;
+      changed = true;
+    }
+    const reserve = reserveByFuel[id];
+    if (reserve != null && ft.reserveLiters == null) {
+      ft.reserveLiters = reserve;
+      changed = true;
+    }
+    if (
+      ft.currentStockLiters != null &&
+      ft.currentStockLiters > 0 &&
+      (ft.lastDipCm == null || ft.lastDipCm <= 0)
+    ) {
+      const derived = dipCmFromLiters(ft.currentStockLiters, ft.name);
+      if (derived != null) {
+        ft.lastDipCm = derived;
+        changed = true;
+      }
+    }
+  }
+
+  for (const dip of Object.values(row.fuelTankDips)) {
+    if (!dip.pumpDayIso) {
+      dip.pumpDayIso = format(new Date(dip.recordedMs), 'yyyy-MM-dd');
+      changed = true;
+    }
+    if (!dip.dipKind) {
+      dip.dipKind = 'closing';
+      changed = true;
+    }
+    if (dip.dipCm == null) {
+      const fuel = row.fuelTypes[dip.fuelTypeId];
+      dip.dipCm = dipCmFromLiters(dip.dipLiters, fuel?.name ?? '');
+      changed = true;
+    }
+  }
+
+  if (changed) persist();
+}
+
 function seed(): void {
   row = emptyRows();
   row.users['demo-manager'] = { name: 'Demo Manager', role: 'manager', isActive: true };
   row.users['demo-operator'] = { name: 'Demo Operator', role: 'operator', isActive: true };
   const now = Date.now();
-  row.fuelTypes['fuel-p'] = { name: 'PETROL', currentRate: 107.9, lastUpdatedMs: now };
-  row.fuelTypes['fuel-d'] = { name: 'DIESEL', currentRate: 95.8, lastUpdatedMs: now };
-  row.fuelTypes['fuel-x'] = { name: 'XP', currentRate: 112.5, lastUpdatedMs: now };
+  seedTankConfig(now);
   /* M×N grid: M1(N1,N2 PETROL; N3,N4 XP); M2(N1,N2 DIESEL; N3,N4 PETROL); M3(all DIESEL) */
   const fuelByMachineNozzle = [
     ['fuel-p', 'fuel-p', 'fuel-x', 'fuel-x'],
@@ -231,6 +370,45 @@ function mapFt(id: string, f: StoredFuelType): FuelType {
     name: f.name,
     currentRate: f.currentRate,
     lastUpdatedAt: Timestamp.fromMillis(f.lastUpdatedMs),
+    tankCapacityLiters: f.tankCapacityLiters,
+    reserveLiters: f.reserveLiters,
+    currentStockLiters: f.currentStockLiters,
+    lastDipCm: f.lastDipCm ?? null,
+    lastDipAt: f.lastDipMs != null ? Timestamp.fromMillis(f.lastDipMs) : null,
+  };
+}
+function mapFuelTankDip(id: string, d: StoredFuelTankDip): FuelTankDipReading {
+  const fuel = row.fuelTypes[d.fuelTypeId];
+  const dipCm =
+    d.dipCm != null ? Number(d.dipCm) : (dipCmFromLiters(d.dipLiters, fuel?.name ?? '') ?? 0);
+  const pumpDayIso =
+    typeof d.pumpDayIso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.pumpDayIso)
+      ? d.pumpDayIso
+      : format(new Date(d.recordedMs), 'yyyy-MM-dd');
+  const dipKind: DipKind = d.dipKind === 'opening' ? 'opening' : 'closing';
+  return {
+    id,
+    fuelTypeId: d.fuelTypeId,
+    dipCm,
+    dipLiters: d.dipLiters,
+    pumpDayIso,
+    dipKind,
+    recordedAt: Timestamp.fromMillis(d.recordedMs),
+    recordedBy: d.recordedBy ?? undefined,
+    notes: d.notes ?? undefined,
+  };
+}
+function mapFuelReceipt(id: string, r: StoredFuelReceipt): FuelReceipt {
+  return {
+    id,
+    fuelTypeId: r.fuelTypeId,
+    pumpDayIso: r.pumpDayIso,
+    liters: r.liters,
+    supplier: r.supplier ?? undefined,
+    invoiceNo: r.invoiceNo ?? undefined,
+    recordedBy: r.recordedBy ?? undefined,
+    notes: r.notes ?? undefined,
+    recordedAt: Timestamp.fromMillis(r.recordedMs),
   };
 }
 function mapNozzle(id: string, n: StoredNozzle): Nozzle {
@@ -306,7 +484,12 @@ export async function demoGetFuelType(id: string): Promise<FuelType | null> {
 export async function demoCreateFuelType(name: string, currentRate: number): Promise<string> {
   ensureLoaded();
   const id = newId('fuel');
-  row.fuelTypes[id] = { name, currentRate, lastUpdatedMs: Date.now() };
+  row.fuelTypes[id] = {
+    name,
+    currentRate,
+    lastUpdatedMs: Date.now(),
+    tankCapacityLiters: DEFAULT_TANK_CAPACITY_LITERS,
+  };
   persist();
   return id;
 }
@@ -316,6 +499,181 @@ export async function demoUpdateFuelRate(id: string, currentRate: number): Promi
   row.fuelTypes[id].currentRate = currentRate;
   row.fuelTypes[id].lastUpdatedMs = Date.now();
   persist();
+}
+
+function isUpdatedToday(lastDipMs: number | null | undefined): boolean {
+  if (lastDipMs == null) return false;
+  return format(new Date(lastDipMs), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+}
+
+export async function demoGetFuelStockOverview(): Promise<FuelStockOverview> {
+  ensureLoaded();
+  const fuels = Object.entries(row.fuelTypes).map(([id, f]) => mapFt(id, f));
+  const items = sortFuelStockItems(
+    fuels
+      .map((f) => {
+        const stored = row.fuelTypes[f.id];
+        return buildFuelStockItem(f, { updatedToday: isUpdatedToday(stored?.lastDipMs) });
+      })
+      .filter((item): item is NonNullable<typeof item> => item != null),
+  );
+  const totalStockLiters = items.reduce((sum, i) => sum + i.currentStockLiters, 0);
+  const totalCapacityLiters = items.reduce((sum, i) => sum + i.tankCapacityLiters, 0);
+  const overallUtilizationPercent =
+    totalCapacityLiters > 0 ? Math.min(100, (totalStockLiters / totalCapacityLiters) * 100) : 0;
+  return {
+    items,
+    totalStockLiters,
+    totalCapacityLiters,
+    overallUtilizationPercent,
+    hasData: items.length > 0,
+  };
+}
+
+export async function demoListFuelTankDips(fuelTypeId: string): Promise<FuelTankDipReading[]> {
+  ensureLoaded();
+  return Object.entries(row.fuelTankDips)
+    .filter(([, d]) => d.fuelTypeId === fuelTypeId)
+    .map(([id, d]) => mapFuelTankDip(id, d))
+    .sort((a, b) => b.recordedAt.toMillis() - a.recordedAt.toMillis());
+}
+
+export async function demoListFuelTankDipsInRange(
+  fromIso: string,
+  toIso: string,
+): Promise<FuelTankDipReading[]> {
+  ensureLoaded();
+  return Object.entries(row.fuelTankDips)
+    .map(([id, d]) => mapFuelTankDip(id, d))
+    .filter((d) => d.pumpDayIso >= fromIso && d.pumpDayIso <= toIso)
+    .sort((a, b) => b.recordedAt.toMillis() - a.recordedAt.toMillis());
+}
+
+export async function demoRecordFuelTankDip(input: {
+  fuelTypeId: string;
+  dipCm: number;
+  dipLiters: number;
+  pumpDayIso: string;
+  dipKind: DipKind;
+  recordedBy?: string;
+  notes?: string;
+}): Promise<string> {
+  ensureLoaded();
+  return demoUpsertFuelTankDipForDay(input);
+}
+
+export async function demoUpsertFuelTankDipForDay(input: {
+  fuelTypeId: string;
+  pumpDayIso: string;
+  dipKind: DipKind;
+  dipCm: number;
+  dipLiters?: number;
+  recordedBy?: string;
+  notes?: string;
+}): Promise<string> {
+  ensureLoaded();
+  const ft = row.fuelTypes[input.fuelTypeId];
+  if (!ft) {
+    throw new Error('Fuel type not found');
+  }
+  const dipLiters = input.dipLiters ?? litersFromDipCm(input.dipCm, ft.name);
+  const now = Date.now();
+
+  const existingKey = Object.entries(row.fuelTankDips).find(
+    ([, d]) =>
+      d.fuelTypeId === input.fuelTypeId &&
+      (d.pumpDayIso ?? format(new Date(d.recordedMs), 'yyyy-MM-dd')) === input.pumpDayIso &&
+      (d.dipKind ?? 'closing') === input.dipKind,
+  )?.[0];
+
+  const id = existingKey ?? newId('dip');
+  row.fuelTankDips[id] = {
+    fuelTypeId: input.fuelTypeId,
+    dipCm: input.dipCm,
+    dipLiters,
+    pumpDayIso: input.pumpDayIso,
+    dipKind: input.dipKind,
+    recordedMs: now,
+    recordedBy: input.recordedBy ?? null,
+    notes: input.notes ?? null,
+  };
+
+  if (input.dipKind === 'closing' && input.pumpDayIso === format(new Date(), 'yyyy-MM-dd')) {
+    ft.currentStockLiters = dipLiters;
+    ft.lastDipCm = input.dipCm;
+    ft.lastDipMs = now;
+  }
+
+  persist();
+  notifyFuelStockUpdated();
+  return id;
+}
+
+export async function demoListFuelReceiptsForDay(
+  fuelTypeId: string,
+  pumpDayIso: string,
+): Promise<FuelReceipt[]> {
+  ensureLoaded();
+  return Object.entries(row.fuelReceipts)
+    .filter(([, r]) => r.fuelTypeId === fuelTypeId && r.pumpDayIso === pumpDayIso)
+    .map(([id, r]) => mapFuelReceipt(id, r));
+}
+
+export async function demoSetFuelReceiptLitersForDay(input: {
+  fuelTypeId: string;
+  pumpDayIso: string;
+  liters: number;
+  recordedBy?: string;
+  notes?: string;
+}): Promise<void> {
+  ensureLoaded();
+  const existingKey = Object.entries(row.fuelReceipts).find(
+    ([, r]) => r.fuelTypeId === input.fuelTypeId && r.pumpDayIso === input.pumpDayIso,
+  )?.[0];
+
+  if (input.liters <= 0) {
+    if (existingKey) {
+      delete row.fuelReceipts[existingKey];
+      persist();
+    }
+    return;
+  }
+
+  const id = existingKey ?? newId('rcpt');
+  row.fuelReceipts[id] = {
+    fuelTypeId: input.fuelTypeId,
+    pumpDayIso: input.pumpDayIso,
+    liters: input.liters,
+    recordedMs: Date.now(),
+    recordedBy: input.recordedBy ?? null,
+    notes: input.notes ?? null,
+  };
+  persist();
+}
+
+export async function demoRecordFuelReceipt(input: {
+  fuelTypeId: string;
+  pumpDayIso: string;
+  liters: number;
+  supplier?: string;
+  invoiceNo?: string;
+  recordedBy?: string;
+  notes?: string;
+}): Promise<string> {
+  ensureLoaded();
+  const id = newId('rcpt');
+  row.fuelReceipts[id] = {
+    fuelTypeId: input.fuelTypeId,
+    pumpDayIso: input.pumpDayIso,
+    liters: input.liters,
+    supplier: input.supplier ?? null,
+    invoiceNo: input.invoiceNo ?? null,
+    recordedMs: Date.now(),
+    recordedBy: input.recordedBy ?? null,
+    notes: input.notes ?? null,
+  };
+  persist();
+  return id;
 }
 
 export async function demoListNozzles(activeOnly = true): Promise<Nozzle[]> {
@@ -721,6 +1079,66 @@ export async function demoCreateReconciliationWithClose(input: {
   persist();
   return id;
 }
+export async function demoReplaceCreditSalesForShift(
+  shiftId: string,
+  lines: ReconciliationCreditLine[],
+): Promise<void> {
+  ensureLoaded();
+  for (const [id, s] of Object.entries(row.creditSales)) {
+    if (s.shiftId !== shiftId) continue;
+    const ref = s.reference ?? '';
+    if (!ref.startsWith('SHIFT_RECON:')) continue;
+    await bumpCustomerBalance(s.customerId, -s.amount);
+    delete row.creditSales[id];
+  }
+  persist();
+  if (lines.length > 0) {
+    await demoCreateCreditSalesForReconciliation('update', shiftId, lines);
+  }
+}
+
+export async function demoUpdatePendingReconciliation(
+  id: string,
+  input: {
+    shiftId: string;
+    totalSalesAmount: number;
+    paytmOnline: number;
+    iciciCard: number;
+    fleetCard: number;
+    creditAmount: number;
+    shortAmount: number;
+    cashAmount: number;
+    totalReceived: number;
+    difference: number;
+    creditLineItems: ReconciliationCreditLine[];
+  },
+): Promise<void> {
+  ensureLoaded();
+  const r = row.shiftReconciliations[id];
+  if (!r) {
+    throw new Error('Reconciliation not found.');
+  }
+  if (r.status !== 'pending') {
+    throw new Error('Only pending reconciliations can be edited.');
+  }
+  row.shiftReconciliations[id] = {
+    ...r,
+    totalSalesAmount: input.totalSalesAmount,
+    paytmOnline: input.paytmOnline,
+    iciciCard: input.iciciCard,
+    fleetCard: input.fleetCard,
+    creditAmount: input.creditAmount,
+    shortAmount: input.shortAmount,
+    cashAmount: input.cashAmount,
+    totalReceived: input.totalReceived,
+    difference: input.difference,
+    creditLineItems: input.creditLineItems,
+    updatedMs: Date.now(),
+  };
+  persist();
+  await demoReplaceCreditSalesForShift(input.shiftId, input.creditLineItems);
+}
+
 export async function demoSetReconciliationStatus(
   id: string,
   status: 'approved' | 'rejected',
@@ -1058,6 +1476,7 @@ export async function demoListReconciliationsInWindow(from: Date, to: Date): Pro
 export function demoResetStores(): void {
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TANK_STOCK_CLEAN_FLAG);
   }
   seed();
   persist();

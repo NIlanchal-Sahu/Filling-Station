@@ -10,4 +10,6 @@ export const COLLECTIONS = {
   creditSales: 'creditSales',
   creditPayments: 'creditPayments',
   ledgerEntries: 'ledgerEntries',
+  fuelTankDips: 'fuelTankDips',
+  fuelReceipts: 'fuelReceipts',
 } as const;
