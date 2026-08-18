@@ -46,6 +46,28 @@ Leave all `VITE_FIREBASE_*` lines empty for demo.
 
    Hosting expects `dist` from `npm run build`.
 
+### Deploy on Vercel
+
+This app is the **Vite** project at the **repository root**. Do not set the Vercel Root Directory to `frontend/` (that folder is a separate Next.js app).
+
+1. Import [NIlanchal-Sahu/Filling-Station](https://github.com/NIlanchal-Sahu/Filling-Station) in [Vercel](https://vercel.com/new).
+2. Leave **Root Directory** empty. Framework should be **Vite** (`vercel.json` sets this).
+3. Add environment variables (required at **build** time, not only runtime):
+
+   | Name | Notes |
+   |------|--------|
+   | `VITE_FIREBASE_API_KEY` | Firebase web app config |
+   | `VITE_FIREBASE_AUTH_DOMAIN` | Firebase web app config |
+   | `VITE_FIREBASE_PROJECT_ID` | Firebase web app config |
+   | `VITE_FIREBASE_STORAGE_BUCKET` | Firebase web app config |
+   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase web app config |
+   | `VITE_FIREBASE_APP_ID` | Firebase web app config |
+   | `VITE_LOCAL_DEMO` | Leave empty/`false` for production. Set `true` only for an offline demo (browser storage). |
+
+4. Deploy. After the first URL exists, add `your-project.vercel.app` (and any custom domain) to **Firebase Console → Authentication → Settings → Authorized domains**.
+
+`vercel.json` rewrites unknown paths to `index.html` so React Router deep links work.
+
 ### Bootstrap data (recommended)
 
 After Auth is enabled (**Email/Password**) and you have a **service account** JSON (Console ΓåÆ Project settings ΓåÆ Service accounts ΓåÆ Generate new private key):
