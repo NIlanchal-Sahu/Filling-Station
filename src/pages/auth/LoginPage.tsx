@@ -96,7 +96,7 @@ export function LoginPage() {
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
             {LOCAL_DEMO
-              ? 'Local demo — use manager@demo.local or operator@demo.local with any password. Data stays in this browser.'
+              ? 'Demo mode — use manager@demo.local or operator@demo.local with any password. Data stays in this browser.'
               : 'Sign in with your work credentials to manage shifts, credit, ledger, and reports.'}
           </Typography>
         </Stack>

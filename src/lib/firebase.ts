@@ -47,7 +47,7 @@ let db: Firestore | null = null;
 export function getFirebaseApp(): FirebaseApp {
   if (LOCAL_DEMO) {
     throw new Error(
-      'Firebase is disabled in local/offline demo mode. Add Firebase env vars and set VITE_LOCAL_DEMO= (empty/false) for a real project, or stay in demo with no Firebase keys while using `npm run dev`.',
+      'Firebase is disabled in demo mode. Add every VITE_FIREBASE_* env var and leave VITE_LOCAL_DEMO empty/false to use a real Firebase project.',
     );
   }
   if (!app) {

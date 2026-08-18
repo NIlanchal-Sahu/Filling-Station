@@ -14,7 +14,7 @@ Open the URL Vite prints (usually **http://localhost:5173/**).
 
 ### Local demo (no Firebase)
 
-If you have **no** `VITE_FIREBASE_*` variables set, **`npm run dev`** already runs in **local demo** mode: data is stored in this browser (`localStorage` / `sessionStorage`).
+If you have **no** `VITE_FIREBASE_*` variables set, the app already runs in **demo** mode: data is stored in this browser (`localStorage` / `sessionStorage`).
 
 Optional: copy `.env.example` to `.env` and set:
 
@@ -52,7 +52,10 @@ This app is the **Vite** project at the **repository root**. Do not set the Verc
 
 1. Import [NIlanchal-Sahu/Filling-Station](https://github.com/NIlanchal-Sahu/Filling-Station) in [Vercel](https://vercel.com/new).
 2. Leave **Root Directory** empty. Framework should be **Vite** (`vercel.json` sets this).
-3. Add environment variables (required at **build** time, not only runtime):
+3. Environment variables (Vite inlines them at **build** time):
+
+   - **Demo (no Firebase):** leave all `VITE_FIREBASE_*` keys unset (or empty). The live site signs in with `manager@demo.local` / `operator@demo.local` and stores data in the browser.
+   - **Real Firebase:** add every key below, then redeploy:
 
    | Name | Notes |
    |------|--------|
@@ -62,9 +65,9 @@ This app is the **Vite** project at the **repository root**. Do not set the Verc
    | `VITE_FIREBASE_STORAGE_BUCKET` | Firebase web app config |
    | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase web app config |
    | `VITE_FIREBASE_APP_ID` | Firebase web app config |
-   | `VITE_LOCAL_DEMO` | Leave empty/`false` for production. Set `true` only for an offline demo (browser storage). |
+   | `VITE_LOCAL_DEMO` | Leave empty/`false` when using Firebase. |
 
-4. Deploy. After the first URL exists, add `your-project.vercel.app` (and any custom domain) to **Firebase Console → Authentication → Settings → Authorized domains**.
+4. Deploy. For Firebase, after the first URL exists, add `your-project.vercel.app` (and any custom domain) to **Firebase Console → Authentication → Settings → Authorized domains**.
 
 `vercel.json` rewrites unknown paths to `index.html` so React Router deep links work.
 
