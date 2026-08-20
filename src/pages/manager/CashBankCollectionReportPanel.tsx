@@ -59,10 +59,10 @@ function buildDonutGradient(percents: Record<CollectionModeKey, number>): string
 
 const MODE_LABELS: Record<CollectionModeKey, string> = {
   cash: 'Cash',
-  upi: 'UPI',
-  card: 'Card',
-  credit: 'Credit',
-  fleet: 'Fleet',
+  upi: 'Phone Pe',
+  card: 'ICICI',
+  credit: 'Credit Sales',
+  fleet: 'Fleet Card',
 };
 
 function CollectionDonut(props: { summary: CashBankCollectionSummary }) {
@@ -147,14 +147,14 @@ export function CashBankCollectionReportPanel(props: {
         ['Collection efficiency %', summary!.collectionEfficiencyPercent],
         ['Cash amount', summary!.cash.amount],
         ['Cash transactions', summary!.cash.transactionCount],
-        ['UPI amount', summary!.upi.amount],
-        ['UPI transactions', summary!.upi.transactionCount],
-        ['Card amount', summary!.card.amount],
-        ['Card transactions', summary!.card.transactionCount],
+        ['Phone Pe amount', summary!.upi.amount],
+        ['Phone Pe transactions', summary!.upi.transactionCount],
+        ['ICICI amount', summary!.card.amount],
+        ['ICICI transactions', summary!.card.transactionCount],
         ['Credit amount', summary!.credit.amount],
         ['Credit transactions', summary!.credit.transactionCount],
-        ['Fleet amount', summary!.fleet.amount],
-        ['Fleet transactions', summary!.fleet.transactionCount],
+        ['Fleet Card amount', summary!.fleet.amount],
+        ['Fleet Card transactions', summary!.fleet.transactionCount],
       ],
     );
 
@@ -170,10 +170,10 @@ export function CashBankCollectionReportPanel(props: {
         'Pump day',
         'Date',
         'Cash',
-        'UPI',
-        'Card',
+        'Phone Pe',
+        'ICICI',
         'Credit',
-        'Fleet',
+        'Fleet Card',
         'Total collection',
         'Total sales',
         'Collection efficiency %',
@@ -202,10 +202,10 @@ export function CashBankCollectionReportPanel(props: {
         'Shift',
         'Operator',
         'Cash',
-        'UPI',
-        'Card',
+        'Phone Pe',
+        'ICICI',
         'Credit',
-        'Fleet',
+        'Fleet Card',
         'Total collection',
         'Total sales',
         'Recon status',
@@ -234,7 +234,7 @@ export function CashBankCollectionReportPanel(props: {
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 900, lineHeight: 1.7 }}>
         Collections from reconciled shifts grouped by pump business day ({fromIso}
-        {fromIso !== toIso ? ` – ${toIso}` : ''}). Total collection = Cash + UPI + Card + Fleet. Total sales =
+        {fromIso !== toIso ? ` – ${toIso}` : ''}). Total collection = Cash + Phone Pe + ICICI + Fleet Card. Total sales =
         Total collection + Credit sales.
       </Typography>
 
@@ -390,16 +390,16 @@ export function CashBankCollectionReportPanel(props: {
                     Cash
                   </TableCell>
                   <TableCell sx={headSx} align="right">
-                    UPI
+                    Phone Pe
                   </TableCell>
                   <TableCell sx={headSx} align="right">
-                    Card
+                    ICICI
                   </TableCell>
                   <TableCell sx={headSx} align="right">
                     Credit
                   </TableCell>
                   <TableCell sx={headSx} align="right">
-                    Fleet
+                    Fleet Card
                   </TableCell>
                   <TableCell sx={headSx} align="right">
                     Collected
@@ -493,16 +493,16 @@ export function CashBankCollectionReportPanel(props: {
                       Cash
                     </TableCell>
                     <TableCell sx={headSx} align="right">
-                      UPI
+                      Phone Pe
                     </TableCell>
                     <TableCell sx={headSx} align="right">
-                      Card
+                      ICICI
                     </TableCell>
                     <TableCell sx={headSx} align="right">
                       Credit
                     </TableCell>
                     <TableCell sx={headSx} align="right">
-                      Fleet
+                      Fleet Card
                     </TableCell>
                     <TableCell sx={headSx} align="right">
                       Collected

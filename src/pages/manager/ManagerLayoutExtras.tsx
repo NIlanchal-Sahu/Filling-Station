@@ -12,6 +12,7 @@ const links = [
   { to: '/manager/fuel', label: 'Fuel prices' },
   { to: '/manager/reports', label: 'Reports' },
   { to: '/manager/reconciliations', label: 'Reconciliations' },
+  { to: '/manager/lubricants', label: 'Lubricants' },
 ] as const;
 
 export function ManagerNav() {

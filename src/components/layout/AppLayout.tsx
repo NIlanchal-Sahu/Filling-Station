@@ -29,23 +29,15 @@ export function AppLayout({ showNav = true, children }: Props) {
               PumpStock
             </Typography>
             {profile && (
-              <>
-                <Typography variant="body2" sx={{ mr: 2, display: { xs: 'none', sm: 'block' } }}>
-                  {profile.name}
-                </Typography>
-                <Typography variant="caption" sx={{ mr: 2, textTransform: 'capitalize' }}>
-                  {profile.role}
-                </Typography>
-                <Button
-                  color="inherit"
-                  onClick={async () => {
-                    await signOut();
-                    navigate('/login', { replace: true });
-                  }}
-                >
-                  Logout
-                </Button>
-              </>
+              <Button
+                color="inherit"
+                onClick={async () => {
+                  await signOut();
+                  navigate('/login', { replace: true });
+                }}
+              >
+                Logout
+              </Button>
             )}
           </Toolbar>
         </AppBar>

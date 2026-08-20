@@ -327,6 +327,68 @@ export const SHIFT_LABELS = [
 
 export type ShiftLabel = (typeof SHIFT_LABELS)[number];
 
+// ─── Lubricants ──────────────────────────────────────────────────────────────
+
+export interface Lubricant {
+  id: string;
+  name: string;
+  brand: string;
+  grade: string;            // e.g. "20W-40", "15W-40"
+  unit: string;             // e.g. "litre", "quart", "kg"
+  sellingPrice: number;     // ₹ per unit
+  purchasePrice: number;    // ₹ per unit
+  currentStock: number;     // units in hand
+  minStockAlert: number;    // low-stock threshold
+  isActive: boolean;
+}
+
+/** Inward stock entry (purchase / receipt). */
+export interface LubricantStockEntry {
+  id: string;
+  lubricantId: string;
+  pumpDayIso: string;
+  quantity: number;
+  purchasePricePerUnit: number;
+  supplier?: string;
+  invoiceNo?: string;
+  notes?: string;
+  recordedBy?: string;
+  recordedAt: Timestamp;
+}
+
+/** A single retail sale of one or more units. */
+export interface LubricantSale {
+  id: string;
+  lubricantId: string;
+  pumpDayIso: string;
+  quantity: number;
+  sellingPricePerUnit: number;
+  totalAmount: number;
+  customerName?: string;
+  vehicleNumber?: string;
+  notes?: string;
+  recordedBy?: string;
+  recordedAt: Timestamp;
+}
+
+export const LUBRICANT_UNITS = ['litre', '500ml', 'quart', 'kg', 'can', 'bottle'] as const;
+export type LubricantUnit = (typeof LUBRICANT_UNITS)[number];
+
+export const LUBRICANT_GRADES = [
+  '20W-40', '20W-50', '15W-40', '10W-30', '10W-40', '5W-30', '5W-40', 'Other',
+] as const;
+
+export const LUBRICANT_UNIT_LABELS: Record<string, string> = {
+  litre: 'Litre',
+  '500ml': '500 ml',
+  quart: 'Quart',
+  kg: 'kg',
+  can: 'Can',
+  bottle: 'Bottle',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const LEDGER_CATEGORIES = {
   EXPENSE: ['EXPENSES', 'SALARY', 'MAINTENANCE', 'MISC', 'OTHER'] as const,
 } as const;

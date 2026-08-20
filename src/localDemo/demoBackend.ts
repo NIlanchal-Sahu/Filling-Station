@@ -160,6 +160,41 @@ type StoredLedger = {
   createdMs: number;
 };
 
+type StoredLubricant = {
+  name: string;
+  brand: string;
+  grade: string;
+  unit: string;
+  sellingPrice: number;
+  purchasePrice: number;
+  currentStock: number;
+  minStockAlert: number;
+  isActive: boolean;
+};
+type StoredLubricantStockEntry = {
+  lubricantId: string;
+  pumpDayIso: string;
+  quantity: number;
+  purchasePricePerUnit: number;
+  supplier?: string | null;
+  invoiceNo?: string | null;
+  notes?: string | null;
+  recordedBy?: string | null;
+  recordedMs: number;
+};
+type StoredLubricantSale = {
+  lubricantId: string;
+  pumpDayIso: string;
+  quantity: number;
+  sellingPricePerUnit: number;
+  totalAmount: number;
+  customerName?: string | null;
+  vehicleNumber?: string | null;
+  notes?: string | null;
+  recordedBy?: string | null;
+  recordedMs: number;
+};
+
 type Rows = {
   users: Record<string, StoredUser>;
   fuelTypes: Record<string, StoredFuelType>;
@@ -173,6 +208,9 @@ type Rows = {
   creditSales: Record<string, StoredCreditSale>;
   creditPayments: Record<string, StoredCreditPayment>;
   ledgerEntries: Record<string, StoredLedger>;
+  lubricants: Record<string, StoredLubricant>;
+  lubricantStockEntries: Record<string, StoredLubricantStockEntry>;
+  lubricantSales: Record<string, StoredLubricantSale>;
 };
 
 let row: Rows = emptyRows();
@@ -191,6 +229,9 @@ function emptyRows(): Rows {
     creditSales: {},
     creditPayments: {},
     ledgerEntries: {},
+    lubricants: {},
+    lubricantStockEntries: {},
+    lubricantSales: {},
   };
 }
 
@@ -218,6 +259,9 @@ function ensureLoaded(): void {
       row = { ...emptyRows(), ...(parsed as Partial<Rows>) };
       if (!row.fuelTankDips) row.fuelTankDips = {};
       if (!row.fuelReceipts) row.fuelReceipts = {};
+      if (!row.lubricants) row.lubricants = {};
+      if (!row.lubricantStockEntries) row.lubricantStockEntries = {};
+      if (!row.lubricantSales) row.lubricantSales = {};
       ensureTankDefaults();
     } else {
       seed();
@@ -349,6 +393,16 @@ function seed(): void {
     isActive: true,
     currentBalance: 0,
   };
+
+  // Seed lubricants
+  const lubDefs: Array<StoredLubricant & { id: string }> = [
+    { id: 'lub-1', name: 'Engine Oil 20W-40', brand: 'Castrol', grade: '20W-40', unit: 'litre', sellingPrice: 450, purchasePrice: 380, currentStock: 24, minStockAlert: 5, isActive: true },
+    { id: 'lub-2', name: 'Engine Oil 15W-40', brand: 'HP Lubricants', grade: '15W-40', unit: 'litre', sellingPrice: 420, purchasePrice: 355, currentStock: 12, minStockAlert: 4, isActive: true },
+    { id: 'lub-3', name: 'Gear Oil', brand: 'Servo', grade: '20W-50', unit: 'litre', sellingPrice: 380, purchasePrice: 310, currentStock: 8, minStockAlert: 3, isActive: true },
+  ];
+  for (const { id, ...rest } of lubDefs) {
+    row.lubricants[id] = rest;
+  }
 }
 
 ensureLoaded();
@@ -1471,6 +1525,161 @@ export async function demoListReconciliationsInWindow(from: Date, to: Date): Pro
   return Object.entries(row.shiftReconciliations)
     .filter(([, r]) => r.createdMs >= a && r.createdMs <= b)
     .map(([id, r]) => mapRecon(id, r));
+}
+
+// ── lubricants ──────────────────────────────────────────────────────────────
+
+function mapLubricant(id: string, s: StoredLubricant): import('@/types/entities').Lubricant {
+  return {
+    id,
+    name: s.name,
+    brand: s.brand,
+    grade: s.grade,
+    unit: s.unit,
+    sellingPrice: s.sellingPrice,
+    purchasePrice: s.purchasePrice,
+    currentStock: s.currentStock,
+    minStockAlert: s.minStockAlert,
+    isActive: s.isActive,
+  };
+}
+
+function mapLubricantStockEntry(
+  id: string,
+  s: StoredLubricantStockEntry,
+): import('@/types/entities').LubricantStockEntry {
+  return {
+    id,
+    lubricantId: s.lubricantId,
+    pumpDayIso: s.pumpDayIso,
+    quantity: s.quantity,
+    purchasePricePerUnit: s.purchasePricePerUnit,
+    supplier: s.supplier ?? undefined,
+    invoiceNo: s.invoiceNo ?? undefined,
+    notes: s.notes ?? undefined,
+    recordedBy: s.recordedBy ?? undefined,
+    recordedAt: Timestamp.fromMillis(s.recordedMs),
+  };
+}
+
+function mapLubricantSale(
+  id: string,
+  s: StoredLubricantSale,
+): import('@/types/entities').LubricantSale {
+  return {
+    id,
+    lubricantId: s.lubricantId,
+    pumpDayIso: s.pumpDayIso,
+    quantity: s.quantity,
+    sellingPricePerUnit: s.sellingPricePerUnit,
+    totalAmount: s.totalAmount,
+    customerName: s.customerName ?? undefined,
+    vehicleNumber: s.vehicleNumber ?? undefined,
+    notes: s.notes ?? undefined,
+    recordedBy: s.recordedBy ?? undefined,
+    recordedAt: Timestamp.fromMillis(s.recordedMs),
+  };
+}
+
+export async function demoListLubricants(activeOnly = true): Promise<import('@/types/entities').Lubricant[]> {
+  ensureLoaded();
+  return Object.entries(row.lubricants)
+    .filter(([, l]) => !activeOnly || l.isActive)
+    .map(([id, l]) => mapLubricant(id, l))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function demoGetLubricant(id: string): Promise<import('@/types/entities').Lubricant | null> {
+  ensureLoaded();
+  const s = row.lubricants[id];
+  return s ? mapLubricant(id, s) : null;
+}
+
+export async function demoCreateLubricant(
+  input: Omit<import('@/types/entities').Lubricant, 'id' | 'currentStock'>,
+): Promise<string> {
+  ensureLoaded();
+  const id = newId('lub');
+  row.lubricants[id] = { ...input, currentStock: 0 };
+  persist();
+  return id;
+}
+
+export async function demoUpdateLubricant(
+  id: string,
+  patch: Partial<Omit<import('@/types/entities').Lubricant, 'id'>>,
+): Promise<void> {
+  ensureLoaded();
+  if (row.lubricants[id]) {
+    row.lubricants[id] = { ...row.lubricants[id], ...patch };
+    persist();
+  }
+}
+
+export async function demoAddLubricantStock(input: {
+  lubricantId: string;
+  pumpDayIso: string;
+  quantity: number;
+  purchasePricePerUnit: number;
+  supplier?: string;
+  invoiceNo?: string;
+  notes?: string;
+  recordedBy?: string;
+}): Promise<string> {
+  ensureLoaded();
+  const id = newId('lse');
+  row.lubricantStockEntries[id] = { ...input, recordedMs: Date.now() };
+  if (row.lubricants[input.lubricantId]) {
+    row.lubricants[input.lubricantId].currentStock += input.quantity;
+  }
+  persist();
+  return id;
+}
+
+export async function demoListLubricantStock(
+  lubricantId?: string,
+): Promise<import('@/types/entities').LubricantStockEntry[]> {
+  ensureLoaded();
+  let entries = Object.entries(row.lubricantStockEntries).map(([id, s]) =>
+    mapLubricantStockEntry(id, s),
+  );
+  if (lubricantId) entries = entries.filter((e) => e.lubricantId === lubricantId);
+  return entries.sort((a, b) => b.recordedAt.toMillis() - a.recordedAt.toMillis());
+}
+
+export async function demoAddLubricantSale(input: {
+  lubricantId: string;
+  pumpDayIso: string;
+  quantity: number;
+  sellingPricePerUnit: number;
+  customerName?: string;
+  vehicleNumber?: string;
+  notes?: string;
+  recordedBy?: string;
+}): Promise<string> {
+  ensureLoaded();
+  const id = newId('lsal');
+  const totalAmount = Math.round(input.quantity * input.sellingPricePerUnit * 100) / 100;
+  row.lubricantSales[id] = { ...input, totalAmount, recordedMs: Date.now() };
+  if (row.lubricants[input.lubricantId]) {
+    row.lubricants[input.lubricantId].currentStock = Math.max(
+      0,
+      row.lubricants[input.lubricantId].currentStock - input.quantity,
+    );
+  }
+  persist();
+  return id;
+}
+
+export async function demoListLubricantSales(
+  fromIso?: string,
+  toIso?: string,
+): Promise<import('@/types/entities').LubricantSale[]> {
+  ensureLoaded();
+  let sales = Object.entries(row.lubricantSales).map(([id, s]) => mapLubricantSale(id, s));
+  if (fromIso) sales = sales.filter((s) => s.pumpDayIso >= fromIso);
+  if (toIso) sales = sales.filter((s) => s.pumpDayIso <= toIso);
+  return sales.sort((a, b) => b.recordedAt.toMillis() - a.recordedAt.toMillis());
 }
 
 export function demoResetStores(): void {

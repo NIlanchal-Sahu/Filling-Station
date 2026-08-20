@@ -55,53 +55,127 @@ function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-const MODE_LINKS: Record<CollectionModeKey, string> = {
-  cash: '/manager/daily-sheet',
-  upi: '/manager/reconciliations',
-  card: '/manager/reconciliations',
-  credit: '/manager/credit',
-  fleet: '/manager/reconciliations',
-};
+const CREDIT_LINK = '/manager/credit';
+
+const KPI_ORDER: CollectionModeKey[] = ['credit', 'cash', 'upi', 'card', 'fleet'];
 
 const MODE_META: Record<
   CollectionModeKey,
-  { title: string; subtitle: string; icon: React.ReactNode; accent: string }
+  { title: string; shortLabel: string; subtitle: string; icon: React.ReactNode; accent: string }
 > = {
+  credit: {
+    title: 'Credit Sales',
+    shortLabel: 'Credit',
+    subtitle: 'Total credit amount · tap to open',
+    icon: <AccountBalanceWalletOutlinedIcon />,
+    accent: COLLECTION_MODE_COLORS.credit,
+  },
   cash: {
     title: 'Cash Collection',
+    shortLabel: 'Cash',
     subtitle: 'Total cash received',
     icon: <PaymentsOutlinedIcon />,
     accent: COLLECTION_MODE_COLORS.cash,
   },
   upi: {
-    title: 'UPI Collection',
-    subtitle: 'Total UPI received',
+    title: 'Phone Pe',
+    shortLabel: 'Phone Pe',
+    subtitle: 'Total Phone Pe / UPI received',
     icon: <QrCode2OutlinedIcon />,
     accent: COLLECTION_MODE_COLORS.upi,
   },
   card: {
-    title: 'Card Collection',
-    subtitle: 'Total card payments',
+    title: 'ICICI',
+    shortLabel: 'ICICI',
+    subtitle: 'Total ICICI card payments',
     icon: <CreditCardOutlinedIcon />,
     accent: COLLECTION_MODE_COLORS.card,
   },
-  credit: {
-    title: 'Credit Sales',
-    subtitle: 'Total credit amount',
-    icon: <AccountBalanceWalletOutlinedIcon />,
-    accent: COLLECTION_MODE_COLORS.credit,
-  },
   fleet: {
-    title: 'Fleet / Loyalty',
+    title: 'Fleet Card',
+    shortLabel: 'Fleet Card',
     subtitle: 'Total fleet card collection',
     icon: <DirectionsCarFilledOutlinedIcon />,
     accent: COLLECTION_MODE_COLORS.fleet,
   },
 };
 
-function CollectionModeCard(props: { mode: CollectionModeKey; bucket: PaymentBucket; loading?: boolean }) {
-  const { mode, bucket, loading } = props;
+function CollectionModeCard(props: {
+  mode: CollectionModeKey;
+  bucket: PaymentBucket;
+  loading?: boolean;
+  gridSx?: object;
+}) {
+  const { mode, bucket, loading, gridSx } = props;
   const meta = MODE_META[mode];
+  const isCredit = mode === 'credit';
+
+  const body = (
+    <>
+      <Box sx={{ height: isCredit ? 6 : 3, bgcolor: meta.accent }} />
+      <CardContent
+        sx={{
+          pt: isCredit ? 2.5 : 2,
+          pb: isCredit ? 2.5 : 2,
+          px: isCredit ? 2.75 : 2.25,
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              variant={isCredit ? 'h6' : 'overline'}
+              sx={{
+                fontWeight: 800,
+                letterSpacing: isCredit ? '-0.02em' : '0.06em',
+                color: isCredit ? meta.accent : 'text.secondary',
+                lineHeight: 1.2,
+                textTransform: isCredit ? 'none' : 'uppercase',
+              }}
+            >
+              {meta.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              {meta.subtitle}
+            </Typography>
+          </Box>
+          <Box
+            sx={{
+              flexShrink: 0,
+              p: isCredit ? 1.5 : 1,
+              borderRadius: 2,
+              bgcolor: (t) => alpha(meta.accent, t.palette.mode === 'dark' ? 0.28 : 0.14),
+              color: meta.accent,
+              display: 'flex',
+            }}
+          >
+            {meta.icon}
+          </Box>
+        </Stack>
+        {loading ? (
+          <CircularProgress size={24} sx={{ mt: 2 }} />
+        ) : (
+          <Box sx={{ mt: 'auto', pt: isCredit ? 2.5 : 1.5 }}>
+            <Typography
+              sx={{
+                fontWeight: 800,
+                fontVariantNumeric: 'tabular-nums',
+                fontSize: isCredit ? { xs: '1.85rem', sm: '2.15rem' } : { xs: '1.2rem', sm: '1.45rem' },
+                lineHeight: 1.15,
+              }}
+            >
+              {fmtRs(bucket.amount)}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+              {bucket.transactionCount} transaction{bucket.transactionCount === 1 ? '' : 's'}
+            </Typography>
+          </Box>
+        )}
+      </CardContent>
+    </>
+  );
 
   return (
     <Card
@@ -109,52 +183,23 @@ function CollectionModeCard(props: { mode: CollectionModeKey; bucket: PaymentBuc
       sx={{
         height: '100%',
         borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider',
+        border: isCredit ? '2px solid' : '1px solid',
+        borderColor: isCredit ? meta.accent : 'divider',
+        bgcolor: (t) => (isCredit ? alpha(meta.accent, t.palette.mode === 'dark' ? 0.16 : 0.06) : 'background.paper'),
         overflow: 'hidden',
+        boxShadow: isCredit ? `0 6px 18px ${alpha(meta.accent, 0.22)}` : undefined,
         transition: 'box-shadow 0.2s ease',
-        '&:hover': { boxShadow: (t) => `0 8px 24px ${alpha(t.palette.common.black, 0.08)}` },
+        '&:hover': isCredit ? { boxShadow: `0 10px 24px ${alpha(meta.accent, 0.32)}` } : undefined,
+        ...gridSx,
       }}
     >
-      <CardActionArea component={RouterLink} to={MODE_LINKS[mode]} sx={{ height: '100%', alignItems: 'stretch' }}>
-        <Box sx={{ height: 3, bgcolor: meta.accent }} />
-        <CardContent sx={{ pt: 2, pb: 2, px: 2.25 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em' }}>
-                {meta.title}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                {meta.subtitle}
-              </Typography>
-            </Box>
-            <Box
-              sx={{
-                flexShrink: 0,
-                p: 1,
-                borderRadius: 2,
-                bgcolor: (t) => alpha(meta.accent, t.palette.mode === 'dark' ? 0.2 : 0.12),
-                color: meta.accent,
-                display: 'flex',
-              }}
-            >
-              {meta.icon}
-            </Box>
-          </Stack>
-          {loading ? (
-            <CircularProgress size={24} sx={{ mt: 2 }} />
-          ) : (
-            <>
-              <Typography variant="h5" sx={{ fontWeight: 800, mt: 1.5, fontVariantNumeric: 'tabular-nums' }}>
-                {fmtRs(bucket.amount)}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                {bucket.transactionCount} transaction{bucket.transactionCount === 1 ? '' : 's'}
-              </Typography>
-            </>
-          )}
-        </CardContent>
-      </CardActionArea>
+      {isCredit && !loading ? (
+        <CardActionArea component={RouterLink} to={CREDIT_LINK} sx={{ height: '100%', alignItems: 'stretch', display: 'flex', flexDirection: 'column' }}>
+          {body}
+        </CardActionArea>
+      ) : (
+        body
+      )}
     </Card>
   );
 }
@@ -187,7 +232,7 @@ function CollectionDonut(props: { data: CashBankCollectionSummary }) {
     ['cash', 'upi', 'card', 'credit', 'fleet'] as CollectionModeKey[]
   ).map((key) => ({
     key,
-    label: MODE_META[key].title.replace(' Collection', '').replace(' Sales', ''),
+    label: MODE_META[key].shortLabel,
     pct: data.donutPercents[key],
     color: COLLECTION_MODE_COLORS[key],
   }));
@@ -338,20 +383,25 @@ export function CashBankCollectionSummary(props: { pumpDayIso: string }) {
         sx={{
           display: 'grid',
           gap: 2,
-          gridTemplateColumns: {
-            xs: '1fr',
-            sm: 'repeat(2, 1fr)',
-            lg: 'repeat(3, 1fr)',
-            xl: 'repeat(5, 1fr)',
-          },
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: '1.4fr 1fr 1fr' },
+          alignItems: 'stretch',
         }}
       >
-        {(['cash', 'upi', 'card', 'credit', 'fleet'] as CollectionModeKey[]).map((mode) => (
+        {KPI_ORDER.map((mode) => (
           <CollectionModeCard
             key={mode}
             mode={mode}
             bucket={data?.[mode] ?? { amount: 0, transactionCount: 0 }}
             loading={loading}
+            gridSx={
+              mode === 'credit'
+                ? {
+                    gridColumn: { xs: '1', sm: '1 / -1', md: '1' },
+                    gridRow: { md: '1 / span 2' },
+                    minHeight: { xs: 168, md: '100%' },
+                  }
+                : undefined
+            }
           />
         ))}
       </Box>
@@ -444,11 +494,11 @@ export function CashBankCollectionSummary(props: { pumpDayIso: string }) {
                 {data.shiftRows.map((row) => (
                   <TableRow
                     key={row.key}
-                    hover
-                    sx={{ cursor: 'pointer' }}
-                    onClick={() => navigate(MODE_LINKS[row.key])}
+                    hover={row.key === 'credit'}
+                    sx={{ cursor: row.key === 'credit' ? 'pointer' : 'default' }}
+                    onClick={row.key === 'credit' ? () => navigate(CREDIT_LINK) : undefined}
                   >
-                    <TableCell sx={{ fontWeight: 600 }}>{row.mode}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{MODE_META[row.key].shortLabel}</TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {fmtRs(row.shift1)}
                     </TableCell>
