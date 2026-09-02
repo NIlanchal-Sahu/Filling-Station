@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { homePathForRole } from '@/utils/roles';
 import { Box, CircularProgress, Typography } from '@mui/material';
 
 export function HomeRedirectPage() {
@@ -18,7 +19,7 @@ export function HomeRedirectPage() {
     if (!profile) {
       return;
     }
-    nav(profile.role === 'manager' ? '/manager' : '/operator', { replace: true });
+    nav(homePathForRole(profile.role), { replace: true });
   }, [profile, loading, firebaseUser, nav]);
 
   return (

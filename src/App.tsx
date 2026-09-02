@@ -74,7 +74,7 @@ export default function App() {
           <Route element={<ProtectedRoute requireRole="operator" />}>
             <Route path="operator" element={<OperatorDashboardPage />} />
           </Route>
-          <Route element={<ProtectedRoute requireRole="manager" />}>
+          <Route element={<ProtectedRoute requireRole={['manager', 'admin']} />}>
             <Route path="manager" element={<ManagerLayoutWithNav />}>
               <Route index element={<ManagerDashboardPage />} />
               <Route path="team" element={<TeamPage />} />

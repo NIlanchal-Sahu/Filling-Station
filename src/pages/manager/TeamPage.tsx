@@ -25,15 +25,19 @@ import {
 import PeopleOutlineIcon from '@mui/icons-material/PeopleOutline';
 
 import { LOCAL_DEMO } from '@/config/appMode';
+import { useAuth } from '@/context/AuthContext';
 import { listUsersForManager, upsertUser } from '@/services/usersService';
 import type { User, UserRole } from '@/types/entities';
 import { requireNonEmpty } from '@/utils/validation';
+import { roleLabel } from '@/utils/roles';
 
 function emptyForm(): { uid: string; name: string; role: UserRole; phone: string; isActive: boolean } {
   return { uid: '', name: '', role: 'operator', phone: '', isActive: true };
 }
 
 export function TeamPage() {
+  const { profile } = useAuth();
+  const canAssignAdmin = profile?.role === 'admin';
   const [rows, setRows] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +105,11 @@ export function TeamPage() {
       }
     }
 
+    if (form.role === 'admin' && !canAssignAdmin) {
+      setFormError('Only an owner (admin) can assign the Admin role.');
+      return;
+    }
+
     setSaving(true);
     try {
       await upsertUser(uid, {
@@ -163,7 +172,7 @@ export function TeamPage() {
             {rows.map((u) => (
               <TableRow key={u.id} hover>
                 <TableCell>{u.name}</TableCell>
-                <TableCell sx={{ textTransform: 'capitalize' }}>{u.role}</TableCell>
+                <TableCell>{roleLabel(u.role)}</TableCell>
                 <TableCell>{u.phone ?? '—'}</TableCell>
                 <TableCell>{u.isActive ? 'Yes' : 'No'}</TableCell>
                 <TableCell sx={{ fontFamily: 'monospace', fontSize: 12, maxWidth: 200 }} title={u.id}>
@@ -213,9 +222,13 @@ export function TeamPage() {
                 label="Role"
                 value={form.role}
                 onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as UserRole }))}
+                disabled={form.role === 'admin' && !canAssignAdmin}
               >
                 <MenuItem value="operator">Operator</MenuItem>
                 <MenuItem value="manager">Manager</MenuItem>
+                {(canAssignAdmin || form.role === 'admin') ? (
+                  <MenuItem value="admin">Admin (owner)</MenuItem>
+                ) : null}
               </Select>
             </FormControl>
             <TextField

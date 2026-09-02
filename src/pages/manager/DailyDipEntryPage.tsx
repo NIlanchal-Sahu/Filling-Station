@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { format } from 'date-fns';
 
 import {
   Alert,
@@ -32,6 +31,13 @@ import {
 import { listFuelTypes } from '@/services/fuelTypesService';
 import type { DailyFuelStockRow, FuelType } from '@/types/entities';
 import { fuelStockDisplayMeta, FUEL_STOCK_UPDATED_EVENT } from '@/utils/fuelStockDisplay';
+import {
+  assertEntryDateAllowed,
+  canBackdateEntries,
+  clampEntryDateForRole,
+  dateInputBoundsForRole,
+  todayIso,
+} from '@/utils/dateEntryPolicy';
 
 type FuelFormRow = {
   fuelTypeId: string;
@@ -67,7 +73,8 @@ function rowsToForm(fuels: FuelType[], stockRows: DailyFuelStockRow[]): FuelForm
 
 export function DailyDipEntryPage() {
   const { profile } = useAuth();
-  const [pumpDayIso, setPumpDayIso] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const dateBounds = dateInputBoundsForRole(profile?.role);
+  const [pumpDayIso, setPumpDayIso] = useState(() => todayIso());
   const [formRows, setFormRows] = useState<FuelFormRow[]>([]);
   const [stockRows, setStockRows] = useState<DailyFuelStockRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +124,11 @@ export function DailyDipEntryPage() {
     setErr(null);
     setOk(null);
     try {
+      const day = clampEntryDateForRole(profile?.role, pumpDayIso);
+      assertEntryDateAllowed(profile?.role, day);
+      if (day !== pumpDayIso) {
+        setPumpDayIso(day);
+      }
       for (const row of formRows) {
         const opening = row.openingDipCm.trim();
         if (opening !== '') {
@@ -124,7 +136,7 @@ export function DailyDipEntryPage() {
           if (!Number.isFinite(cm) || cm <= 0) throw new Error(`Invalid opening dip for ${row.fuelName}`);
           await upsertFuelTankDipForDay({
             fuelTypeId: row.fuelTypeId,
-            pumpDayIso,
+            pumpDayIso: day,
             dipKind: 'opening',
             dipCm: cm,
             recordedBy: profile?.name,
@@ -137,7 +149,7 @@ export function DailyDipEntryPage() {
           if (!Number.isFinite(cm) || cm <= 0) throw new Error(`Invalid closing dip for ${row.fuelName}`);
           await upsertFuelTankDipForDay({
             fuelTypeId: row.fuelTypeId,
-            pumpDayIso,
+            pumpDayIso: day,
             dipKind: 'closing',
             dipCm: cm,
             recordedBy: profile?.name,
@@ -151,7 +163,7 @@ export function DailyDipEntryPage() {
         }
         await setFuelReceiptLitersForDay({
           fuelTypeId: row.fuelTypeId,
-          pumpDayIso,
+          pumpDayIso: day,
           liters,
           recordedBy: profile?.name,
         });
@@ -202,9 +214,17 @@ export function DailyDipEntryPage() {
             type="date"
             label="Pump day"
             value={pumpDayIso}
-            onChange={(e) => setPumpDayIso(e.target.value)}
+            onChange={(e) => setPumpDayIso(clampEntryDateForRole(profile?.role, e.target.value))}
             size="small"
-            slotProps={{ inputLabel: { shrink: true } }}
+            slotProps={{
+              inputLabel: { shrink: true },
+              htmlInput: { min: dateBounds.min, max: dateBounds.max },
+            }}
+            helperText={
+              canBackdateEntries(profile?.role)
+                ? 'Owner can enter or correct past pump days.'
+                : 'Managers can enter today only.'
+            }
           />
           <Button variant="contained" startIcon={<SaveOutlinedIcon />} disabled={saving || loading} onClick={() => void handleSave()}>
             {saving ? 'Saving…' : 'Save all fuels'}

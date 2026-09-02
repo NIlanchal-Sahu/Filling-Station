@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { requireEmail, requireNonEmpty } from '@/utils/validation';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { homePathForRole } from '@/utils/roles';
 
 export function LoginPage() {
   const theme = useTheme();
@@ -20,9 +21,7 @@ export function LoginPage() {
     const target =
       from && from !== '/login'
         ? from
-        : profile.role === 'manager'
-          ? '/manager'
-          : '/operator';
+        : homePathForRole(profile.role);
     nav(target, { replace: true });
   }, [profile, from, nav]);
   const [email, setEmail] = useState('');
@@ -96,7 +95,7 @@ export function LoginPage() {
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
             {LOCAL_DEMO
-              ? 'Local demo — use manager@demo.local or operator@demo.local with any password. Data stays in this browser.'
+              ? 'Local demo — use admin@demo.local, manager@demo.local, or operator@demo.local with any password. Only admin can enter past-dated data. Data stays in this browser.'
               : 'Sign in with your work credentials to manage shifts, credit, ledger, and reports.'}
           </Typography>
         </Stack>

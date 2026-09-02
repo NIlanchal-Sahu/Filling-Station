@@ -44,8 +44,13 @@ import {
   addLubricantStock,
   listLubricantStockEntries,
 } from '@/services/lubricantService';
-
-const todayIso = () => format(new Date(), 'yyyy-MM-dd');
+import { useAuth } from '@/context/AuthContext';
+import {
+  assertEntryDateAllowed,
+  clampEntryDateForRole,
+  dateInputBoundsForRole,
+  todayIso,
+} from '@/utils/dateEntryPolicy';
 
 function fmtRs(v: number) {
   return '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -193,6 +198,8 @@ function SaleDialog(props: {
   onSaved: () => void;
 }) {
   const { open, lubricants, defaultLubricantId, onClose, onSaved } = props;
+  const { profile } = useAuth();
+  const dateBounds = dateInputBoundsForRole(profile?.role);
   const [lubId, setLubId] = useState(defaultLubricantId ?? '');
   const [qty, setQty] = useState('1');
   const [price, setPrice] = useState('');
@@ -224,9 +231,11 @@ function SaleDialog(props: {
     setSaving(true);
     setErr('');
     try {
+      const day = clampEntryDateForRole(profile?.role, date);
+      assertEntryDateAllowed(profile?.role, day);
       await addLubricantSale({
         lubricantId: lubId,
-        pumpDayIso: date,
+        pumpDayIso: day,
         quantity: q,
         sellingPricePerUnit: parseFloat(price) || 0,
         customerName: customer || undefined,
@@ -250,7 +259,15 @@ function SaleDialog(props: {
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           {err && <Alert severity="error">{err}</Alert>}
-          <TextField label="Date" value={date} onChange={(e) => setDate(e.target.value)} size="small" type="date" fullWidth />
+          <TextField
+            label="Date"
+            value={date}
+            onChange={(e) => setDate(clampEntryDateForRole(profile?.role, e.target.value))}
+            size="small"
+            type="date"
+            fullWidth
+            slotProps={{ htmlInput: { min: dateBounds.min, max: dateBounds.max } }}
+          />
           <TextField label="Product" value={lubId} onChange={(e) => setLubId(e.target.value)} size="small" select fullWidth>
             {lubricants.map((l) => (
               <MenuItem key={l.id} value={l.id}>
@@ -300,6 +317,8 @@ function StockInDialog(props: {
   onSaved: () => void;
 }) {
   const { open, lubricants, defaultLubricantId, onClose, onSaved } = props;
+  const { profile } = useAuth();
+  const dateBounds = dateInputBoundsForRole(profile?.role);
   const [lubId, setLubId] = useState(defaultLubricantId ?? '');
   const [qty, setQty] = useState('');
   const [price, setPrice] = useState('');
@@ -331,9 +350,11 @@ function StockInDialog(props: {
     setSaving(true);
     setErr('');
     try {
+      const day = clampEntryDateForRole(profile?.role, date);
+      assertEntryDateAllowed(profile?.role, day);
       await addLubricantStock({
         lubricantId: lubId,
-        pumpDayIso: date,
+        pumpDayIso: day,
         quantity: q,
         purchasePricePerUnit: parseFloat(price) || 0,
         supplier: supplier || undefined,
@@ -354,7 +375,15 @@ function StockInDialog(props: {
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           {err && <Alert severity="error">{err}</Alert>}
-          <TextField label="Date" value={date} onChange={(e) => setDate(e.target.value)} size="small" type="date" fullWidth />
+          <TextField
+            label="Date"
+            value={date}
+            onChange={(e) => setDate(clampEntryDateForRole(profile?.role, e.target.value))}
+            size="small"
+            type="date"
+            fullWidth
+            slotProps={{ htmlInput: { min: dateBounds.min, max: dateBounds.max } }}
+          />
           <TextField label="Product" value={lubId} onChange={(e) => setLubId(e.target.value)} size="small" select fullWidth>
             {lubricants.map((l) => (
               <MenuItem key={l.id} value={l.id}>

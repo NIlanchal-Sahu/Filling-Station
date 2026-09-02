@@ -33,6 +33,7 @@ import {
   creditPaymentModeLedgerChannel,
   normalizeCreditPaymentMode,
 } from '@/types/entities';
+import { parseUserRole } from '@/utils/roles';
 
 const STORAGE_KEY = 'pumpstock-local-demo-v11';
 const TANK_STOCK_CLEAN_FLAG = 'pumpstock-tank-stock-cleared-v11';
@@ -262,6 +263,10 @@ function ensureLoaded(): void {
       if (!row.lubricants) row.lubricants = {};
       if (!row.lubricantStockEntries) row.lubricantStockEntries = {};
       if (!row.lubricantSales) row.lubricantSales = {};
+      if (!row.users['demo-admin']) {
+        row.users['demo-admin'] = { name: 'Demo Admin', role: 'admin', isActive: true };
+        persist();
+      }
       ensureTankDefaults();
     } else {
       seed();
@@ -367,6 +372,7 @@ function ensureTankDefaults(): void {
 
 function seed(): void {
   row = emptyRows();
+  row.users['demo-admin'] = { name: 'Demo Admin', role: 'admin', isActive: true };
   row.users['demo-manager'] = { name: 'Demo Manager', role: 'manager', isActive: true };
   row.users['demo-operator'] = { name: 'Demo Operator', role: 'operator', isActive: true };
   const now = Date.now();
@@ -413,7 +419,7 @@ function mapUser(id: string, u: StoredUser): User {
   return {
     id,
     name: u.name,
-    role: u.role === 'manager' ? 'manager' : 'operator',
+    role: parseUserRole(u.role),
     phone: u.phone ?? undefined,
     isActive: u.isActive !== false,
   };

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getShift } from '@/services/shiftsService';
 import type { Shift } from '@/types/entities';
+import { isManagerLike } from '@/utils/roles';
 
 export function useShiftAccess(shiftId: string | undefined) {
   const { profile } = useAuth();
@@ -27,7 +28,7 @@ export function useShiftAccess(shiftId: string | undefined) {
           return;
         }
         setShift(s);
-        const a = profile.role === 'manager' || s.operatorId === profile.id;
+        const a = isManagerLike(profile.role) || s.operatorId === profile.id;
         setAllowed(a);
         if (!a) {
           setError('You do not have access to this shift.');

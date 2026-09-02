@@ -22,6 +22,9 @@ const DEMO_SESSION_KEY = 'pumpstock-demo-session-uid';
 
 function emailToDemoUid(email: string): string | null {
   const e = email.trim().toLowerCase();
+  if (e === 'admin@demo.local') {
+    return 'demo-admin';
+  }
   if (e === 'manager@demo.local') {
     return 'demo-manager';
   }

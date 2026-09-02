@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { AppBar, Box, Button, Container, Toolbar, Typography } from '@mui/material';
 import { useNavigate, Outlet, Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { homePathForRole } from '@/utils/roles';
 
 type Props = {
   showNav?: boolean;
@@ -12,8 +13,7 @@ export function AppLayout({ showNav = true, children }: Props) {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
 
-  const home =
-    profile?.role === 'manager' ? '/manager' : profile?.role === 'operator' ? '/operator' : '/';
+  const home = homePathForRole(profile?.role);
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'grey.100' }}>

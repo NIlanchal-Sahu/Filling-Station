@@ -28,17 +28,24 @@ import { SHIFT_LABELS, type Nozzle, type User } from '@/types/entities';
 import { compareNozzleOrder } from '@/utils/nozzleSort';
 import { formatMachineLabelFromNozzleSelection } from '@/utils/machineDisplay';
 import { requireNonEmpty } from '@/utils/validation';
-import { format } from 'date-fns';
+import { isManagerLike, homePathForRole } from '@/utils/roles';
+import {
+  assertEntryDateAllowed,
+  clampEntryDateForRole,
+  dateInputBoundsForRole,
+  todayIso,
+} from '@/utils/dateEntryPolicy';
 
 export function StartShiftPage() {
   const { profile } = useAuth();
   const nav = useNavigate();
-  const isManager = profile?.role === 'manager';
+  const isManager = isManagerLike(profile?.role);
+  const dateBounds = dateInputBoundsForRole(profile?.role);
 
   const [operators, setOperators] = useState<User[]>([]);
   const [nozzles, setNozzles] = useState<Nozzle[]>([]);
   const [operatorId, setOperatorId] = useState('');
-  const [calendarDate, setCalendarDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [calendarDate, setCalendarDate] = useState(() => todayIso());
   const [shiftLabel, setShiftLabel] = useState<string>(SHIFT_LABELS[0]);
   /** Names of pump staff on duty — single field above the shift time selection. */
   const [pumpAttendants, setPumpAttendants] = useState('');
@@ -120,12 +127,14 @@ export function StartShiftPage() {
     }
     setSaving(true);
     try {
+      const day = clampEntryDateForRole(profile?.role, calendarDate);
+      assertEntryDateAllowed(profile?.role, day);
       const oid = isManager ? operatorId : profile!.id;
       const pt = pumpAttendants.trim();
       const shiftId = await createShift({
         operatorId: oid,
         shiftLabel,
-        calendarDate,
+        calendarDate: day,
         notes: notes || undefined,
         pumpAttendants: pt || undefined,
       });
@@ -140,7 +149,7 @@ export function StartShiftPage() {
         opening[nId] = await getLastClosingForNozzle(nId);
       }
       await createInitialReadings(shiftId, nozzleIds, opening);
-      nav(isManager ? '/manager' : '/operator', { replace: true });
+      nav(homePathForRole(profile?.role), { replace: true });
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Could not start shift');
     } finally {
@@ -228,9 +237,16 @@ export function StartShiftPage() {
         type="date"
         label="Shift date"
         value={calendarDate}
-        onChange={(e) => setCalendarDate(e.target.value)}
-        slotProps={{ inputLabel: { shrink: true } }}
-        helperText="Business day this shift belongs to."
+        onChange={(e) => setCalendarDate(clampEntryDateForRole(profile?.role, e.target.value))}
+        slotProps={{
+          inputLabel: { shrink: true },
+          htmlInput: { min: dateBounds.min, max: dateBounds.max },
+        }}
+        helperText={
+          isManager && profile?.role === 'admin'
+            ? 'Owner can set a past business day to correct historical shifts.'
+            : 'Business day this shift belongs to (today only for manager/operator).'
+        }
       />
 
       <TextField

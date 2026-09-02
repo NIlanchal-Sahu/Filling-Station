@@ -18,12 +18,18 @@ import {
   Typography,
 } from '@mui/material';
 import PlaylistAddOutlinedIcon from '@mui/icons-material/PlaylistAddOutlined';
-import { format } from 'date-fns';
 import { alpha } from '@mui/material/styles';
+import { useAuth } from '@/context/AuthContext';
 import { createManualCreditSale } from '@/services/creditSalesService';
 import { listFuelTypes } from '@/services/fuelTypesService';
 import { requireMin } from '@/utils/validation';
 import { creditSheetBodyCellSx, creditSheetHeaderCellSx } from '@/pages/manager/manualCreditSaleFormStyles';
+import {
+  assertEntryDateAllowed,
+  clampEntryDateForRole,
+  dateInputBoundsForRole,
+  todayIso,
+} from '@/utils/dateEntryPolicy';
 
 type FixedParty = {
   mode: 'fixed';
@@ -45,12 +51,14 @@ export type ManualCreditSaleFormCardProps = {
 /** Ledger-style posting row — matches manager credit workbook layout. */
 export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
   const { onSuccess } = props;
+  const { profile } = useAuth();
+  const dateBounds = dateInputBoundsForRole(profile?.role);
   const [fuels, setFuels] = useState<Array<{ id: string; name: string; currentRate: number }>>([]);
   const [fuelsErr, setFuelsErr] = useState<string | null>(null);
   const [saleErr, setSaleErr] = useState<string | null>(null);
   const [savingSale, setSavingSale] = useState(false);
 
-  const [saleDate, setSaleDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [saleDate, setSaleDate] = useState(() => todayIso());
   const [fuelTypeId, setFuelTypeId] = useState('');
   const [liters, setLiters] = useState('');
   const [rate, setRate] = useState('');
@@ -142,14 +150,17 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
 
     setSavingSale(true);
     try {
+      const day = clampEntryDateForRole(profile?.role, saleDate);
+      assertEntryDateAllowed(profile?.role, day);
       await createManualCreditSale({
         customerId: cid,
-        date: new Date(`${saleDate}T12:00:00`),
+        date: new Date(`${day}T12:00:00`),
         fuelTypeId,
         liters: ltVal,
         rateAtSale: rtVal,
       });
       setLiters('');
+      setSaleDate(todayIso());
       await onSuccess();
     } catch (er) {
       setSaleErr(er instanceof Error ? er.message : 'Save failed');
@@ -222,10 +233,13 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
                   <TextField
                     type="date"
                     value={saleDate}
-                    onChange={(ev) => setSaleDate(ev.target.value)}
+                    onChange={(ev) => setSaleDate(clampEntryDateForRole(profile?.role, ev.target.value))}
                     size="small"
                     fullWidth
-                    slotProps={{ inputLabel: { shrink: true } }}
+                    slotProps={{
+                      inputLabel: { shrink: true },
+                      htmlInput: { min: dateBounds.min, max: dateBounds.max },
+                    }}
                   />
                 </TableCell>
                 <TableCell sx={creditSheetBodyCellSx}>

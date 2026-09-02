@@ -46,6 +46,13 @@ import { ManualCreditSaleFormCard } from '@/pages/manager/ManualCreditSaleFormCa
 import { trimNumberDisplay } from '@/pages/manager/creditRegisterFormatters';
 import { aggregateFuelCreditTotals, describeFuelCreditTotals } from '@/pages/manager/creditFuelTotals';
 import {
+  assertEntryDateAllowed,
+  canBackdateEntries,
+  clampEntryDateForRole,
+  dateInputBoundsForRole,
+  todayIso,
+} from '@/utils/dateEntryPolicy';
+import {
   buildPartyCreditLedger,
   particularsForLedgerCreditSale,
 } from '@/pages/manager/partyCreditLedger';
@@ -67,6 +74,7 @@ export function CustomerDetailPage() {
   const { id = '' } = useParams();
   const nav = useNavigate();
   const { profile } = useAuth();
+  const dateBounds = dateInputBoundsForRole(profile?.role);
   const [c, setC] = useState<CreditCustomer | null | undefined>(undefined);
   const [err, setErr] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -76,6 +84,7 @@ export function CustomerDetailPage() {
   const [ledgerRev, setLedgerRev] = useState(0);
 
   const [amt, setAmt] = useState('');
+  const [payDate, setPayDate] = useState(() => todayIso());
   const [mode, setMode] = useState<CreditPaymentMode>('cash');
   const [notes, setNotes] = useState('');
 
@@ -289,6 +298,22 @@ export function CustomerDetailPage() {
                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
               />
               <TextField
+                type="date"
+                label="Payment date"
+                value={payDate}
+                onChange={(e) => setPayDate(clampEntryDateForRole(profile?.role, e.target.value))}
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  htmlInput: { min: dateBounds.min, max: dateBounds.max },
+                }}
+                helperText={
+                  canBackdateEntries(profile?.role)
+                    ? 'Owner can post receipts for past days.'
+                    : 'Managers can post today only.'
+                }
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+              />
+              <TextField
                 select
                 label="Payment mode"
                 value={mode}
@@ -341,10 +366,12 @@ export function CustomerDetailPage() {
                   }
                   setSaving(true);
                   try {
+                    const day = clampEntryDateForRole(profile?.role, payDate);
+                    assertEntryDateAllowed(profile?.role, day);
                     await recordPayment({
                       customerId: c.id,
                       amountReceived: n,
-                      date: new Date(),
+                      date: new Date(`${day}T12:00:00`),
                       mode,
                       notes: notes || undefined,
                       customerName: c.name,
@@ -352,6 +379,7 @@ export function CustomerDetailPage() {
                     });
                     setAmt('');
                     setNotes('');
+                    setPayDate(todayIso());
                     await reloadCustomer();
                     setLedgerRev((k) => k + 1);
                   } catch (e) {

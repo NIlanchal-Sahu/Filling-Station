@@ -32,6 +32,7 @@ import { createCustomer, listCreditCustomers } from '@/services/creditCustomersS
 import { listFuelTypes } from '@/services/fuelTypesService';
 import { listLedgerInRange } from '@/services/ledgerService';
 import { requireMin, requireNonEmpty } from '@/utils/validation';
+import { isManagerLike, homePathForRole } from '@/utils/roles';
 import {
   buildCashBookSummary,
   fmtInrDash,
@@ -109,7 +110,7 @@ export function ReconciliationFormPage() {
         const windowStart = new Date(`${calendarIso}T00:00:00`);
         const windowEnd = new Date(`${calendarIso}T23:59:59.999`);
 
-        const needLedger = profile?.role === 'manager';
+        const needLedger = isManagerLike(profile?.role);
 
         const [readings, u, r, fuelList, ledgerRows, machines] = await Promise.all([
           listReadingsForShift(shiftId),
@@ -133,7 +134,7 @@ export function ReconciliationFormPage() {
         setExisting(r);
         const sortedFuels = [...fuelList].sort((a, b) => a.name.localeCompare(b.name));
         setFuels(sortedFuels);
-        if (r && profile?.role === 'manager' && isManagerEdit && r.status === 'pending') {
+        if (r && isManagerLike(profile?.role) && isManagerEdit && r.status === 'pending') {
           setPaytm(String(r.paytmOnline));
           setIcici(String(r.iciciCard));
           setFleet(String(r.fleetCard));
@@ -212,7 +213,7 @@ export function ReconciliationFormPage() {
   }, [shift]);
 
   const cashBookRows: CashBookSummaryRow[] = useMemo(() => {
-    if (profile?.role !== 'manager') {
+    if (!isManagerLike(profile?.role)) {
       return [];
     }
     const paytmN = Number.parseFloat(paytm) || 0;
@@ -250,7 +251,7 @@ export function ReconciliationFormPage() {
     if (!shift) {
       return;
     }
-    if (existing?.status === 'pending' && !(profile?.role === 'manager' && isManagerEdit)) {
+    if (existing?.status === 'pending' && !(isManagerLike(profile?.role) && isManagerEdit)) {
       setFormError('Reconciliation is already submitted and awaiting review.');
       return;
     }
@@ -371,7 +372,7 @@ export function ReconciliationFormPage() {
         }
       }
 
-      if (existing && profile?.role === 'manager' && isManagerEdit && existing.status === 'pending') {
+      if (existing && isManagerLike(profile?.role) && isManagerEdit && existing.status === 'pending') {
         await updatePendingReconciliation(existing.id, {
           shiftId: shift.id,
           totalSalesAmount: totalSales,
@@ -403,7 +404,7 @@ export function ReconciliationFormPage() {
         difference: totalReceived - totalSales,
         creditLineItems,
       });
-      if (profile?.role === 'manager') {
+      if (isManagerLike(profile?.role)) {
         nav('/manager', { replace: true });
       } else {
         nav('/operator', { replace: true });
@@ -430,7 +431,7 @@ export function ReconciliationFormPage() {
   if (loadErr) {
     return <Alert severity="error">{loadErr}</Alert>;
   }
-  if (existing && !(profile?.role === 'manager' && isManagerEdit && existing.status === 'pending')) {
+  if (existing && !(isManagerLike(profile?.role) && isManagerEdit && existing.status === 'pending')) {
     if (existing.status === 'pending' || (existing.status === 'approved' && existing.locked)) {
       return (
         <Alert severity="info">
@@ -438,7 +439,7 @@ export function ReconciliationFormPage() {
             Reconciliation status: {existing.status}.{' '}
             {existing.status === 'pending' && 'You cannot change it while it is under review.'}
           </Typography>
-          <Button size="small" onClick={() => nav(profile?.role === 'manager' ? '/manager' : '/operator')}>
+          <Button size="small" onClick={() => nav(homePathForRole(profile?.role))}>
             Back
           </Button>
         </Alert>
@@ -446,7 +447,7 @@ export function ReconciliationFormPage() {
     }
   }
 
-  if (existing && isManagerEdit && profile?.role === 'manager' && existing.status !== 'pending') {
+  if (existing && isManagerEdit && isManagerLike(profile?.role) && existing.status !== 'pending') {
     return (
       <Alert severity="warning">
         <Typography>Only pending reconciliations can be edited.</Typography>
@@ -586,7 +587,7 @@ export function ReconciliationFormPage() {
         </Typography>
       </Box>
 
-      {profile?.role === 'manager' ? (
+      {isManagerLike(profile?.role) ? (
       <Paper variant="outlined" sx={{ p: 2, mt: 2, bgcolor: 'background.default' }}>
         <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>
           Daily cash summary

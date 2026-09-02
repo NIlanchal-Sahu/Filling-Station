@@ -18,12 +18,13 @@ import {
   demoUpsertUser,
   demoUpdateUserRole,
 } from '@/localDemo/demoBackend';
+import { parseUserRole } from '@/utils/roles';
 
 function mapUser(id: string, data: DocumentData): User {
   return {
     id,
     name: String(data.name ?? ''),
-    role: (data.role === 'manager' ? 'manager' : 'operator') as UserRole,
+    role: parseUserRole(data.role),
     phone: data.phone ? String(data.phone) : undefined,
     isActive: data.isActive !== false,
   };

@@ -10,12 +10,21 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
 
+    function isAdmin() {
+      return isSignedIn() && myRole() == "admin";
+    }
+
     function isManager() {
       return isSignedIn() && myRole() == "manager";
     }
 
     function isOperator() {
       return isSignedIn() && myRole() == "operator";
+    }
+
+    /** Owner (admin) has the same write access as manager across pump data. */
+    function isManagerOrAdmin() {
+      return isManager() || isAdmin();
     }
 
     function shiftData(shiftId) {
@@ -28,71 +37,82 @@ service cloud.firestore {
 
     /* Users — sync with Firebase Auth uid as document id */
     match /users/{userId} {
-      allow read: if isSignedIn() && (userId == request.auth.uid || isManager());
-      allow write: if isManager();
+      allow read: if isSignedIn() && (userId == request.auth.uid || isManagerOrAdmin());
+      allow write: if isManagerOrAdmin();
     }
 
     match /fuelTypes/{id} {
       allow read: if isSignedIn();
-      allow write: if isManager();
+      allow write: if isManagerOrAdmin();
     }
 
     match /fuelTankDips/{id} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isManager();
+      allow create, update, delete: if isManagerOrAdmin();
     }
 
     match /fuelReceipts/{id} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isManager();
+      allow create, update, delete: if isManagerOrAdmin();
     }
 
     match /nozzles/{id} {
       allow read: if isSignedIn();
-      allow write: if isManager();
+      allow write: if isManagerOrAdmin();
     }
 
     /* Shifts */
     match /shifts/{shiftId} {
-      allow read: if isManager() || ownsShift(shiftId);
-      allow create: if (isManager() || (isOperator() && request.resource.data.operatorId == request.auth.uid))
+      allow read: if isManagerOrAdmin() || ownsShift(shiftId);
+      allow create: if (isManagerOrAdmin() || (isOperator() && request.resource.data.operatorId == request.auth.uid))
         && request.resource.data.status in ["open", "closed"];
-      allow update, delete: if isManager() || (isOperator() && resource.data.operatorId == request.auth.uid);
+      allow update, delete: if isManagerOrAdmin() || (isOperator() && resource.data.operatorId == request.auth.uid);
     }
 
-    /* Shift readings: operator for own shift only; manager all */
+    /* Shift readings: operator for own shift only; manager/admin all */
     match /shiftReadings/{id} {
-      allow read: if isManager() || (isOperator() && ownsShift(resource.data.shiftId));
-      allow create: if isManager() || (isOperator() && ownsShift(request.resource.data.shiftId));
-      allow update, delete: if isManager() || (isOperator() && ownsShift(resource.data.shiftId));
+      allow read: if isManagerOrAdmin() || (isOperator() && ownsShift(resource.data.shiftId));
+      allow create: if isManagerOrAdmin() || (isOperator() && ownsShift(request.resource.data.shiftId));
+      allow update, delete: if isManagerOrAdmin() || (isOperator() && ownsShift(resource.data.shiftId));
     }
 
     /* Reconciliations */
     match /shiftReconciliations/{id} {
-      allow read: if isManager() || (isOperator() && resource.data.operatorId == request.auth.uid);
-      allow create: if isManager() || (isOperator() && request.resource.data.operatorId == request.auth.uid);
-      /* Operators may only change pending recons; managers handle approve/reject/lock. */
-      allow update, delete: if isManager() || (isOperator() && resource.data.operatorId == request.auth.uid
+      allow read: if isManagerOrAdmin() || (isOperator() && resource.data.operatorId == request.auth.uid);
+      allow create: if isManagerOrAdmin() || (isOperator() && request.resource.data.operatorId == request.auth.uid);
+      /* Operators may only change pending recons; managers/admins handle approve/reject/lock. */
+      allow update, delete: if isManagerOrAdmin() || (isOperator() && resource.data.operatorId == request.auth.uid
         && resource.data.status == "pending");
     }
 
-    /* Credit: primarily manager. Operators may create a sale line tied to their own shift (end-of-shift credit). */
+    /* Credit: primarily manager/admin. Operators may create a sale line tied to their own shift. */
     match /creditCustomers/{id} {
-      allow read, write: if isManager();
+      allow read, write: if isManagerOrAdmin();
     }
     match /creditSales/{id} {
-      allow read: if isManager() || (isOperator() && ownsShift(resource.data.shiftId));
-      allow create: if isManager() || (isOperator() && ownsShift(request.resource.data.shiftId)
+      allow read: if isManagerOrAdmin() || (isOperator() && ownsShift(resource.data.shiftId));
+      allow create: if isManagerOrAdmin() || (isOperator() && ownsShift(request.resource.data.shiftId)
         && request.resource.data.keys().hasAll(["customerId", "shiftId", "date", "amount"]));
-      allow update, delete: if isManager();
+      allow update, delete: if isManagerOrAdmin();
     }
     match /creditPayments/{id} {
-      allow read, write: if isManager();
+      allow read, write: if isManagerOrAdmin();
     }
 
-    /* Ledger: manager only */
+    /* Ledger: manager/admin only */
     match /ledgerEntries/{id} {
-      allow read, write: if isManager();
+      allow read, write: if isManagerOrAdmin();
+    }
+
+    /* Lubricants */
+    match /lubricants/{id} {
+      allow read, write: if isManagerOrAdmin();
+    }
+    match /lubricantStockEntries/{id} {
+      allow read, write: if isManagerOrAdmin();
+    }
+    match /lubricantSales/{id} {
+      allow read, write: if isManagerOrAdmin();
     }
 
   }

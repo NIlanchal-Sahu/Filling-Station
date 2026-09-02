@@ -42,6 +42,13 @@ import { requireNonEmpty, requirePositiveNumber } from '@/utils/validation';
 import { downloadCsv } from '@/utils/csvExport';
 import type { LedgerEntry, LedgerPaymentChannel, LedgerType } from '@/types/entities';
 import { format } from 'date-fns';
+import {
+  assertEntryDateAllowed,
+  canBackdateEntries,
+  clampEntryDateForRole,
+  dateInputBoundsForRole,
+  todayIso,
+} from '@/utils/dateEntryPolicy';
 
 /** Categories aligned with typical pump cash book (like your Excel ledger). */
 const LEDGER_SHEET_CATEGORIES = [
@@ -114,6 +121,7 @@ const sheetCellSx = {
 export function LedgerPage() {
   const theme = useTheme();
   const { profile } = useAuth();
+  const dateBounds = dateInputBoundsForRole(profile?.role);
   const [searchParams] = useSearchParams();
   const [typeFilter, setTypeFilter] = useState<'all' | LedgerType>('all');
   const [from, setFrom] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -125,7 +133,7 @@ export function LedgerPage() {
   const [formErr, setFormErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [entryDate, setEntryDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [entryDate, setEntryDate] = useState(() => todayIso());
   const [entryNames, setEntryNames] = useState('');
   const [entryParticular, setEntryParticular] = useState('');
   const [entryCategory, setEntryCategory] = useState<string>(LEDGER_SHEET_CATEGORIES[0]!);
@@ -211,8 +219,10 @@ export function LedgerPage() {
 
     setSaving(true);
     try {
+      const day = clampEntryDateForRole(profile?.role, entryDate);
+      assertEntryDateAllowed(profile?.role, day);
       await createLedgerEntry({
-        date: new Date(entryDate + 'T12:00:00'),
+        date: new Date(day + 'T12:00:00'),
         type: entryPaidOut ? 'expense' : 'income',
         paymentChannel: entryChannel,
         paidToOrReceivedFrom: entryNames.trim(),
@@ -224,6 +234,7 @@ export function LedgerPage() {
       setEntryAmount('');
       setEntryNames('');
       setEntryParticular('');
+      setEntryDate(todayIso());
       await load();
     } catch (e) {
       setFormErr(e instanceof Error ? e.message : 'Failed');
@@ -234,7 +245,7 @@ export function LedgerPage() {
 
   function openEditDialog(entry: LedgerEntry) {
     setDlgRow(entry);
-    setDlgDate(format(entry.date.toDate(), 'yyyy-MM-dd'));
+    setDlgDate(clampEntryDateForRole(profile?.role, format(entry.date.toDate(), 'yyyy-MM-dd')));
     setDlgNames(entry.paidToOrReceivedFrom);
     setDlgParticular(entry.particulars);
     setDlgCategory(coerceLedgerCategory(entry.category));
@@ -270,8 +281,10 @@ export function LedgerPage() {
     }
     setDlgSaving(true);
     try {
+      const day = clampEntryDateForRole(profile?.role, dlgDate);
+      assertEntryDateAllowed(profile?.role, day);
       await updateLedgerEntry(dlgRow.id, {
-        date: new Date(dlgDate + 'T12:00:00'),
+        date: new Date(day + 'T12:00:00'),
         type: dlgPaidOut ? 'expense' : 'income',
         paymentChannel: dlgChannel,
         paidToOrReceivedFrom: dlgNames.trim(),
@@ -464,10 +477,14 @@ export function LedgerPage() {
                     <TextField
                       type="date"
                       value={entryDate}
-                      onChange={(e) => setEntryDate(e.target.value)}
-                      slotProps={{ inputLabel: { shrink: true } }}
+                      onChange={(e) => setEntryDate(clampEntryDateForRole(profile?.role, e.target.value))}
+                      slotProps={{
+                        inputLabel: { shrink: true },
+                        htmlInput: { min: dateBounds.min, max: dateBounds.max },
+                      }}
                       size="small"
                       fullWidth
+                      helperText={canBackdateEntries(profile?.role) ? 'Admin: past dates OK' : undefined}
                       sx={{ minWidth: 120, '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
                     />
                   </TableCell>
@@ -825,8 +842,11 @@ export function LedgerPage() {
               type="date"
               label="Date"
               value={dlgDate}
-              onChange={(e) => setDlgDate(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
+              onChange={(e) => setDlgDate(clampEntryDateForRole(profile?.role, e.target.value))}
+              slotProps={{
+                inputLabel: { shrink: true },
+                htmlInput: { min: dateBounds.min, max: dateBounds.max },
+              }}
               size="small"
               fullWidth
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
