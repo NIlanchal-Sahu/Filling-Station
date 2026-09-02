@@ -29,6 +29,19 @@ export function fuelStockDisplayMeta(fuelName: string): { displayName: string; s
   return { displayName: fuelName, shortCode };
 }
 
+/**
+ * Per-fuel volume scale — calibrated to this pump's dip readings:
+ * MS 135.8 cm = 14,902 L | XP 91.2 cm = 9,065 L | HSD 146 cm = 16,168 L
+ * (base chart: 14,795 / 9,010 / 16,052 L at those dips).
+ */
+export function fuelDipVolumeScale(fuelName: string): number {
+  const code = fuelStockDisplayMeta(fuelName).shortCode;
+  if (code === 'MS') return 14_902 / 14_795;
+  if (code === 'XP') return 9_065 / 9_010;
+  if (code === 'HSD') return 16_168 / 16_052;
+  return 1;
+}
+
 export function fuelStockHealthFromPercent(percent: number): FuelStockHealth {
   if (percent < 20) return 'critical';
   if (percent <= 50) return 'low';

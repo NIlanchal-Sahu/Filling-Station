@@ -51,6 +51,10 @@ export interface FuelReceipt {
   fuelTypeId: string;
   pumpDayIso: string;
   liters: number;
+  /** Purchase rate per kiloliter (₹/KL) on the dealer invoice. */
+  ratePerKl?: number;
+  /** Product / material code on the invoice (e.g. 50703 for HSD). */
+  materialCode?: string;
   supplier?: string;
   invoiceNo?: string;
   recordedBy?: string;

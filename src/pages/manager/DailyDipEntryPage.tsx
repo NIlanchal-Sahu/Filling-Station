@@ -21,6 +21,7 @@ import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import OpacityOutlinedIcon from '@mui/icons-material/OpacityOutlined';
 
 import { useAuth } from '@/context/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 import { setFuelReceiptLitersForDay } from '@/services/fuelReceiptsService';
 import { getTankStockDaySummary } from '@/services/fuelStockReconciliationService';
 import {
@@ -38,6 +39,8 @@ import {
   dateInputBoundsForRole,
   todayIso,
 } from '@/utils/dateEntryPolicy';
+import { canonicalDipCm, normalizeDipCm } from '@/utils/fuelTankCalibration';
+import { FuelStockSubNav } from '@/pages/manager/FuelStockSubNav';
 
 type FuelFormRow = {
   fuelTypeId: string;
@@ -64,8 +67,8 @@ function rowsToForm(fuels: FuelType[], stockRows: DailyFuelStockRow[]): FuelForm
       return {
         fuelTypeId: f.id,
         fuelName: f.name,
-        openingDipCm: row?.openingDipCm != null ? String(row.openingDipCm) : '',
-        closingDipCm: row?.closingDipCm != null ? String(row.closingDipCm) : '',
+        openingDipCm: row?.openingDipCm != null ? String(canonicalDipCm(row.openingDipCm)) : '',
+        closingDipCm: row?.closingDipCm != null ? String(canonicalDipCm(row.closingDipCm)) : '',
         receiptLiters: row?.receiptLiters != null ? String(row.receiptLiters) : '',
       };
     });
@@ -73,14 +76,29 @@ function rowsToForm(fuels: FuelType[], stockRows: DailyFuelStockRow[]): FuelForm
 
 export function DailyDipEntryPage() {
   const { profile } = useAuth();
+  const [searchParams] = useSearchParams();
   const dateBounds = dateInputBoundsForRole(profile?.role);
-  const [pumpDayIso, setPumpDayIso] = useState(() => todayIso());
+  const initialDay = (() => {
+    const fromUrl = searchParams.get('day');
+    if (fromUrl && /^\d{4}-\d{2}-\d{2}$/.test(fromUrl)) {
+      return clampEntryDateForRole(profile?.role, fromUrl);
+    }
+    return todayIso();
+  })();
+  const [pumpDayIso, setPumpDayIso] = useState(initialDay);
   const [formRows, setFormRows] = useState<FuelFormRow[]>([]);
   const [stockRows, setStockRows] = useState<DailyFuelStockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fromUrl = searchParams.get('day');
+    if (fromUrl && /^\d{4}-\d{2}-\d{2}$/.test(fromUrl)) {
+      setPumpDayIso(clampEntryDateForRole(profile?.role, fromUrl));
+    }
+  }, [searchParams, profile?.role]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,7 +150,7 @@ export function DailyDipEntryPage() {
       for (const row of formRows) {
         const opening = row.openingDipCm.trim();
         if (opening !== '') {
-          const cm = Number(opening);
+          const cm = canonicalDipCm(Number(opening));
           if (!Number.isFinite(cm) || cm <= 0) throw new Error(`Invalid opening dip for ${row.fuelName}`);
           await upsertFuelTankDipForDay({
             fuelTypeId: row.fuelTypeId,
@@ -145,7 +163,7 @@ export function DailyDipEntryPage() {
 
         const closing = row.closingDipCm.trim();
         if (closing !== '') {
-          const cm = Number(closing);
+          const cm = canonicalDipCm(Number(closing));
           if (!Number.isFinite(cm) || cm <= 0) throw new Error(`Invalid closing dip for ${row.fuelName}`);
           await upsertFuelTankDipForDay({
             fuelTypeId: row.fuelTypeId,
@@ -179,6 +197,8 @@ export function DailyDipEntryPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
+      <FuelStockSubNav />
+
       <Box
         sx={{
           borderRadius: 3,
@@ -291,7 +311,7 @@ export function DailyDipEntryPage() {
                       />
                       {closingPreview != null ? (
                         <Typography variant="caption" display="block" color="text.secondary">
-                          → {formatFuelLiters(closingPreview)}
+                          → {normalizeDipCm(Number(row.closingDipCm))} cm = {formatFuelLiters(closingPreview)}
                         </Typography>
                       ) : null}
                     </TableCell>

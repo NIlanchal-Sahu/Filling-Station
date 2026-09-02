@@ -212,7 +212,7 @@ export function ManagerDashboardPage() {
       {/* Tank stock */}
       <DashboardSection title="Tank & inventory" subtitle="Dip readings, stock levels, and daily reconciliation.">
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <TankStockDipSummary />
+          <TankStockDipSummary pumpDayIso={reportIso} reportLabel={reportLabel} />
         </Paper>
       </DashboardSection>
 

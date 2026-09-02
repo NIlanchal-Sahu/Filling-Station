@@ -44,6 +44,9 @@ const ReconciliationReviewPage = lazy(() =>
 const LubricantPage = lazy(() =>
   import('@/pages/manager/LubricantPage').then((m) => ({ default: m.LubricantPage })),
 );
+const FuelPurchasePage = lazy(() =>
+  import('@/pages/manager/FuelPurchasePage').then((m) => ({ default: m.FuelPurchasePage })),
+);
 const StartShiftPage = lazy(() =>
   import('@/pages/shifts/StartShiftPage').then((m) => ({ default: m.StartShiftPage })),
 );
@@ -84,6 +87,7 @@ export default function App() {
               <Route path="daily-sheet" element={<DailyCashSheetPage />} />
               <Route path="fuel" element={<FuelPricesPage />} />
               <Route path="fuel-stock/daily" element={<DailyDipEntryPage />} />
+              <Route path="fuel-stock/purchase" element={<FuelPurchasePage />} />
               <Route path="fuel-stock/:fuelTypeId" element={<FuelStockHistoryPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="reconciliations" element={<ReconciliationReviewPage />} />

@@ -12,6 +12,8 @@ import { LOCAL_DEMO } from '@/config/appMode';
 import { COLLECTIONS, getDb } from '@/lib/firebase';
 import {
   demoListFuelReceiptsForDay,
+  demoListAllFuelReceiptsForPumpDay,
+  demoListFuelReceiptsInRange,
   demoRecordFuelReceipt,
   demoSetFuelReceiptLitersForDay,
 } from '@/localDemo/demoBackend';
@@ -24,12 +26,51 @@ function mapReceipt(id: string, data: DocumentData): FuelReceipt {
     fuelTypeId: String(data.fuelTypeId ?? ''),
     pumpDayIso: String(data.pumpDayIso ?? ''),
     liters: Number(data.liters ?? 0),
+    ratePerKl: data.ratePerKl != null ? Number(data.ratePerKl) : undefined,
+    materialCode: data.materialCode ? String(data.materialCode) : undefined,
     supplier: data.supplier ? String(data.supplier) : undefined,
     invoiceNo: data.invoiceNo ? String(data.invoiceNo) : undefined,
     recordedBy: data.recordedBy ? String(data.recordedBy) : undefined,
     notes: data.notes ? String(data.notes) : undefined,
     recordedAt: data.recordedAt,
   };
+}
+
+export async function listFuelReceiptsInRange(
+  fromIso: string,
+  toIso: string,
+  fuelTypeId?: string,
+): Promise<FuelReceipt[]> {
+  if (LOCAL_DEMO) {
+    return demoListFuelReceiptsInRange(fromIso, toIso, fuelTypeId);
+  }
+
+  const q = query(
+    collection(getDb(), COLLECTIONS.fuelReceipts),
+    where('pumpDayIso', '>=', fromIso),
+    where('pumpDayIso', '<=', toIso),
+  );
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => mapReceipt(d.id, d.data()))
+    .filter((r) => !fuelTypeId || r.fuelTypeId === fuelTypeId)
+    .sort((a, b) => {
+      const dayCmp = a.pumpDayIso.localeCompare(b.pumpDayIso);
+      if (dayCmp !== 0) return dayCmp;
+      return a.recordedAt.toMillis() - b.recordedAt.toMillis();
+    });
+}
+
+export async function listAllFuelReceiptsForPumpDay(pumpDayIso: string): Promise<FuelReceipt[]> {
+  if (LOCAL_DEMO) {
+    return demoListAllFuelReceiptsForPumpDay(pumpDayIso);
+  }
+
+  const q = query(collection(getDb(), COLLECTIONS.fuelReceipts), where('pumpDayIso', '==', pumpDayIso));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => mapReceipt(d.id, d.data()))
+    .sort((a, b) => b.recordedAt.toMillis() - a.recordedAt.toMillis());
 }
 
 export async function listFuelReceiptsForDay(
@@ -90,6 +131,8 @@ export async function recordFuelReceipt(input: {
   fuelTypeId: string;
   pumpDayIso: string;
   liters: number;
+  ratePerKl?: number;
+  materialCode?: string;
   supplier?: string;
   invoiceNo?: string;
   recordedBy?: string;
@@ -105,6 +148,8 @@ export async function recordFuelReceipt(input: {
     fuelTypeId: input.fuelTypeId,
     pumpDayIso: input.pumpDayIso,
     liters: input.liters,
+    ratePerKl: input.ratePerKl ?? null,
+    materialCode: input.materialCode ?? null,
     supplier: input.supplier ?? null,
     invoiceNo: input.invoiceNo ?? null,
     recordedAt: serverTimestamp(),

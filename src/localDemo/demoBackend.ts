@@ -27,7 +27,7 @@ import {
   notifyFuelStockUpdated,
   sortFuelStockItems,
 } from '@/utils/fuelStockDisplay';
-import { dipCmFromLiters, litersFromDipCm } from '@/utils/fuelTankCalibration';
+import { canonicalDipCm, dipCmFromLiters, litersFromDipCm, normalizeDipCm } from '@/utils/fuelTankCalibration';
 import {
   creditPaymentModeLabel,
   creditPaymentModeLedgerChannel,
@@ -68,6 +68,8 @@ type StoredFuelReceipt = {
   fuelTypeId: string;
   pumpDayIso: string;
   liters: number;
+  ratePerKl?: number | null;
+  materialCode?: string | null;
   supplier?: string | null;
   invoiceNo?: string | null;
   recordedMs: number;
@@ -440,7 +442,7 @@ function mapFt(id: string, f: StoredFuelType): FuelType {
 function mapFuelTankDip(id: string, d: StoredFuelTankDip): FuelTankDipReading {
   const fuel = row.fuelTypes[d.fuelTypeId];
   const dipCm =
-    d.dipCm != null ? Number(d.dipCm) : (dipCmFromLiters(d.dipLiters, fuel?.name ?? '') ?? 0);
+    d.dipCm != null ? canonicalDipCm(Number(d.dipCm)) : (dipCmFromLiters(d.dipLiters, fuel?.name ?? '') ?? 0);
   const pumpDayIso =
     typeof d.pumpDayIso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.pumpDayIso)
       ? d.pumpDayIso
@@ -464,6 +466,8 @@ function mapFuelReceipt(id: string, r: StoredFuelReceipt): FuelReceipt {
     fuelTypeId: r.fuelTypeId,
     pumpDayIso: r.pumpDayIso,
     liters: r.liters,
+    ratePerKl: r.ratePerKl != null ? Number(r.ratePerKl) : undefined,
+    materialCode: r.materialCode ? String(r.materialCode) : undefined,
     supplier: r.supplier ?? undefined,
     invoiceNo: r.invoiceNo ?? undefined,
     recordedBy: r.recordedBy ?? undefined,
@@ -637,6 +641,7 @@ export async function demoUpsertFuelTankDipForDay(input: {
     throw new Error('Fuel type not found');
   }
   const dipLiters = input.dipLiters ?? litersFromDipCm(input.dipCm, ft.name);
+  const dipCm = canonicalDipCm(input.dipCm);
   const now = Date.now();
 
   const existingKey = Object.entries(row.fuelTankDips).find(
@@ -649,7 +654,7 @@ export async function demoUpsertFuelTankDipForDay(input: {
   const id = existingKey ?? newId('dip');
   row.fuelTankDips[id] = {
     fuelTypeId: input.fuelTypeId,
-    dipCm: input.dipCm,
+    dipCm,
     dipLiters,
     pumpDayIso: input.pumpDayIso,
     dipKind: input.dipKind,
@@ -660,13 +665,41 @@ export async function demoUpsertFuelTankDipForDay(input: {
 
   if (input.dipKind === 'closing' && input.pumpDayIso === format(new Date(), 'yyyy-MM-dd')) {
     ft.currentStockLiters = dipLiters;
-    ft.lastDipCm = input.dipCm;
+    ft.lastDipCm = dipCm;
     ft.lastDipMs = now;
   }
 
   persist();
   notifyFuelStockUpdated();
   return id;
+}
+
+export async function demoListAllFuelReceiptsForPumpDay(pumpDayIso: string): Promise<FuelReceipt[]> {
+  ensureLoaded();
+  return Object.entries(row.fuelReceipts)
+    .filter(([, r]) => r.pumpDayIso === pumpDayIso)
+    .map(([id, r]) => mapFuelReceipt(id, r))
+    .sort((a, b) => b.recordedAt.toMillis() - a.recordedAt.toMillis());
+}
+
+export async function demoListFuelReceiptsInRange(
+  fromIso: string,
+  toIso: string,
+  fuelTypeId?: string,
+): Promise<FuelReceipt[]> {
+  ensureLoaded();
+  return Object.entries(row.fuelReceipts)
+    .filter(([, r]) => {
+      if (r.pumpDayIso < fromIso || r.pumpDayIso > toIso) return false;
+      if (fuelTypeId && r.fuelTypeId !== fuelTypeId) return false;
+      return true;
+    })
+    .map(([id, r]) => mapFuelReceipt(id, r))
+    .sort((a, b) => {
+      const dayCmp = a.pumpDayIso.localeCompare(b.pumpDayIso);
+      if (dayCmp !== 0) return dayCmp;
+      return a.recordedAt.toMillis() - b.recordedAt.toMillis();
+    });
 }
 
 export async function demoListFuelReceiptsForDay(
@@ -715,6 +748,8 @@ export async function demoRecordFuelReceipt(input: {
   fuelTypeId: string;
   pumpDayIso: string;
   liters: number;
+  ratePerKl?: number;
+  materialCode?: string;
   supplier?: string;
   invoiceNo?: string;
   recordedBy?: string;
@@ -726,6 +761,8 @@ export async function demoRecordFuelReceipt(input: {
     fuelTypeId: input.fuelTypeId,
     pumpDayIso: input.pumpDayIso,
     liters: input.liters,
+    ratePerKl: input.ratePerKl ?? null,
+    materialCode: input.materialCode ?? null,
     supplier: input.supplier ?? null,
     invoiceNo: input.invoiceNo ?? null,
     recordedMs: Date.now(),

@@ -25,6 +25,7 @@ import {
 import OpacityOutlinedIcon from '@mui/icons-material/OpacityOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import LocalGasStationOutlinedIcon from '@mui/icons-material/LocalGasStationOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
 import { getTankStockDaySummary } from '@/services/fuelStockReconciliationService';
@@ -184,14 +185,18 @@ function GroupedAlerts(props: { summary: TankStockDaySummary }) {
   );
 }
 
-export function TankStockDipSummary() {
+export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: string }) {
+  const { pumpDayIso, reportLabel } = props;
   const theme = useTheme();
   const [summary, setSummary] = useState<TankStockDaySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const pumpDayIso = format(new Date(), 'yyyy-MM-dd');
+  const todayIso = format(new Date(), 'yyyy-MM-dd');
+  const dateChipLabel =
+    reportLabel ?? (pumpDayIso === todayIso ? `Today · ${pumpDayIso}` : pumpDayIso);
 
   const load = useCallback(async () => {
+    setLoading(true);
     setErr(null);
     try {
       setSummary(await getTankStockDaySummary(pumpDayIso));
@@ -240,7 +245,7 @@ export function TankStockDipSummary() {
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                 Tank Stock &amp; Dip Summary
               </Typography>
-              <Chip label={`Today · ${pumpDayIso}`} size="small" variant="outlined" sx={{ height: 22 }} />
+              <Chip label={dateChipLabel} size="small" variant="outlined" sx={{ height: 22 }} />
             </Stack>
             <Typography variant="caption" color="text.secondary">
               Dip cm → liters via calibration chart. Expected = opening + purchase − sales.
@@ -260,7 +265,17 @@ export function TankStockDipSummary() {
           </Button>
           <Button
             component={RouterLink}
-            to="/manager/fuel-stock/daily"
+            to={`/manager/fuel-stock/purchase?day=${encodeURIComponent(pumpDayIso)}`}
+            variant="outlined"
+            size="small"
+            startIcon={<LocalGasStationOutlinedIcon />}
+            sx={{ borderRadius: 2 }}
+          >
+            Record purchase
+          </Button>
+          <Button
+            component={RouterLink}
+            to={`/manager/fuel-stock/daily?day=${encodeURIComponent(pumpDayIso)}`}
             variant="outlined"
             size="small"
             startIcon={<EditOutlinedIcon />}

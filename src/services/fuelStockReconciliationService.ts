@@ -19,7 +19,7 @@ import {
   fuelStockHealthFromPercent,
   FUEL_STOCK_SORT_ORDER,
 } from '@/utils/fuelStockDisplay';
-import { dipCmFromLiters } from '@/utils/fuelTankCalibration';
+import { canonicalDipCm, litersFromDipCm } from '@/utils/fuelTankCalibration';
 
 function roundLiters(n: number): number {
   return Math.round(n);
@@ -65,26 +65,22 @@ function priorClosingDip(dips: FuelTankDipReading[], pumpDayIso: string): FuelTa
     )[0];
 }
 
-/** Best dip (cm) to display when today's closing dip is not yet entered. */
+/** Best dip (cm) to display — only from saved dip readings, not guessed from stock. */
 function resolveDisplayDipCm(params: {
   fuel: FuelType;
   pumpDayIso: string;
   closingDip?: FuelTankDipReading;
   openingDip?: FuelTankDipReading;
   priorClose?: FuelTankDipReading;
-  stockLiters: number;
 }): number | null {
-  const { fuel, pumpDayIso, closingDip, openingDip, priorClose, stockLiters } = params;
+  const { fuel, pumpDayIso, closingDip, openingDip, priorClose } = params;
   const todayIso = format(new Date(), 'yyyy-MM-dd');
 
-  if (closingDip?.dipCm != null && closingDip.dipCm > 0) return closingDip.dipCm;
-  if (openingDip?.dipCm != null && openingDip.dipCm > 0) return openingDip.dipCm;
-  if (priorClose?.dipCm != null && priorClose.dipCm > 0) return priorClose.dipCm;
+  if (closingDip?.dipCm != null && closingDip.dipCm > 0) return canonicalDipCm(closingDip.dipCm);
+  if (openingDip?.dipCm != null && openingDip.dipCm > 0) return canonicalDipCm(openingDip.dipCm);
+  if (priorClose?.dipCm != null && priorClose.dipCm > 0) return canonicalDipCm(priorClose.dipCm);
   if (pumpDayIso === todayIso && fuel.lastDipCm != null && fuel.lastDipCm > 0) {
-    return fuel.lastDipCm;
-  }
-  if (stockLiters > 0) {
-    return dipCmFromLiters(stockLiters, fuel.name);
+    return canonicalDipCm(fuel.lastDipCm);
   }
   return null;
 }
@@ -126,8 +122,11 @@ async function buildRowForFuel(
     closingDip,
     openingDip,
     priorClose,
-    stockLiters: currentStockLiters,
   });
+  /** When dip is known, stock shown matches the calibration chart at that dip. */
+  const displayStockLiters =
+    closingDip?.dipLiters ??
+    (currentDipCm != null ? litersFromDipCm(currentDipCm, fuel.name) : currentStockLiters);
   const availablePercent =
     capacity > 0 ? Math.min(100, (currentStockLiters / capacity) * 100) : 0;
 
@@ -146,7 +145,7 @@ async function buildRowForFuel(
     closingDipCm: closingDip?.dipCm ?? null,
     closingStockLiters: closingDip?.dipLiters ?? null,
     currentDipCm,
-    currentStockLiters,
+    currentStockLiters: displayStockLiters,
     salesLiters,
     receiptLiters,
     expectedStockLiters,
