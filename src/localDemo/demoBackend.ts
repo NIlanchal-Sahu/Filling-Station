@@ -27,7 +27,7 @@ import {
   notifyFuelStockUpdated,
   sortFuelStockItems,
 } from '@/utils/fuelStockDisplay';
-import { canonicalDipCm, dipCmFromLiters, litersFromDipCm, normalizeDipCm } from '@/utils/fuelTankCalibration';
+import { canonicalDipCm, dipCmFromLiters, litersFromDipCm } from '@/utils/fuelTankCalibration';
 import {
   creditPaymentModeLabel,
   creditPaymentModeLedgerChannel,
