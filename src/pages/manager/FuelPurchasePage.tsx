@@ -35,7 +35,6 @@ import {
   todayIso,
 } from '@/utils/dateEntryPolicy';
 import {
-  defaultMaterialCodeForFuel,
   formatPurchaseKl,
   formatPurchaseMoney,
   klFromLiters,
@@ -43,7 +42,7 @@ import {
   purchaseLineGrandTotal,
   purchaseLineTotal,
   purchaseLineVat,
-  PURCHASE_VAT_RATE,
+  purchaseVatPercentLabel,
 } from '@/utils/fuelPurchaseDisplay';
 import { FuelStockSubNav } from '@/pages/manager/FuelStockSubNav';
 
@@ -86,11 +85,11 @@ type PurchaseRow = FuelReceipt & {
   grandTotal: number;
 };
 
-function buildPurchaseRow(receipt: FuelReceipt): PurchaseRow {
+function buildPurchaseRow(receipt: FuelReceipt, fuelCode: string): PurchaseRow {
   const kl = klFromLiters(receipt.liters);
   const rate = receipt.ratePerKl ?? 0;
   const total = rate > 0 ? purchaseLineTotal(kl, rate) : 0;
-  const vat = rate > 0 ? purchaseLineVat(total) : 0;
+  const vat = rate > 0 ? purchaseLineVat(total, fuelCode) : 0;
   return {
     ...receipt,
     kl,
@@ -134,8 +133,12 @@ export function FuelPurchasePage() {
     [fuels, fuelTypeId],
   );
   const fuelCode = selectedFuel ? fuelStockDisplayMeta(selectedFuel.name).shortCode : 'FUEL';
+  const vatPercentLabel = purchaseVatPercentLabel(fuelCode);
 
-  const rows = useMemo(() => receipts.map(buildPurchaseRow), [receipts]);
+  const rows = useMemo(
+    () => receipts.map((r) => buildPurchaseRow(r, fuelCode)),
+    [receipts, fuelCode],
+  );
 
   const footerTotals = useMemo(
     () =>
@@ -157,7 +160,7 @@ export function FuelPurchasePage() {
     Number.isFinite(previewKl) && Number.isFinite(previewRate) && previewKl > 0 && previewRate > 0
       ? purchaseLineTotal(previewKl, previewRate)
       : null;
-  const previewVat = previewTotal != null ? purchaseLineVat(previewTotal) : null;
+  const previewVat = previewTotal != null ? purchaseLineVat(previewTotal, fuelCode) : null;
   const previewGrand =
     previewTotal != null && previewVat != null ? purchaseLineGrandTotal(previewTotal, previewVat) : null;
 
@@ -215,7 +218,6 @@ export function FuelPurchasePage() {
 
   useEffect(() => {
     if (!selectedFuel) return;
-    setMaterialCode(defaultMaterialCodeForFuel(selectedFuel.name));
     const lastRate = [...receipts].reverse().find((r) => r.ratePerKl != null)?.ratePerKl;
     setRatePerKl(lastRate != null ? String(lastRate) : '');
   }, [selectedFuel?.id, receipts, selectedFuel]);
@@ -302,8 +304,8 @@ export function FuelPurchasePage() {
           Fuel purchase register
         </Typography>
         <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 760 }}>
-          Record inward deliveries in KL with invoice, material code, rate, VAT ({PURCHASE_VAT_RATE * 100}%), and
-          grand total — same layout as your purchase sheet. Stock uses liters (KL × 1,000).
+          Record inward deliveries in KL with invoice, material code, rate, and VAT (HSD 24%, MS/XP 28%).
+          Stock uses liters (KL × 1,000).
         </Typography>
       </Box>
 
@@ -415,7 +417,7 @@ export function FuelPurchasePage() {
             sx={{ width: 130 }}
           />
           <TextField
-            label={`VAT ${PURCHASE_VAT_RATE * 100}%`}
+            label={`VAT ${vatPercentLabel}%`}
             value={previewVat != null ? formatPurchaseMoney(previewVat, 4) : ''}
             size="small"
             slotProps={{ input: { readOnly: true } }}
@@ -465,7 +467,7 @@ export function FuelPurchasePage() {
                   Total
                 </TableCell>
                 <TableCell sx={headSx} align="right">
-                  VAT payable {PURCHASE_VAT_RATE * 100}%
+                  VAT payable {vatPercentLabel}%
                 </TableCell>
                 <TableCell sx={headSx} align="right">
                   Grand total
