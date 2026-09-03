@@ -5,7 +5,7 @@ import { getFirebaseConfigStatus } from '@/lib/firebase';
 type Props = { children: ReactNode };
 
 /**
- * Renders a clear setup message when VITE_* Firebase keys are missing (local dev / misconfiguration).
+ * Renders a setup message when Firebase is only partly configured (some VITE_FIREBASE_* keys missing).
  */
 export function FirebaseConfigGate({ children }: Props) {
   const { ok, missing } = getFirebaseConfigStatus();
@@ -19,18 +19,17 @@ export function FirebaseConfigGate({ children }: Props) {
           Firebase is not configured
         </Typography>
         <Typography variant="body2" sx={{ mb: 1.5 }}>
-          Copy <code style={{ userSelect: 'all' }}>.env.example</code> to <code style={{ userSelect: 'all' }}>.env</code> in the
-          project root and set every <code>VITE_FIREBASE_*</code> value from the Firebase console (Project settings → Your
-          apps).
+          Set every <code>VITE_FIREBASE_*</code> value from Firebase Console → Project settings → Your apps. Locally, copy{' '}
+          <code style={{ userSelect: 'all' }}>.env.example</code> to <code style={{ userSelect: 'all' }}>.env</code>. On Vercel,
+          add the same names under Project → Settings → Environment Variables, then redeploy (Vite reads them at build time).
         </Typography>
         <Typography variant="body2" sx={{ mb: 1.5 }} color="text.secondary">
-          Tip: running <code style={{ userSelect: 'all' }}>npm run dev</code> with no Firebase variables uses offline demo
-          storage in this browser. To force that anytime, add <code style={{ userSelect: 'all' }}>VITE_LOCAL_DEMO=true</code>{' '}
-          to <code>.env</code>.
+          If you want offline demo mode instead, remove every <code>VITE_FIREBASE_*</code> variable (or set{' '}
+          <code style={{ userSelect: 'all' }}>VITE_LOCAL_DEMO=true</code>) and redeploy.
         </Typography>
 
         <Typography variant="body2" component="div" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
-          Missing in <code>.env</code>: {missing.join(', ')}
+          Missing: {missing.join(', ')}
         </Typography>
       </Alert>
     </Box>

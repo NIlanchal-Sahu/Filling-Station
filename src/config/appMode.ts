@@ -19,7 +19,8 @@ export const EXPLICIT_LOCAL_DEMO =
 
 /**
  * Offline demo — no Firebase Auth/Firestore; data in localStorage (`demoBackend`).
- * Enabled when `VITE_LOCAL_DEMO=true`, **or** in dev when every Firebase env var is empty (no `.env` required).
+ * Enabled when `VITE_LOCAL_DEMO=true`, or when every Firebase env var is empty
+ * (local `npm run dev` and Vercel builds with no Firebase keys).
+ * Partial Firebase config still fails closed so a misconfigured production build is obvious.
  */
-export const LOCAL_DEMO =
-  EXPLICIT_LOCAL_DEMO || (import.meta.env.DEV === true && firebaseEnvLooksEmpty());
+export const LOCAL_DEMO = EXPLICIT_LOCAL_DEMO || firebaseEnvLooksEmpty();

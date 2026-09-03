@@ -14,7 +14,7 @@ Open the URL Vite prints (usually **http://localhost:5173/**).
 
 ### Local demo (no Firebase)
 
-If you have **no** `VITE_FIREBASE_*` variables set, **`npm run dev`** already runs in **local demo** mode: data is stored in this browser (`localStorage` / `sessionStorage`).
+If you have **no** `VITE_FIREBASE_*` variables set, the app already runs in **demo** mode: data is stored in this browser (`localStorage` / `sessionStorage`).
 
 Optional: copy `.env.example` to `.env` and set:
 
@@ -28,6 +28,7 @@ Leave all `VITE_FIREBASE_*` lines empty for demo.
 
 | Email                 | Role     |
 |-----------------------|----------|
+| `admin@demo.local`    | Admin    |
 | `manager@demo.local`  | Manager  |
 | `operator@demo.local` | Operator |
 
@@ -45,6 +46,31 @@ Leave all `VITE_FIREBASE_*` lines empty for demo.
    ```
 
    Hosting expects `dist` from `npm run build`.
+
+### Deploy on Vercel
+
+This app is the **Vite** project at the **repository root**. Do not set the Vercel Root Directory to `frontend/` (that folder is a separate Next.js app).
+
+1. Import [NIlanchal-Sahu/Filling-Station](https://github.com/NIlanchal-Sahu/Filling-Station) in [Vercel](https://vercel.com/new).
+2. Leave **Root Directory** empty. Framework should be **Vite** (`vercel.json` sets this).
+3. Environment variables (Vite inlines them at **build** time):
+
+   - **Demo (no Firebase):** leave all `VITE_FIREBASE_*` keys unset (or empty). The live site signs in with `admin@demo.local`, `manager@demo.local`, or `operator@demo.local` and stores data in the browser.
+   - **Real Firebase:** add every key below, then redeploy:
+
+   | Name | Notes |
+   |------|--------|
+   | `VITE_FIREBASE_API_KEY` | Firebase web app config |
+   | `VITE_FIREBASE_AUTH_DOMAIN` | Firebase web app config |
+   | `VITE_FIREBASE_PROJECT_ID` | Firebase web app config |
+   | `VITE_FIREBASE_STORAGE_BUCKET` | Firebase web app config |
+   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase web app config |
+   | `VITE_FIREBASE_APP_ID` | Firebase web app config |
+   | `VITE_LOCAL_DEMO` | Leave empty/`false` when using Firebase. |
+
+4. Deploy. For Firebase, after the first URL exists, add `your-project.vercel.app` (and any custom domain) to **Firebase Console → Authentication → Settings → Authorized domains**.
+
+`vercel.json` rewrites unknown paths to `index.html` so React Router deep links work.
 
 ### Bootstrap data (recommended)
 
