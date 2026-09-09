@@ -22,7 +22,7 @@ import {
   Typography,
 } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { format } from 'date-fns';
 import { useShiftAccess } from '@/hooks/useShiftAccess';
 import { listReadingsForShift, getMachineLabelForShift } from '@/services/shiftReadingsService';
@@ -460,31 +460,10 @@ export function ReconciliationFormPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 3, maxWidth: 960 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.25, sm: 2.75 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.28)}`,
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <FactCheckOutlinedIcon sx={{ opacity: 0.95 }} />
-          <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-            Payment split
-          </Typography>
-        </Stack>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          End-of-shift reconciliation
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.75 }}>
-          Enter Paytm, cards, credit, and short so <strong>Cash</strong> matches your meter total. Manager sees the daily
-          cash summary when logged in.
-        </Typography>
-      </Box>
+      <PageHeader
+        title="End-of-shift reconciliation"
+        subtitle="Enter Paytm, cards, credit, and short so Cash matches your meter total. Manager sees the daily cash summary when logged in."
+      />
 
       {isManagerEdit && existing?.status === 'pending' ? (
         <Alert severity="info" sx={{ borderRadius: 2 }}>
@@ -517,6 +496,7 @@ export function ReconciliationFormPage() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         Machine: <strong>{machineLabel}</strong>
       </Typography>
+      <Stack spacing={0} sx={{ '& .MuiTextField-root': { width: '100%' } }}>
       <TextField
         fullWidth
         label="Paytm / online (₹)"
@@ -580,6 +560,7 @@ export function ReconciliationFormPage() {
           },
         }}
       />
+      </Stack>
       <Box sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 1, my: 1 }}>
         <Typography variant="body2">Total received: ₹ {totalReceived.toFixed(2)}</Typography>
         <Typography variant="body2" color={Math.abs(difference) < 0.01 ? 'text.secondary' : 'warning.main'}>
@@ -787,7 +768,7 @@ export function ReconciliationFormPage() {
       )}
       {formError && <Alert severity="error">{formError}</Alert>}
       <Stack direction="row" spacing={2} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
-        <Button type="submit" variant="contained" size="large" disabled={saving} sx={{ borderRadius: 1.5 }}>
+        <Button type="submit" variant="contained" size="large" disabled={saving} sx={{ borderRadius: 1.5, minHeight: 48 }}>
           {saving
             ? 'Saving…'
             : isManagerEdit && existing?.status === 'pending'

@@ -269,6 +269,10 @@ function ensureLoaded(): void {
         row.users['demo-admin'] = { name: 'Demo Admin', role: 'admin', isActive: true };
         persist();
       }
+      if (!row.users['demo-owner']) {
+        row.users['demo-owner'] = { name: 'Demo Owner', role: 'owner', isActive: true };
+        persist();
+      }
       ensureTankDefaults();
     } else {
       seed();
@@ -375,6 +379,7 @@ function ensureTankDefaults(): void {
 function seed(): void {
   row = emptyRows();
   row.users['demo-admin'] = { name: 'Demo Admin', role: 'admin', isActive: true };
+  row.users['demo-owner'] = { name: 'Demo Owner', role: 'owner', isActive: true };
   row.users['demo-manager'] = { name: 'Demo Manager', role: 'manager', isActive: true };
   row.users['demo-operator'] = { name: 'Demo Operator', role: 'operator', isActive: true };
   const now = Date.now();

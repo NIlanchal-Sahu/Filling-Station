@@ -1,7 +1,7 @@
 import type { Timestamp } from 'firebase/firestore';
 
 /** Auth profile stored in `users/{uid}` (id matches Firebase Auth uid). */
-export type UserRole = 'manager' | 'operator' | 'admin';
+export type UserRole = 'admin' | 'owner' | 'manager' | 'operator';
 
 export interface User {
   id: string;

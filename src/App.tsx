@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageFallback } from '@/components/layout/PageFallback';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
@@ -8,14 +8,20 @@ const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((m) => ({ def
 const HomeRedirectPage = lazy(() =>
   import('@/pages/HomeRedirectPage').then((m) => ({ default: m.HomeRedirectPage })),
 );
+const AdminDashboardPage = lazy(() =>
+  import('@/pages/admin/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
+);
+const AdminSettingsPage = lazy(() =>
+  import('@/pages/admin/AdminSettingsPage').then((m) => ({ default: m.AdminSettingsPage })),
+);
+const OwnerDashboardPage = lazy(() =>
+  import('@/pages/owner/OwnerDashboardPage').then((m) => ({ default: m.OwnerDashboardPage })),
+);
 const OperatorDashboardPage = lazy(() =>
   import('@/pages/operator/OperatorDashboardPage').then((m) => ({ default: m.OperatorDashboardPage })),
 );
 const ManagerDashboardPage = lazy(() =>
   import('@/pages/manager/ManagerDashboardPage').then((m) => ({ default: m.ManagerDashboardPage })),
-);
-const ManagerLayoutWithNav = lazy(() =>
-  import('@/pages/manager/ManagerLayoutExtras').then((m) => ({ default: m.ManagerLayoutWithNav })),
 );
 const CreditCustomersPage = lazy(() =>
   import('@/pages/manager/CreditCustomersPage').then((m) => ({ default: m.CreditCustomersPage })),
@@ -59,28 +65,38 @@ export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes>
-        <Route
-          path="/login"
-          element={
-            <AppLayout showNav={false}>
-              <LoginPage />
-            </AppLayout>
-          }
-        />
-        <Route element={<AppLayout />}>
+        <Route element={<AppLayout variant="public" />}>
           <Route path="/" element={<HomeRedirectPage />} />
-          <Route element={<ProtectedRoute />}>
+          <Route path="/login" element={<LoginPage />} />
+        </Route>
+
+        <Route element={<AppLayout variant="app" />}>
+          <Route element={<ProtectedRoute requireRole={['operator', 'manager', 'admin']} />}>
             <Route path="shifts/new" element={<StartShiftPage />} />
             <Route path="shifts/:shiftId/meters" element={<EndMetersPage />} />
             <Route path="shifts/:shiftId/reconcile" element={<ReconciliationFormPage />} />
           </Route>
+
           <Route element={<ProtectedRoute requireRole="operator" />}>
             <Route path="operator" element={<OperatorDashboardPage />} />
           </Route>
-          <Route element={<ProtectedRoute requireRole={['manager', 'admin']} />}>
-            <Route path="manager" element={<ManagerLayoutWithNav />}>
-              <Route index element={<ManagerDashboardPage />} />
+
+          <Route element={<ProtectedRoute requireRole="owner" />}>
+            <Route path="owner" element={<OwnerDashboardPage />} />
+          </Route>
+
+          <Route element={<ProtectedRoute requireRole="admin" />}>
+            <Route path="admin" element={<Outlet />}>
+              <Route index element={<AdminDashboardPage />} />
               <Route path="team" element={<TeamPage />} />
+              <Route path="settings" element={<AdminSettingsPage />} />
+            </Route>
+          </Route>
+
+          <Route element={<ProtectedRoute requireRole={['manager', 'admin', 'owner']} />}>
+            <Route path="manager" element={<Outlet />}>
+              <Route index element={<ManagerDashboardPage />} />
+              <Route path="team" element={<Navigate to="/admin/team" replace />} />
               <Route path="credit" element={<CreditCustomersPage />} />
               <Route path="credit/:id" element={<CustomerDetailPage />} />
               <Route path="ledger" element={<LedgerPage />} />
@@ -94,6 +110,7 @@ export default function App() {
               <Route path="lubricants" element={<LubricantPage />} />
             </Route>
           </Route>
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

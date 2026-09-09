@@ -2,12 +2,12 @@ import { Alert, Box, CircularProgress, Typography } from '@mui/material';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import type { UserRole } from '@/types/entities';
-import { homePathForRole, isManagerLike } from '@/utils/roles';
+import { homePathForRole, parseUserRole } from '@/utils/roles';
+import { canAccessRoute, hasPermission, type Permission } from '@/utils/permissions';
 
 type Props = {
-  /** Exact role, or any of the listed roles. */
   requireRole?: UserRole | UserRole[];
-  /** If true, only manager and admin may enter (operators redirected). */
+  requirePermission?: Permission;
   managerOnly?: boolean;
 };
 
@@ -16,9 +16,11 @@ function matchesRequireRole(role: UserRole, requireRole: UserRole | UserRole[]):
   return list.includes(role);
 }
 
-export function ProtectedRoute({ requireRole, managerOnly }: Props) {
+export function ProtectedRoute({ requireRole, requirePermission, managerOnly }: Props) {
   const { firebaseUser, profile, loading } = useAuth();
   const location = useLocation();
+
+  const role = profile ? parseUserRole(profile.role) : null;
 
   if (loading) {
     return (
@@ -33,7 +35,7 @@ export function ProtectedRoute({ requireRole, managerOnly }: Props) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (!profile) {
+  if (!profile || !role) {
     return (
       <Box sx={{ maxWidth: 480, mx: 'auto', mt: 4 }}>
         <Alert severity="error">
@@ -47,12 +49,20 @@ export function ProtectedRoute({ requireRole, managerOnly }: Props) {
     );
   }
 
-  if (managerOnly && !isManagerLike(profile.role)) {
-    return <Navigate to="/operator" replace />;
+  if (managerOnly && role !== 'manager' && role !== 'admin') {
+    return <Navigate to={homePathForRole(role)} replace state={{ accessDenied: true }} />;
   }
 
-  if (requireRole && !matchesRequireRole(profile.role, requireRole)) {
-    return <Navigate to={homePathForRole(profile.role)} replace />;
+  if (requireRole && !matchesRequireRole(role, requireRole)) {
+    return <Navigate to={homePathForRole(role)} replace state={{ accessDenied: true }} />;
+  }
+
+  if (requirePermission && !hasPermission(role, requirePermission)) {
+    return <Navigate to={homePathForRole(role)} replace state={{ accessDenied: true }} />;
+  }
+
+  if (!canAccessRoute(role, location.pathname)) {
+    return <Navigate to={homePathForRole(role)} replace state={{ accessDenied: true }} />;
   }
 
   return <Outlet />;

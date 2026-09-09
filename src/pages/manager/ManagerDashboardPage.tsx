@@ -1,9 +1,7 @@
-import { useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   alpha,
-  Box,
   Button,
   Card,
   CardContent,
@@ -12,21 +10,29 @@ import {
   Stack,
   TextField,
   Typography,
-  useTheme,
 } from '@mui/material';
+import Grid from '@mui/material/Grid2';
 import CreditCardOutlinedIcon from '@mui/icons-material/CreditCardOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
-import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
 import { format, isSameDay } from 'date-fns';
 
 import { LOCAL_DEMO } from '@/config/appMode';
+import { DashboardSection } from '@/components/ui/DashboardSection';
+import { KpiStat } from '@/components/ui/KpiStat';
+import { KpiStatSkeleton } from '@/components/ui/KpiStatSkeleton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { QuickActionBar } from '@/components/ui/QuickActionBar';
 import { demoResetStores } from '@/localDemo/demoBackend';
+import { getTodaySalesByFuelType, getTotalOutstandingCredit } from '@/services/aggregatesService';
+import { getFuelStockOverview } from '@/services/fuelStockService';
+import { getShiftStatusForPumpDay } from '@/services/shiftStatusService';
 import { CashBankCollectionSummary } from '@/pages/manager/CashBankCollectionSummary';
 import { TankStockDipSummary } from '@/pages/manager/TankStockDipSummary';
 import { TodaySalesByShiftSection } from '@/pages/manager/TodaySalesByShiftSection';
@@ -37,64 +43,19 @@ function parseLocalYmd(iso: string): Date {
   return new Date(iso + 'T00:00:00');
 }
 
-function DashboardSection(props: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  const { title, subtitle, children } = props;
-  return (
-    <Box component="section">
-      <Stack spacing={0.5} sx={{ mb: 2 }}>
-        <Typography
-          variant="overline"
-          color="text.secondary"
-          sx={{ fontWeight: 700, letterSpacing: '0.1em', lineHeight: 1.4 }}
-        >
-          {title}
-        </Typography>
-        {subtitle ? (
-          <Typography variant="body2" color="text.secondary">
-            {subtitle}
-          </Typography>
-        ) : null}
-      </Stack>
-      {children}
-    </Box>
-  );
+function fmtInr(n: number): string {
+  return `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 }
 
-function QuickActions() {
-  const actions = [
-    { to: '/manager/fuel-stock/daily', label: 'Daily dip entry', icon: <EditOutlinedIcon fontSize="small" /> },
-    { to: '/manager/credit', label: 'Credit', icon: <CreditCardOutlinedIcon fontSize="small" /> },
-    { to: '/manager/reconciliations', label: 'Reconciliations', icon: <FactCheckOutlinedIcon fontSize="small" /> },
-    { to: '/manager/reports', label: 'Reports', icon: <AssessmentOutlinedIcon fontSize="small" /> },
-    { to: '/manager/daily-sheet', label: 'Daily sheet', icon: <PaymentsOutlinedIcon fontSize="small" /> },
-  ] as const;
-
-  return (
-    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-      {actions.map((a) => (
-        <Button
-          key={a.to}
-          component={RouterLink}
-          to={a.to}
-          variant="outlined"
-          size="small"
-          startIcon={a.icon}
-          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
-        >
-          {a.label}
-        </Button>
-      ))}
-    </Stack>
-  );
-}
+const managerQuickActions = [
+  { to: '/manager/fuel-stock/daily', label: 'Daily dip entry', icon: <EditOutlinedIcon fontSize="small" /> },
+  { to: '/manager/credit', label: 'Credit', icon: <CreditCardOutlinedIcon fontSize="small" /> },
+  { to: '/manager/reconciliations', label: 'Reconciliations', icon: <FactCheckOutlinedIcon fontSize="small" /> },
+  { to: '/manager/reports', label: 'Reports', icon: <AssessmentOutlinedIcon fontSize="small" /> },
+  { to: '/manager/daily-sheet', label: 'Daily sheet', icon: <PaymentsOutlinedIcon fontSize="small" /> },
+] as const;
 
 export function ManagerDashboardPage() {
-  const theme = useTheme();
-
   const [reportIso, setReportIso] = useState(() => format(new Date(), 'yyyy-MM-dd'));
 
   const maxSelectableIso = format(new Date(), 'yyyy-MM-dd');
@@ -105,85 +66,134 @@ export function ManagerDashboardPage() {
   );
   const isSelectedToday = Number.isFinite(reportDay.getTime()) && isSameDay(reportDay, new Date());
 
+  const [kpisLoading, setKpisLoading] = useState(true);
+  const [salesTotal, setSalesTotal] = useState(0);
+  const [openShifts, setOpenShifts] = useState(0);
+  const [pendingRecon, setPendingRecon] = useState(0);
+  const [lowStock, setLowStock] = useState(0);
+  const [creditOutstanding, setCreditOutstanding] = useState(0);
+
+  useEffect(() => {
+    let ok = true;
+    setKpisLoading(true);
+    void (async () => {
+      try {
+        const [sales, shiftStatus, stock, credit] = await Promise.all([
+          getTodaySalesByFuelType(),
+          getShiftStatusForPumpDay(reportIso),
+          getFuelStockOverview(),
+          getTotalOutstandingCredit(),
+        ]);
+        if (!ok) {
+          return;
+        }
+        setSalesTotal(sales.reduce((sum, row) => sum + row.amount, 0));
+        setOpenShifts(shiftStatus.totals.active);
+        setPendingRecon(shiftStatus.totals.pendingReconciliation);
+        setLowStock(stock.items.filter((i) => i.health === 'low' || i.health === 'critical').length);
+        setCreditOutstanding(credit);
+      } catch {
+        if (ok) {
+          setSalesTotal(0);
+          setOpenShifts(0);
+          setPendingRecon(0);
+          setLowStock(0);
+          setCreditOutstanding(0);
+        }
+      } finally {
+        if (ok) {
+          setKpisLoading(false);
+        }
+      }
+    })();
+    return () => {
+      ok = false;
+    };
+  }, [reportIso]);
+
   return (
     <Stack spacing={3.5} sx={{ pb: 4 }}>
-      {/* Header */}
-      <Box
+      <PageHeader
+        title="Manager dashboard"
+        subtitle={`${reportLabel}${isSelectedToday ? ' · Today' : ''}`}
+        action={
+          isSelectedToday ? (
+            <Chip label="Live" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
+          ) : null
+        }
+      />
+
+      <Grid container spacing={2}>
+        {kpisLoading ? (
+          <>
+            {[0, 1, 2, 3].map((i) => (
+              <Grid key={i} size={{ xs: 6, sm: 2.4 }}>
+                <KpiStatSkeleton />
+              </Grid>
+            ))}
+            <Grid size={{ xs: 12, sm: 2.4 }}>
+              <KpiStatSkeleton />
+            </Grid>
+          </>
+        ) : (
+          <>
+            <Grid size={{ xs: 6, sm: 2.4 }}>
+              <KpiStat label="Sales (today)" value={fmtInr(salesTotal)} icon={PaymentsOutlinedIcon} />
+            </Grid>
+            <Grid size={{ xs: 6, sm: 2.4 }}>
+              <KpiStat label="Open shifts" value={openShifts} icon={FactCheckOutlinedIcon} color="success" />
+            </Grid>
+            <Grid size={{ xs: 6, sm: 2.4 }}>
+              <KpiStat label="Pending recon" value={pendingRecon} icon={FactCheckOutlinedIcon} color="warning" />
+            </Grid>
+            <Grid size={{ xs: 6, sm: 2.4 }}>
+              <KpiStat label="Low stock" value={lowStock} icon={WarningAmberOutlinedIcon} color="error" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 2.4 }}>
+              <KpiStat
+                label="Credit outstanding"
+                value={fmtInr(creditOutstanding)}
+                icon={CreditCardOutlinedIcon}
+                color="secondary"
+              />
+            </Grid>
+          </>
+        )}
+      </Grid>
+
+      <Paper
+        elevation={0}
         sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 50%, ${t.palette.primary.light} 120%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 10px 32px ${alpha(t.palette.primary.main, 0.28)}`,
+          p: 1.75,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
         }}
       >
-        <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1.5}>
-            <Stack direction="row" spacing={1.25} alignItems="center">
-              <GridViewOutlinedIcon sx={{ opacity: 0.95 }} />
-              <Box>
-                <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-                  Manager dashboard
-                </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.25 }}>
-                  {reportLabel}
-                  {isSelectedToday ? ' · Today' : ''}
-                </Typography>
-              </Box>
-            </Stack>
-            {isSelectedToday ? (
-              <Chip
-                label="Live"
-                size="small"
-                sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, bgcolor: alpha('#fff', 0.22), color: 'inherit', fontWeight: 700 }}
-              />
-            ) : null}
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <CalendarMonthOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }} />
+            <TextField
+              type="date"
+              label="Pump day"
+              value={reportIso}
+              onChange={(e) => setReportIso(e.target.value)}
+              size="small"
+              slotProps={{
+                htmlInput: { max: maxSelectableIso },
+                inputLabel: { shrink: true },
+              }}
+              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            />
           </Stack>
-
-          <Paper
-            elevation={0}
-            sx={{
-              p: 1.75,
-              borderRadius: 2,
-              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.12 : 0.98),
-              color: 'text.primary',
-            }}
-          >
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <CalendarMonthOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }} />
-                <TextField
-                  type="date"
-                  label="Pump day"
-                  value={reportIso}
-                  onChange={(e) => setReportIso(e.target.value)}
-                  size="small"
-                  slotProps={{
-                    htmlInput: { max: maxSelectableIso },
-                    inputLabel: { shrink: true },
-                  }}
-                  sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-                />
-              </Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-                All sections below follow this pump business day.
-              </Typography>
-            </Stack>
-          </Paper>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+            All sections below follow this pump business day.
+          </Typography>
         </Stack>
-      </Box>
-
-      {/* Quick actions */}
-      <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em', display: 'block', mb: 1.25 }}>
-          QUICK ACTIONS
-        </Typography>
-        <QuickActions />
       </Paper>
 
-      {/* 1 — Shift sales */}
+      <QuickActionBar actions={[...managerQuickActions]} />
+
       <DashboardSection
         title="Shift performance"
         subtitle="Compare Shift 1 vs Shift 2 meter sales for the selected day."
@@ -209,7 +219,6 @@ export function ManagerDashboardPage() {
         </Paper>
       </DashboardSection>
 
-      {/* Tank stock */}
       <DashboardSection title="Tank & inventory" subtitle="Dip readings, stock levels, and daily reconciliation.">
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <TankStockDipSummary pumpDayIso={reportIso} reportLabel={reportLabel} />

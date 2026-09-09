@@ -25,6 +25,9 @@ function emailToDemoUid(email: string): string | null {
   if (e === 'admin@demo.local') {
     return 'demo-admin';
   }
+  if (e === 'owner@demo.local') {
+    return 'demo-owner';
+  }
   if (e === 'manager@demo.local') {
     return 'demo-manager';
   }
@@ -135,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
       if (LOCAL_DEMO) {
         const uid = emailToDemoUid(email);
         if (!uid) {
-          throw new Error('Use manager@demo.local or operator@demo.local (any password).');
+          throw new Error('Use admin@demo.local, owner@demo.local, manager@demo.local, or operator@demo.local (any password).');
         }
         const u = await getUser(uid);
         if (!u) {

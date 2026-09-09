@@ -29,8 +29,11 @@ Leave all `VITE_FIREBASE_*` lines empty for demo.
 | Email                 | Role     |
 |-----------------------|----------|
 | `admin@demo.local`    | Admin    |
+| `owner@demo.local`    | Owner    |
 | `manager@demo.local`  | Manager  |
-| `operator@demo.local` | Operator |
+| `operator@demo.local` | Worker   |
+
+See [`docs/ROLES.md`](docs/ROLES.md) for the full permission matrix.
 
 ### Production-style (Firebase)
 

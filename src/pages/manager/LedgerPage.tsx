@@ -19,21 +19,21 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
   Typography,
-  useTheme,
 } from '@mui/material';
 import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
-import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import NoteAddOutlinedIcon from '@mui/icons-material/NoteAddOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import { FilterToolbar } from '@/components/ui/FilterToolbar';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { useAuth } from '@/context/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { createLedgerEntry, deleteLedgerEntry, listLedgerInRange, updateLedgerEntry } from '@/services/ledgerService';
@@ -119,7 +119,6 @@ const sheetCellSx = {
 };
 
 export function LedgerPage() {
-  const theme = useTheme();
   const { profile } = useAuth();
   const dateBounds = dateInputBoundsForRole(profile?.role);
   const [searchParams] = useSearchParams();
@@ -326,79 +325,38 @@ export function LedgerPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ md: 'flex-start' }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                <MenuBookOutlinedIcon sx={{ opacity: 0.95 }} />
-                <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-                  Cash book
-                </Typography>
-              </Stack>
-              <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-                Cash &amp; expense ledger
-              </Typography>
-              <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 640 }}>
-                Mirror your written ledger: <strong>PAID</strong> is money leaving the drawer or bank;{' '}
-                <strong>RECEIVED</strong> is money in. Shift cash and credit receipts tie into the same running picture as{' '}
-                <strong>Daily sheet</strong> and <strong>Reconciliation</strong>.
-              </Typography>
-            </Box>
-          </Stack>
+      <PageHeader
+        title="Cash & expense ledger"
+        subtitle="Mirror your written ledger: PAID is money leaving the drawer or bank; RECEIVED is money in. Shift cash and credit receipts tie into the same running picture as Daily sheet and Reconciliation."
+      />
 
-          <Paper
-            elevation={0}
+      <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ maxWidth: 720 }}>
+          <Box
             sx={{
-              p: 2,
+              p: 1.25,
               borderRadius: 2,
-              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.12 : 0.98),
-              color: 'text.primary',
-              border: '1px solid',
-              borderColor: alpha('#fff', 0.35),
+              bgcolor: (t) => alpha(t.palette.success.main, t.palette.mode === 'dark' ? 0.2 : 0.12),
+              color: 'success.main',
+              display: 'flex',
             }}
           >
-            <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ maxWidth: 720 }}>
-              <Box
-                sx={{
-                  p: 1.25,
-                  borderRadius: 2,
-                  bgcolor: (t) => alpha(t.palette.success.main, t.palette.mode === 'dark' ? 0.2 : 0.12),
-                  color: 'success.main',
-                  display: 'flex',
-                }}
-              >
-                <AccountBalanceWalletOutlinedIcon />
-              </Box>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em' }}>
-                  Cash in hand (estimate)
-                </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                  {fmtRs(bal)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', lineHeight: 1.55 }}>
-                  <strong>Shifts:</strong> for each reconciliation (pending or approved), meter sales − PhonePe − ICICI −
-                  Fleet − credit − short. Rejected shifts are omitted.{' '}
-                  <strong>Ledger:</strong> only rows with transaction type <strong>CASH</strong> — extras you received in
-                  cash (e.g. dues, borrowings) increase the drawer; cash you paid out decreases it. Bank and UPI ledger lines do
-                  not change this figure. Totals cover <strong>all time</strong>, not the table date range below.
-                </Typography>
-              </Box>
-            </Stack>
-          </Paper>
+            <AccountBalanceWalletOutlinedIcon />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em' }}>
+              Cash in hand (estimate)
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
+              {fmtRs(bal)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', lineHeight: 1.55 }}>
+              Shifts: for each reconciliation (pending or approved), meter sales − PhonePe − ICICI − Fleet − credit − short.
+              Ledger: only rows with transaction type CASH. Totals cover all time, not the table date range below.
+            </Typography>
+          </Box>
         </Stack>
-      </Box>
+      </Paper>
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -449,11 +407,8 @@ export function LedgerPage() {
               <MenuItem value="received">Money received (RECEIVED column)</MenuItem>
             </TextField>
           </Stack>
-          <TableContainer
-            component={Paper}
-            variant="outlined"
-            sx={{ maxWidth: '100%', overflowX: 'auto', borderRadius: 1.5 }}
-          >
+          <Paper variant="outlined" sx={{ borderRadius: 1.5 }}>
+            <ResponsiveTableContainer stickyFirstColumn>
             <Table size="small" sx={{ minWidth: 980, borderCollapse: 'collapse' }}>
               <TableHead>
                 <TableRow>
@@ -589,7 +544,8 @@ export function LedgerPage() {
                 </TableRow>
               </TableBody>
             </Table>
-          </TableContainer>
+            </ResponsiveTableContainer>
+          </Paper>
           {formErr && (
             <Alert severity="error" sx={{ mt: 2 }}>
               {formErr}
@@ -599,7 +555,7 @@ export function LedgerPage() {
       </Card>
 
       <Paper variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} flexWrap="wrap" useFlexGap>
+        <FilterToolbar>
           <TextField
             type="date"
             label="From"
@@ -630,14 +586,14 @@ export function LedgerPage() {
             <MenuItem value="income">Income only</MenuItem>
             <MenuItem value="expense">Expense only</MenuItem>
           </TextField>
-          <Box sx={{ flex: 1 }} />
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Box sx={{ flex: 1, display: { xs: 'none', sm: 'block' } }} />
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ width: { xs: '100%', sm: 'auto' } }}>
             <Button
               variant="outlined"
               startIcon={<RefreshOutlinedIcon />}
               onClick={() => void load()}
               disabled={loading}
-              sx={{ borderRadius: 1.5 }}
+              sx={{ borderRadius: 1.5, minHeight: 44 }}
             >
               Refresh
             </Button>
@@ -670,12 +626,12 @@ export function LedgerPage() {
                   ]),
                 )
               }
-              sx={{ borderRadius: 1.5 }}
+              sx={{ borderRadius: 1.5, minHeight: 44 }}
             >
               Export CSV
             </Button>
           </Stack>
-        </Stack>
+        </FilterToolbar>
       </Paper>
 
       {loading ? (
@@ -715,7 +671,7 @@ export function LedgerPage() {
               Running balance is cumulative across the filtered list (oldest → newest within range).
             </Typography>
           </Stack>
-          <TableContainer sx={{ maxWidth: '100%', overflowX: 'auto' }}>
+          <ResponsiveTableContainer stickyFirstColumn>
             <Table
               size="small"
               stickyHeader
@@ -804,7 +760,7 @@ export function LedgerPage() {
                 )}
               </TableBody>
             </Table>
-          </TableContainer>
+          </ResponsiveTableContainer>
         </Paper>
       )}
 

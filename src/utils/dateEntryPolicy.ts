@@ -7,11 +7,11 @@ export function todayIso(): string {
 }
 
 /**
- * Only the owner (admin) may enter or edit data for past pump days.
- * Managers and operators are locked to today.
+ * Owner and admin may enter or edit data for past pump days.
+ * Managers and workers are locked to today.
  */
 export function canBackdateEntries(role: UserRole | null | undefined): boolean {
-  return role === 'admin';
+  return role === 'admin' || role === 'owner';
 }
 
 /** HTML date input bounds for data-entry fields (not report filters). */
@@ -59,6 +59,6 @@ export function assertEntryDateAllowed(
     return;
   }
   if (pumpDayIso !== today) {
-    throw new Error('Only the owner (admin) can enter or edit data for past dates.');
+    throw new Error('Only the owner or admin can enter or edit data for past dates.');
   }
 }

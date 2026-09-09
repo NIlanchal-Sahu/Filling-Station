@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Alert,
   alpha,
-  Avatar,
   Box,
   Button,
   Card,
@@ -17,7 +16,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
@@ -28,6 +26,8 @@ import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { format } from 'date-fns';
 import { getCustomer, updateCustomer } from '@/services/creditCustomersService';
 import { listSalesForCustomer } from '@/services/creditSalesService';
@@ -141,126 +141,81 @@ export function CustomerDetailPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.25, sm: 2.75 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.28)}`,
-        }}
-      >
-        <Stack spacing={2}>
-          <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={2} flexWrap="wrap">
-            <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0 }}>
-              <Avatar
-                sx={{
-                  width: 56,
-                  height: 56,
-                  bgcolor: alpha('#fff', 0.22),
-                  color: 'inherit',
-                  fontWeight: 800,
-                  fontSize: '1.35rem',
-                }}
-              >
-                {c.name.trim().slice(0, 1).toUpperCase()}
-              </Avatar>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-                  Credit party
-                </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.15 }}>
-                  {c.name}
-                </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
-                  Ledger, payments, and manual credit fuel — everything for this account in one place.
-                </Typography>
-              </Box>
-            </Stack>
-            <Button
-              variant="contained"
-              color="secondary"
-              startIcon={<ArrowBackOutlinedIcon />}
-              onClick={() => nav('/manager/credit')}
-              sx={{ borderRadius: 1.5, fontWeight: 600 }}
-            >
-              Back to credit
-            </Button>
-          </Stack>
-
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.12 : 0.98),
-              color: 'text.primary',
-              border: '1px solid',
-              borderColor: alpha('#fff', 0.35),
-            }}
+      <PageHeader
+        title={c.name}
+        subtitle="Ledger, payments, and manual credit fuel — everything for this account in one place."
+        action={
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<ArrowBackOutlinedIcon />}
+            onClick={() => nav('/manager/credit')}
+            sx={{ borderRadius: 1.5, fontWeight: 600, minHeight: 44 }}
           >
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} divider={<Divider flexItem orientation="vertical" sx={{ display: { xs: 'none', md: 'block' } }} />}>
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em' }}>
-                  Outstanding balance
-                </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 800, mt: 0.5, fontVariantNumeric: 'tabular-nums', color: balanceAccent }}>
-                  {fmtRs(c.currentBalance)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', lineHeight: 1.5 }}>
-                  Debit entries add to this figure; posting a payment reduces it. Syncs with reconciliation credit lines.
-                </Typography>
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 220 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em', mb: 0.75, display: 'block' }}>
-                  Party label
-                </Typography>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
-                  <TextField
-                    size="small"
-                    label="Displayed name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    sx={{ flex: 1, minWidth: 0, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-                  />
-                  <Button
-                    size="medium"
-                    variant="contained"
-                    onClick={async () => {
-                      setFormError(null);
-                      const m = requireNonEmpty(name, 'Name');
-                      if (m) {
-                        setFormError(m);
-                        return;
-                      }
-                      setSaving(true);
-                      try {
-                        await updateCustomer(c.id, { name: name.trim() });
-                        setC((prev) => (prev ? { ...prev, name: name.trim() } : prev));
-                      } catch (e) {
-                        setFormError(e instanceof Error ? e.message : 'Update failed');
-                      } finally {
-                        setSaving(false);
-                      }
-                    }}
-                    disabled={saving || name.trim() === c.name}
-                    sx={{ borderRadius: 1.5 }}
-                  >
-                    Save
-                  </Button>
-                </Stack>
-                {formError ? (
-                  <Alert severity="error" sx={{ mt: 1.5 }}>
-                    {formError}
-                  </Alert>
-                ) : null}
-              </Box>
+            Back to credit
+          </Button>
+        }
+      />
+
+      <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} divider={<Divider flexItem orientation="vertical" sx={{ display: { xs: 'none', md: 'block' } }} />}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em' }}>
+              Outstanding balance
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 800, mt: 0.5, fontVariantNumeric: 'tabular-nums', color: balanceAccent }}>
+              {fmtRs(c.currentBalance)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', lineHeight: 1.5 }}>
+              Debit entries add to this figure; posting a payment reduces it. Syncs with reconciliation credit lines.
+            </Typography>
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 220 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em', mb: 0.75, display: 'block' }}>
+              Party label
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
+              <TextField
+                size="small"
+                label="Displayed name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                sx={{ flex: 1, minWidth: 0, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+              />
+              <Button
+                size="medium"
+                variant="contained"
+                onClick={async () => {
+                  setFormError(null);
+                  const m = requireNonEmpty(name, 'Name');
+                  if (m) {
+                    setFormError(m);
+                    return;
+                  }
+                  setSaving(true);
+                  try {
+                    await updateCustomer(c.id, { name: name.trim() });
+                    setC((prev) => (prev ? { ...prev, name: name.trim() } : prev));
+                  } catch (e) {
+                    setFormError(e instanceof Error ? e.message : 'Update failed');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving || name.trim() === c.name}
+                sx={{ borderRadius: 1.5, minHeight: 44 }}
+              >
+                Save
+              </Button>
             </Stack>
-          </Paper>
+            {formError ? (
+              <Alert severity="error" sx={{ mt: 1.5 }}>
+                {formError}
+              </Alert>
+            ) : null}
+          </Box>
         </Stack>
-      </Box>
+      </Paper>
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -604,7 +559,7 @@ function CustomerCreditSection({
             Debit = fuel booked on credit · Credit = payment received · Balance = outstanding for {partyName}
           </Typography>
         </Box>
-        <TableContainer sx={{ maxWidth: '100%', overflowX: 'auto', px: 0, pb: 0 }}>
+        <ResponsiveTableContainer stickyFirstColumn sx={{ px: 0, pb: 0 }}>
           <Table
             size="small"
             aria-label={`Credit ledger for ${partyName}`}
@@ -730,7 +685,7 @@ function CustomerCreditSection({
               )}
             </TableBody>
           </Table>
-        </TableContainer>
+        </ResponsiveTableContainer>
       </Paper>
     </Stack>
   );

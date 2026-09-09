@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   Alert,
-  alpha,
-  Box,
   Button,
   CircularProgress,
   Paper,
@@ -11,15 +9,17 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
   Typography,
 } from '@mui/material';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
-import OpacityOutlinedIcon from '@mui/icons-material/OpacityOutlined';
 
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/context/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { setFuelReceiptLitersForDay } from '@/services/fuelReceiptsService';
@@ -76,6 +76,7 @@ function rowsToForm(fuels: FuelType[], stockRows: DailyFuelStockRow[]): FuelForm
 
 export function DailyDipEntryPage() {
   const { profile } = useAuth();
+  const { readOnlyOps } = usePermissions();
   const [searchParams] = useSearchParams();
   const dateBounds = dateInputBoundsForRole(profile?.role);
   const initialDay = (() => {
@@ -197,33 +198,24 @@ export function DailyDipEntryPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
+      {readOnlyOps ? <ReadOnlyBanner /> : null}
       <FuelStockSubNav />
 
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <OpacityOutlinedIcon sx={{ opacity: 0.95 }} />
-          <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-            Tank stock
-          </Typography>
-        </Stack>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Daily dip entry
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 640 }}>
-          Enter dip readings in <strong>cm</strong> for MS, HSD, and XP. Stock in liters is calculated from the
-          calibration chart. Expected stock = opening + receipts − meter sales.
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Daily dip entry"
+        subtitle="Enter dip readings in cm for MS, HSD, and XP. Stock in liters is calculated from the calibration chart. Expected stock = opening + receipts − meter sales."
+        action={
+          <Button
+            variant="contained"
+            startIcon={<SaveOutlinedIcon />}
+            disabled={readOnlyOps || saving || loading}
+            onClick={() => void handleSave()}
+            sx={{ minHeight: 48, alignSelf: { xs: 'stretch', sm: 'auto' } }}
+          >
+            {saving ? 'Saving…' : 'Save all fuels'}
+          </Button>
+        }
+      />
 
       {err ? <Alert severity="error">{err}</Alert> : null}
       {ok ? <Alert severity="success">{ok}</Alert> : null}
@@ -246,9 +238,6 @@ export function DailyDipEntryPage() {
                 : 'Managers can enter today only.'
             }
           />
-          <Button variant="contained" startIcon={<SaveOutlinedIcon />} disabled={saving || loading} onClick={() => void handleSave()}>
-            {saving ? 'Saving…' : 'Save all fuels'}
-          </Button>
         </Stack>
       </Paper>
 
@@ -257,7 +246,8 @@ export function DailyDipEntryPage() {
           <CircularProgress />
         </Paper>
       ) : (
-        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+        <Paper variant="outlined" sx={{ borderRadius: 2 }}>
+        <ResponsiveTableContainer stickyFirstColumn>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -358,7 +348,8 @@ export function DailyDipEntryPage() {
               })}
             </TableBody>
           </Table>
-        </TableContainer>
+        </ResponsiveTableContainer>
+        </Paper>
       )}
     </Stack>
   );

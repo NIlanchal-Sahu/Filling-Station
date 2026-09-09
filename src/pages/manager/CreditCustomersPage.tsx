@@ -18,14 +18,11 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
   Typography,
-  useTheme,
 } from '@mui/material';
-import CreditCardOutlinedIcon from '@mui/icons-material/CreditCardOutlined';
 import GroupOutlinedIcon from '@mui/icons-material/GroupOutlined';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
@@ -43,13 +40,15 @@ import { requireNonEmpty } from '@/utils/validation';
 import { downloadCsv } from '@/utils/csvExport';
 import { ManualCreditSaleFormCard } from '@/pages/manager/ManualCreditSaleFormCard';
 import { trimNumberDisplay } from '@/pages/manager/creditRegisterFormatters';
+import { FilterToolbar } from '@/components/ui/FilterToolbar';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 
 function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function CreditCustomersPage() {
-  const theme = useTheme();
   const nav = useNavigate();
   const [list, setList] = useState<CreditCustomer[]>([]);
   const [q, setQ] = useState('');
@@ -202,159 +201,110 @@ export function CreditCustomersPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Stack spacing={2}>
+      <PageHeader
+        title="Credit"
+        subtitle="Track party balances, post manual fuel sales on credit, and browse the dated register — same flow as your written credit book."
+      />
+
+      <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <FilterToolbar>
+          <TextField
+            size="small"
+            label="Search parties or register"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            fullWidth
+            sx={{
+              maxWidth: { md: 360 },
+              '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
+            }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: 'text.secondary', fontSize: 22 }} />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          <FormControlLabel
+            control={<Switch checked={showInactive} onChange={(_, c) => setShowInactive(c)} color="primary" />}
+            label={<Typography variant="body2">Show inactive parties</Typography>}
+          />
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={() =>
+              downloadCsv(
+                'credit_customers.csv',
+                ['Name', 'Phone', 'Balance', 'Diesel L', 'Petrol L', 'Other L', 'Active'],
+                filtered.map((c) => {
+                  const ft = fuelTotalsByCustomerId[c.id];
+                  const d = ft?.dieselLiters ?? 0;
+                  const p = ft?.petrolLiters ?? 0;
+                  const o = ft?.otherLiters ?? 0;
+                  return [
+                    c.name,
+                    c.phone ?? '',
+                    c.currentBalance,
+                    trimNumberDisplay(d),
+                    trimNumberDisplay(p),
+                    trimNumberDisplay(o),
+                    c.isActive ? 'Y' : 'N',
+                  ];
+                }),
+              )
+            }
+            sx={{ minHeight: 44 }}
+          >
+            Export parties CSV
+          </Button>
+        </FilterToolbar>
+
+        {!loading ? (
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
-            spacing={2}
-            justifyContent="space-between"
-            alignItems={{ sm: 'flex-start' }}
+            spacing={1.5}
+            sx={{ mt: 2 }}
+            divider={<Divider flexItem orientation="vertical" sx={{ display: { xs: 'none', sm: 'block' } }} />}
           >
-            <Box>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                <CreditCardOutlinedIcon sx={{ opacity: 0.95 }} />
-                <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-                  Fleet & parties
+            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+              <TrendingFlatOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0 }} />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
+                  Outstanding (visible list)
                 </Typography>
-              </Stack>
-              <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-                Credit
-              </Typography>
-              <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 560 }}>
-                Track party balances, post manual fuel sales on credit, and browse the dated register — same flow as your
-                written credit book.
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.12 : 0.98),
-              color: 'text.primary',
-              border: '1px solid',
-              borderColor: alpha('#fff', 0.35),
-            }}
-          >
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
-              <TextField
-                size="small"
-                label="Search parties or register"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                fullWidth
-                sx={{
-                  maxWidth: { md: 360 },
-                  '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
-                }}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon sx={{ color: 'text.secondary', fontSize: 22 }} />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-              <Stack
-                direction={{ xs: 'column', sm: 'row' }}
-                spacing={{ xs: 1, sm: 2 }}
-                alignItems={{ sm: 'center' }}
-                flexWrap="wrap"
-                sx={{ flex: 1, justifyContent: { md: 'flex-end' }, gap: 1 }}
-              >
-                <FormControlLabel
-                  control={<Switch checked={showInactive} onChange={(_, c) => setShowInactive(c)} color="primary" />}
-                  label={<Typography variant="body2">Show inactive parties</Typography>}
-                />
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  onClick={() =>
-                    downloadCsv(
-                      'credit_customers.csv',
-                      ['Name', 'Phone', 'Balance', 'Diesel L', 'Petrol L', 'Other L', 'Active'],
-                      filtered.map((c) => {
-                        const ft = fuelTotalsByCustomerId[c.id];
-                        const d = ft?.dieselLiters ?? 0;
-                        const p = ft?.petrolLiters ?? 0;
-                        const o = ft?.otherLiters ?? 0;
-                        return [
-                          c.name,
-                          c.phone ?? '',
-                          c.currentBalance,
-                          trimNumberDisplay(d),
-                          trimNumberDisplay(p),
-                          trimNumberDisplay(o),
-                          c.isActive ? 'Y' : 'N',
-                        ];
-                      }),
-                    )
-                  }
-                >
-                  Export parties CSV
-                </Button>
-              </Stack>
+                <Typography variant="h6" sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtRs(outstandingFiltered)}
+                </Typography>
+              </Box>
             </Stack>
-
-            {!loading ? (
-              <Stack
-                direction={{ xs: 'column', sm: 'row' }}
-                spacing={1.5}
-                sx={{ mt: 2 }}
-                divider={<Divider flexItem orientation="vertical" sx={{ display: { xs: 'none', sm: 'block' } }} />}
-              >
-                <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-                  <TrendingFlatOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0 }} />
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
-                      Outstanding (visible list)
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtRs(outstandingFiltered)}
-                    </Typography>
-                  </Box>
-                </Stack>
-                <Stack direction="row" spacing={1.25} alignItems="center">
-                  <GroupOutlinedIcon sx={{ color: 'text.secondary' }} />
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
-                      Active parties
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                      {activePartiesCount}
-                    </Typography>
-                  </Box>
-                </Stack>
-                <Stack direction="row" spacing={1.25} alignItems="center">
-                  <ReceiptLongOutlinedIcon sx={{ color: 'text.secondary' }} />
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
-                      Register rows (filtered)
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                      {registerFiltered.length}
-                    </Typography>
-                  </Box>
-                </Stack>
-              </Stack>
-            ) : null}
-          </Paper>
-        </Stack>
-      </Box>
+            <Stack direction="row" spacing={1.25} alignItems="center">
+              <GroupOutlinedIcon sx={{ color: 'text.secondary' }} />
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
+                  Active parties
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                  {activePartiesCount}
+                </Typography>
+              </Box>
+            </Stack>
+            <Stack direction="row" spacing={1.25} alignItems="center">
+              <ReceiptLongOutlinedIcon sx={{ color: 'text.secondary' }} />
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
+                  Register rows (filtered)
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                  {registerFiltered.length}
+                </Typography>
+              </Box>
+            </Stack>
+          </Stack>
+        ) : null}
+      </Paper>
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -474,7 +424,7 @@ export function CreditCustomersPage() {
                 Export register CSV
               </Button>
             </Stack>
-            <TableContainer sx={{ maxHeight: 420 }}>
+            <ResponsiveTableContainer sx={{ maxHeight: 420 }} stickyFirstColumn>
               <Table
                 size="small"
                 stickyHeader
@@ -547,7 +497,7 @@ export function CreditCustomersPage() {
                   )}
                 </TableBody>
               </Table>
-            </TableContainer>
+            </ResponsiveTableContainer>
           </Paper>
 
           <Box>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 
 import {
   Alert,
@@ -15,18 +15,19 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
   Typography,
   useTheme,
 } from '@mui/material';
-import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
-import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { format } from 'date-fns';
 
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/context/AuthContext';
 import { getFuelType } from '@/services/fuelTypesService';
 import {
@@ -46,6 +47,7 @@ import {
   fuelStockHealthLabel,
 } from '@/utils/fuelStockDisplay';
 import { requirePositiveNumber } from '@/utils/validation';
+import { FuelStockSubNav } from '@/pages/manager/FuelStockSubNav';
 
 const headSx = {
   fontWeight: 700,
@@ -60,6 +62,7 @@ export function FuelStockHistoryPage() {
   const { fuelTypeId = '' } = useParams();
   const theme = useTheme();
   const { profile } = useAuth();
+  const { readOnlyOps } = usePermissions();
 
   const [item, setItem] = useState<FuelStockItem | null>(null);
   const [dips, setDips] = useState<FuelTankDipReading[]>([]);
@@ -143,38 +146,12 @@ export function FuelStockHistoryPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Button
-          component={RouterLink}
-          to="/manager"
-          startIcon={<ArrowBackOutlinedIcon />}
-          sx={{ mb: 2, color: 'inherit', alignSelf: 'flex-start' }}
-        >
-          Back to dashboard
-        </Button>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <HistoryOutlinedIcon sx={{ opacity: 0.95 }} />
-          <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-            Fuel stock
-          </Typography>
-        </Stack>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          {displayMeta.displayName}
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 560 }}>
-          Dip reading history and tank utilization for this fuel type.
-        </Typography>
-      </Box>
+      {readOnlyOps ? <ReadOnlyBanner /> : null}
+      <PageHeader
+        title={displayMeta.displayName}
+        subtitle="Dip reading history and tank utilization for this fuel type."
+      />
+      <FuelStockSubNav />
 
       {err ? <Alert severity="error">{err}</Alert> : null}
 
@@ -267,6 +244,7 @@ export function FuelStockHistoryPage() {
                 value={dipInput}
                 onChange={(e) => setDipInput(e.target.value)}
                 size="small"
+                disabled={readOnlyOps}
                 sx={{ minWidth: 160 }}
                 slotProps={{ htmlInput: { step: '0.1', min: 0 } }}
               />
@@ -275,12 +253,13 @@ export function FuelStockHistoryPage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 size="small"
+                disabled={readOnlyOps}
                 sx={{ flex: 1, minWidth: 200 }}
               />
               <Button
                 variant="contained"
                 startIcon={<SaveOutlinedIcon />}
-                disabled={saving}
+                disabled={readOnlyOps || saving}
                 onClick={() => void handleSaveDip()}
                 sx={{ borderRadius: 2, flexShrink: 0 }}
               >
@@ -295,7 +274,7 @@ export function FuelStockHistoryPage() {
                 Dip history
               </Typography>
             </Box>
-            <TableContainer>
+            <ResponsiveTableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -334,7 +313,7 @@ export function FuelStockHistoryPage() {
                   )}
                 </TableBody>
               </Table>
-            </TableContainer>
+            </ResponsiveTableContainer>
           </Paper>
         </>
       ) : (

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   alpha,
-  Box,
   Button,
   Chip,
   CircularProgress,
@@ -16,7 +15,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
@@ -28,7 +26,6 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
-import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { Link as RouterLink } from 'react-router-dom';
 import { format } from 'date-fns';
 
@@ -50,6 +47,9 @@ import {
   cashBookAmtDisplay,
 } from '@/utils/dailyCashBookVertical';
 import { downloadCashBookCsv, downloadCashBookExcel, downloadCashBookPdf } from '@/utils/cashBookExport';
+import { FilterToolbar } from '@/components/ui/FilterToolbar';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 
 const headerSx = {
   fontWeight: 700,
@@ -237,165 +237,127 @@ export function DailyCashSheetPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Stack spacing={2}>
-          <Box sx={{ minWidth: 0 }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-              <TableChartOutlinedIcon sx={{ opacity: 0.95 }} />
-              <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-                Pump day workbook
-              </Typography>
-            </Stack>
-            <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-              Daily cash sheet
-            </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 720 }}>
-              Excel-style pivot: one row per calendar day. <strong>Total cash</strong> = total sales − less credit −
-              Phone Pe − ICICI − Fleet − short (latest reconciliation per shift). The rightmost{' '}
-              <strong>Cash in hand</strong> column is what remains after named bank / party payouts for that day.
-            </Typography>
-          </Box>
+      <PageHeader
+        title="Daily cash sheet"
+        subtitle="Excel-style pivot: one row per calendar day. Total cash = total sales − less credit − Phone Pe − ICICI − Fleet − short. The rightmost Cash in hand column is what remains after named bank / party payouts for that day."
+      />
 
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.12 : 0.98),
-              color: 'text.primary',
-              border: '1px solid',
-              borderColor: alpha('#fff', 0.35),
-            }}
+      <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <FilterToolbar>
+          <TextField
+            type="date"
+            label="From"
+            size="small"
+            value={fromIso}
+            onChange={(e) => setFromIso(e.target.value)}
+            slotProps={{ inputLabel: { shrink: true } }}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+          />
+          <TextField
+            type="date"
+            label="To"
+            size="small"
+            value={toIso}
+            onChange={(e) => setToIso(e.target.value)}
+            slotProps={{ inputLabel: { shrink: true } }}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+          />
+          <Button
+            variant="outlined"
+            startIcon={<RefreshOutlinedIcon />}
+            disabled={loading}
+            onClick={() => setRefreshNonce((n) => n + 1)}
+            sx={{ borderRadius: 1.5, minHeight: 44 }}
           >
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
-              <TextField
-                type="date"
-                label="From"
-                size="small"
-                value={fromIso}
-                onChange={(e) => setFromIso(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-              />
-              <TextField
-                type="date"
-                label="To"
-                size="small"
-                value={toIso}
-                onChange={(e) => setToIso(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-              />
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ flex: 1 }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<RefreshOutlinedIcon />}
-                  disabled={loading}
-                  onClick={() => setRefreshNonce((n) => n + 1)}
-                  sx={{ borderRadius: 1.5, color: 'text.primary', borderColor: alpha('#fff', 0.5) }}
-                >
-                  Reload data
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<FileDownloadOutlinedIcon />}
-                  disabled={loading || rows.length === 0}
-                  onClick={() => {
-                    const headers = [
-                      'DATE',
-                      'OPENING BALANCE',
-                      'TOTAL SALES',
-                      'LESS CREDIT',
-                      'PHONE PE',
-                      'ICICI BANK',
-                      'FLEET CARD',
-                      'SHORT',
-                      'TOTAL CASH',
-                      'EXPENSES',
-                      'SALARY',
-                      'ADVANCE SALARY',
-                      'BALANCE CASH',
-                      'CASH RECEIVED',
-                      'TOTAL CASH 2',
-                      'LOCKER',
-                      'ODD BALANCE',
-                      'SUBTOTAL (PRE-BANK)',
-                      ...partyKeys,
-                      'CASH IN HAND',
-                    ];
-                    downloadCsv(
-                      `daily-cash-sheet_${fromIso}_to_${toIso}.csv`,
-                      headers,
-                      rows.map((r) => {
-                        const partyAmt = Object.fromEntries(r.partyPayouts.map((p) => [p.name, p.amount]));
-                        return [
-                          r.dateLabel,
-                          fmtSheet(r.openingBalance),
-                          fmtSheet(r.totalSales),
-                          fmtSheet(r.lessCredit),
-                          fmtSheet(r.phonePe),
-                          fmtSheet(r.iciciBank),
-                          fmtSheet(r.fleetCard),
-                          fmtSheet(r.shortAmount),
-                          fmtSheet(r.totalCashShift),
-                          fmtSheet(r.expenses),
-                          fmtSheet(r.salary),
-                          fmtSheet(r.advanceSalary),
-                          fmtSheet(r.balanceCash),
-                          fmtSheet(r.cashAdjustColumn),
-                          fmtSheet(r.totalCash2),
-                          fmtSheet(r.locker),
-                          fmtSheet(r.oddBalance),
-                          fmtSheet(r.cashInHand),
-                          ...partyKeys.map((k) => fmtSheet(partyAmt[k] ?? 0)),
-                          fmtSheet(r.closingBalance),
-                        ];
-                      }),
-                    );
-                  }}
-                  sx={{ borderRadius: 1.5, color: 'text.primary', borderColor: alpha('#fff', 0.5) }}
-                >
-                  Download CSV
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to="/manager/ledger"
-                  variant="contained"
-                  color="secondary"
-                  sx={{ borderRadius: 1.5 }}
-                >
-                  Open ledger
-                </Button>
-              </Stack>
-              {!loading && rangeOk ? (
-                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <Chip
-                    label={`${rangeSummary.calendarDays} calendar day${rangeSummary.calendarDays === 1 ? '' : 's'} in range`}
-                    size="small"
-                    sx={{ bgcolor: alpha('#fff', 0.14), color: 'inherit', fontWeight: 600 }}
-                  />
-                  <Chip
-                    label={`${rows.length} row${rows.length === 1 ? '' : 's'} built`}
-                    size="small"
-                    variant="outlined"
-                    sx={{ borderColor: alpha('#fff', 0.45), color: 'inherit', fontWeight: 600 }}
-                  />
-                </Stack>
-              ) : null}
-            </Stack>
-          </Paper>
-        </Stack>
-      </Box>
+            Reload data
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadOutlinedIcon />}
+            disabled={loading || rows.length === 0}
+            onClick={() => {
+              const headers = [
+                'DATE',
+                'OPENING BALANCE',
+                'TOTAL SALES',
+                'LESS CREDIT',
+                'PHONE PE',
+                'ICICI BANK',
+                'FLEET CARD',
+                'SHORT',
+                'TOTAL CASH',
+                'EXPENSES',
+                'SALARY',
+                'ADVANCE SALARY',
+                'BALANCE CASH',
+                'CASH RECEIVED',
+                'TOTAL CASH 2',
+                'LOCKER',
+                'ODD BALANCE',
+                'SUBTOTAL (PRE-BANK)',
+                ...partyKeys,
+                'CASH IN HAND',
+              ];
+              downloadCsv(
+                `daily-cash-sheet_${fromIso}_to_${toIso}.csv`,
+                headers,
+                rows.map((r) => {
+                  const partyAmt = Object.fromEntries(r.partyPayouts.map((p) => [p.name, p.amount]));
+                  return [
+                    r.dateLabel,
+                    fmtSheet(r.openingBalance),
+                    fmtSheet(r.totalSales),
+                    fmtSheet(r.lessCredit),
+                    fmtSheet(r.phonePe),
+                    fmtSheet(r.iciciBank),
+                    fmtSheet(r.fleetCard),
+                    fmtSheet(r.shortAmount),
+                    fmtSheet(r.totalCashShift),
+                    fmtSheet(r.expenses),
+                    fmtSheet(r.salary),
+                    fmtSheet(r.advanceSalary),
+                    fmtSheet(r.balanceCash),
+                    fmtSheet(r.cashAdjustColumn),
+                    fmtSheet(r.totalCash2),
+                    fmtSheet(r.locker),
+                    fmtSheet(r.oddBalance),
+                    fmtSheet(r.cashInHand),
+                    ...partyKeys.map((k) => fmtSheet(partyAmt[k] ?? 0)),
+                    fmtSheet(r.closingBalance),
+                  ];
+                }),
+              );
+            }}
+            sx={{ borderRadius: 1.5, minHeight: 44 }}
+          >
+            Download CSV
+          </Button>
+          <Button
+            component={RouterLink}
+            to="/manager/ledger"
+            variant="contained"
+            color="secondary"
+            sx={{ borderRadius: 1.5, minHeight: 44 }}
+          >
+            Open ledger
+          </Button>
+        </FilterToolbar>
+        {!loading && rangeOk ? (
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
+            <Chip
+              label={`${rangeSummary.calendarDays} calendar day${rangeSummary.calendarDays === 1 ? '' : 's'} in range`}
+              size="small"
+              sx={{ fontWeight: 600 }}
+            />
+            <Chip
+              label={`${rows.length} row${rows.length === 1 ? '' : 's'} built`}
+              size="small"
+              variant="outlined"
+              sx={{ fontWeight: 600 }}
+            />
+          </Stack>
+        ) : null}
+      </Paper>
 
       {!rangeOk ? (
         <Alert severity="warning">Choose a valid range (from date must be on or before to date).</Alert>
@@ -433,8 +395,7 @@ export function DailyCashSheetPage() {
               Date column stays fixed while scrolling. Person names from Ledger payouts appear as extra columns.
             </Typography>
           </Stack>
-          <Box sx={{ overflowX: 'auto' }}>
-            <TableContainer sx={{ minWidth: 1200 }}>
+          <ResponsiveTableContainer sx={{ minWidth: 1200 }} stickyFirstColumn>
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
@@ -630,8 +591,7 @@ export function DailyCashSheetPage() {
                   )}
                 </TableBody>
               </Table>
-            </TableContainer>
-          </Box>
+            </ResponsiveTableContainer>
         </Paper>
       )}
 
@@ -659,7 +619,8 @@ export function DailyCashSheetPage() {
               </Typography>
             </Stack>
           ) : (
-            <TableContainer component={Paper} variant="outlined" sx={{ mt: 2, borderRadius: 1.5 }}>
+            <Paper variant="outlined" sx={{ mt: 2, borderRadius: 1.5 }}>
+              <ResponsiveTableContainer>
               <Table size="small">
                 <TableBody>
                   {cashBookDialogRows.map((line) => (
@@ -697,7 +658,8 @@ export function DailyCashSheetPage() {
                   ))}
                 </TableBody>
               </Table>
-            </TableContainer>
+              </ResponsiveTableContainer>
+            </Paper>
           )}
           {!cashBookDlgLoading ? (
             <>

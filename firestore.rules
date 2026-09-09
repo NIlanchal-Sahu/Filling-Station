@@ -14,6 +14,10 @@ service cloud.firestore {
       return isSignedIn() && myRole() == "admin";
     }
 
+    function isOwner() {
+      return isSignedIn() && myRole() == "owner";
+    }
+
     function isManager() {
       return isSignedIn() && myRole() == "manager";
     }
@@ -22,8 +26,13 @@ service cloud.firestore {
       return isSignedIn() && myRole() == "operator";
     }
 
-    /** Owner (admin) has the same write access as manager across pump data. */
-    function isManagerOrAdmin() {
+    /** Operational read access for manager, admin, and owner. */
+    function isOpsReader() {
+      return isManager() || isAdmin() || isOwner();
+    }
+
+    /** Operational write access — owner is read-only on pump data. */
+    function isOpsWriter() {
       return isManager() || isAdmin();
     }
 
@@ -35,84 +44,84 @@ service cloud.firestore {
       return isSignedIn() && shiftData(shiftId).operatorId == request.auth.uid;
     }
 
-    /* Users — sync with Firebase Auth uid as document id */
+    /* Users — admin manages team; others read own profile. */
     match /users/{userId} {
-      allow read: if isSignedIn() && (userId == request.auth.uid || isManagerOrAdmin());
-      allow write: if isManagerOrAdmin();
+      allow read: if isSignedIn() && (userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
     }
 
     match /fuelTypes/{id} {
       allow read: if isSignedIn();
-      allow write: if isManagerOrAdmin();
+      allow write: if isOpsWriter();
     }
 
     match /fuelTankDips/{id} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isManagerOrAdmin();
+      allow create, update, delete: if isOpsWriter();
     }
 
     match /fuelReceipts/{id} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isManagerOrAdmin();
+      allow create, update, delete: if isOpsWriter();
     }
 
     match /nozzles/{id} {
       allow read: if isSignedIn();
-      allow write: if isManagerOrAdmin();
+      allow write: if isOpsWriter();
     }
 
     /* Shifts */
     match /shifts/{shiftId} {
-      allow read: if isManagerOrAdmin() || ownsShift(shiftId);
-      allow create: if (isManagerOrAdmin() || (isOperator() && request.resource.data.operatorId == request.auth.uid))
+      allow read: if isOpsReader() || ownsShift(shiftId);
+      allow create: if (isOpsWriter() || (isOperator() && request.resource.data.operatorId == request.auth.uid))
         && request.resource.data.status in ["open", "closed"];
-      allow update, delete: if isManagerOrAdmin() || (isOperator() && resource.data.operatorId == request.auth.uid);
+      allow update, delete: if isOpsWriter() || (isOperator() && resource.data.operatorId == request.auth.uid);
     }
 
-    /* Shift readings: operator for own shift only; manager/admin all */
     match /shiftReadings/{id} {
-      allow read: if isManagerOrAdmin() || (isOperator() && ownsShift(resource.data.shiftId));
-      allow create: if isManagerOrAdmin() || (isOperator() && ownsShift(request.resource.data.shiftId));
-      allow update, delete: if isManagerOrAdmin() || (isOperator() && ownsShift(resource.data.shiftId));
+      allow read: if isOpsReader() || (isOperator() && ownsShift(resource.data.shiftId));
+      allow create: if isOpsWriter() || (isOperator() && ownsShift(request.resource.data.shiftId));
+      allow update, delete: if isOpsWriter() || (isOperator() && ownsShift(resource.data.shiftId));
     }
 
-    /* Reconciliations */
     match /shiftReconciliations/{id} {
-      allow read: if isManagerOrAdmin() || (isOperator() && resource.data.operatorId == request.auth.uid);
-      allow create: if isManagerOrAdmin() || (isOperator() && request.resource.data.operatorId == request.auth.uid);
-      /* Operators may only change pending recons; managers/admins handle approve/reject/lock. */
-      allow update, delete: if isManagerOrAdmin() || (isOperator() && resource.data.operatorId == request.auth.uid
+      allow read: if isOpsReader() || (isOperator() && resource.data.operatorId == request.auth.uid);
+      allow create: if isOpsWriter() || (isOperator() && request.resource.data.operatorId == request.auth.uid);
+      allow update, delete: if isOpsWriter() || (isOperator() && resource.data.operatorId == request.auth.uid
         && resource.data.status == "pending");
     }
 
-    /* Credit: primarily manager/admin. Operators may create a sale line tied to their own shift. */
     match /creditCustomers/{id} {
-      allow read, write: if isManagerOrAdmin();
+      allow read: if isOpsReader();
+      allow write: if isOpsWriter();
     }
     match /creditSales/{id} {
-      allow read: if isManagerOrAdmin() || (isOperator() && ownsShift(resource.data.shiftId));
-      allow create: if isManagerOrAdmin() || (isOperator() && ownsShift(request.resource.data.shiftId)
+      allow read: if isOpsReader() || (isOperator() && ownsShift(resource.data.shiftId));
+      allow create: if isOpsWriter() || (isOperator() && ownsShift(request.resource.data.shiftId)
         && request.resource.data.keys().hasAll(["customerId", "shiftId", "date", "amount"]));
-      allow update, delete: if isManagerOrAdmin();
+      allow update, delete: if isOpsWriter();
     }
     match /creditPayments/{id} {
-      allow read, write: if isManagerOrAdmin();
+      allow read: if isOpsReader();
+      allow write: if isOpsWriter();
     }
 
-    /* Ledger: manager/admin only */
     match /ledgerEntries/{id} {
-      allow read, write: if isManagerOrAdmin();
+      allow read: if isOpsReader();
+      allow write: if isOpsWriter();
     }
 
-    /* Lubricants */
     match /lubricants/{id} {
-      allow read, write: if isManagerOrAdmin();
+      allow read: if isOpsReader();
+      allow write: if isOpsWriter();
     }
     match /lubricantStockEntries/{id} {
-      allow read, write: if isManagerOrAdmin();
+      allow read: if isOpsReader();
+      allow write: if isOpsWriter();
     }
     match /lubricantSales/{id} {
-      allow read, write: if isManagerOrAdmin();
+      allow read: if isOpsReader();
+      allow write: if isOpsWriter();
     }
 
   }

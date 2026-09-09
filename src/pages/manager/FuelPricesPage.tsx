@@ -12,14 +12,16 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
   Typography,
 } from '@mui/material';
-import LocalGasStationOutlinedIcon from '@mui/icons-material/LocalGasStationOutlined';
 import PlaylistAddOutlinedIcon from '@mui/icons-material/PlaylistAddOutlined';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
+import { usePermissions } from '@/hooks/usePermissions';
 import { listFuelTypes, updateFuelRate, createFuelType } from '@/services/fuelTypesService';
 import { format } from 'date-fns';
 import type { FuelType } from '@/types/entities';
@@ -37,6 +39,7 @@ const headSx = {
 };
 
 export function FuelPricesPage() {
+  const { readOnlyOps } = usePermissions();
   const [rows, setRows] = useState<FuelType[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -63,31 +66,11 @@ export function FuelPricesPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <LocalGasStationOutlinedIcon sx={{ opacity: 0.95 }} />
-          <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-            Manager setup
-          </Typography>
-        </Stack>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Fuel prices
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 560 }}>
-          Rates here drive meter ₹ amounts, reconciliation, and manual credit litre lines. Update before each price change at
-          the pump.
-        </Typography>
-      </Box>
+      {readOnlyOps ? <ReadOnlyBanner /> : null}
+      <PageHeader
+        title="Fuel prices"
+        subtitle="Rates here drive meter ₹ amounts, reconciliation, and manual credit litre lines. Update before each price change at the pump."
+      />
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -114,7 +97,7 @@ export function FuelPricesPage() {
               Save per row. “Updated” reflects the server timestamp when the rate changed.
             </Typography>
           </Box>
-          <TableContainer sx={{ overflowX: 'auto' }}>
+          <ResponsiveTableContainer>
             <Table size="small" sx={{ maxWidth: 720 }}>
               <TableHead>
                 <TableRow>
@@ -135,6 +118,7 @@ export function FuelPricesPage() {
                     stripe={idx % 2 === 1}
                     f={f}
                     busy={saving === f.id}
+                    readOnly={readOnlyOps}
                     onSave={async (rate: string) => {
                       setFormErr(null);
                       const m = requireMin(rate, 0, 'Rate');
@@ -156,7 +140,7 @@ export function FuelPricesPage() {
                 ))}
               </TableBody>
             </Table>
-          </TableContainer>
+          </ResponsiveTableContainer>
         </Paper>
       )}
 
@@ -189,6 +173,7 @@ export function FuelPricesPage() {
               label="Fuel name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
+              disabled={readOnlyOps}
               sx={{ flex: 1, minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             />
             <TextField
@@ -197,6 +182,7 @@ export function FuelPricesPage() {
               value={newRate}
               onChange={(e) => setNewRate(e.target.value)}
               type="number"
+              disabled={readOnlyOps}
               sx={{ width: { xs: '100%', sm: 140 }, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
               slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
             />
@@ -222,7 +208,7 @@ export function FuelPricesPage() {
                   setSaving(null);
                 }
               }}
-              disabled={saving === 'new'}
+              disabled={readOnlyOps || saving === 'new'}
               sx={{ borderRadius: 1.5, px: 3 }}
             >
               Add fuel
@@ -244,11 +230,13 @@ function FuelRow({
   stripe,
   onSave,
   busy,
+  readOnly,
 }: {
   f: FuelType;
   stripe: boolean;
   onSave: (r: string) => void;
   busy: boolean;
+  readOnly?: boolean;
 }) {
   const [r, setR] = useState(String(f.currentRate));
   return (
@@ -260,6 +248,7 @@ function FuelRow({
           size="small"
           value={r}
           onChange={(e) => setR(e.target.value)}
+          disabled={readOnly}
           sx={{ width: 120, '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
           slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
         />
@@ -268,7 +257,7 @@ function FuelRow({
         {f.lastUpdatedAt ? format(f.lastUpdatedAt.toDate(), 'dd MMM yy HH:mm') : '—'}
       </TableCell>
       <TableCell align="center">
-        <Button size="small" variant="contained" disabled={busy} onClick={() => onSave(r)} sx={{ borderRadius: 1.25 }}>
+        <Button size="small" variant="contained" disabled={readOnly || busy} onClick={() => onSave(r)} sx={{ borderRadius: 1.25 }}>
           {busy ? '…' : 'Save'}
         </Button>
       </TableCell>

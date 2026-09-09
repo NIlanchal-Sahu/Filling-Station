@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  alpha,
   Alert,
+  alpha,
   Box,
   Button,
   Checkbox,
@@ -17,7 +17,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import PlayCircleOutlineOutlinedIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { listNozzles } from '@/services/nozzlesService';
@@ -172,30 +172,10 @@ export function StartShiftPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 3, maxWidth: 600 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.25, sm: 2.75 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.28)}`,
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <PlayCircleOutlineOutlinedIcon sx={{ opacity: 0.95 }} />
-          <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-            New shift
-          </Typography>
-        </Stack>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Start shift
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.75 }}>
-          Pick calendar day, operator, nozzles on duty, and optional pump attendant names for the roster report.
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Start shift"
+        subtitle="Pick calendar day, operator, nozzles on duty, and optional pump attendant names for the roster report."
+      />
 
       <Paper
         component="form"
@@ -302,7 +282,7 @@ export function StartShiftPage() {
       </FormGroup>
       {formError && <Alert severity="error">{formError}</Alert>}
       <Stack direction="row" spacing={2} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
-        <Button type="submit" variant="contained" disabled={saving} size="large" sx={{ borderRadius: 1.5 }}>
+        <Button type="submit" variant="contained" disabled={saving} size="large" sx={{ borderRadius: 1.5, minHeight: 48, width: { xs: '100%', sm: 'auto' } }}>
           {saving ? 'Saving…' : 'Start shift'}
         </Button>
         <Button type="button" variant="outlined" onClick={() => nav(-1)} sx={{ borderRadius: 1.5 }}>

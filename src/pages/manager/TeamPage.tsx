@@ -22,8 +22,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import PeopleOutlineIcon from '@mui/icons-material/PeopleOutline';
-
+import { PageHeader } from '@/components/ui/PageHeader';
 import { LOCAL_DEMO } from '@/config/appMode';
 import { useAuth } from '@/context/AuthContext';
 import { listUsersForManager, upsertUser } from '@/services/usersService';
@@ -129,30 +128,25 @@ export function TeamPage() {
 
   return (
     <Box>
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
-        <PeopleOutlineIcon color="primary" fontSize="large" />
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          Team
-        </Typography>
-      </Stack>
-
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
-        {LOCAL_DEMO
-          ? 'Demo mode: add or edit staff stored in this browser. In production, each row matches a Firebase Auth user id.'
-          : 'Firestore profiles must use the same document id as Firebase Authentication (UID). Create the user in Firebase Console → Authentication, then link their profile here.'}
-      </Typography>
+      <PageHeader
+        title="Team"
+        subtitle={
+          LOCAL_DEMO
+            ? 'Demo mode: add or edit staff stored in this browser. In production, each row matches a Firebase Auth user id.'
+            : 'Firestore profiles must use the same document id as Firebase Authentication (UID). Create the user in Firebase Console → Authentication, then link their profile here.'
+        }
+        action={
+          <Button variant="contained" onClick={openAdd} disabled={loading}>
+            {LOCAL_DEMO ? 'Add user' : 'Link profile'}
+          </Button>
+        }
+      />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
-
-      <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1.5 }}>
-        <Button variant="contained" onClick={openAdd} disabled={loading}>
-          {LOCAL_DEMO ? 'Add user' : 'Link profile'}
-        </Button>
-      </Stack>
 
       {loading ? (
         <Typography color="text.secondary">Loading…</Typography>
@@ -224,10 +218,11 @@ export function TeamPage() {
                 onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as UserRole }))}
                 disabled={form.role === 'admin' && !canAssignAdmin}
               >
-                <MenuItem value="operator">Operator</MenuItem>
+                <MenuItem value="operator">Worker</MenuItem>
                 <MenuItem value="manager">Manager</MenuItem>
+                <MenuItem value="owner">Owner</MenuItem>
                 {(canAssignAdmin || form.role === 'admin') ? (
-                  <MenuItem value="admin">Admin (owner)</MenuItem>
+                  <MenuItem value="admin">Admin</MenuItem>
                 ) : null}
               </Select>
             </FormControl>

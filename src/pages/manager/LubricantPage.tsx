@@ -33,6 +33,8 @@ import InventoryOutlinedIcon from '@mui/icons-material/InventoryOutlined';
 import ShoppingCartOutlinedIcon from '@mui/icons-material/ShoppingCartOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import { FilterToolbar } from '@/components/ui/FilterToolbar';
+import { PageHeader } from '@/components/ui/PageHeader';
 import type { Lubricant, LubricantSale, LubricantStockEntry } from '@/types/entities';
 import { LUBRICANT_UNITS, LUBRICANT_GRADES, LUBRICANT_UNIT_LABELS } from '@/types/entities';
 import {
@@ -538,11 +540,11 @@ function SalesHistoryTab(props: { lubricants: Lubricant[] }) {
 
   return (
     <Box>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 2 }}>
-        <TextField label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} size="small" sx={{ width: 170 }} />
-        <TextField label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} size="small" sx={{ width: 170 }} />
-        <Button variant="outlined" size="small" onClick={load}>Refresh</Button>
-      </Stack>
+      <FilterToolbar sx={{ mb: 2 }}>
+        <TextField label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} size="small" sx={{ width: 170 }} slotProps={{ inputLabel: { shrink: true } }} />
+        <TextField label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} size="small" sx={{ width: 170 }} slotProps={{ inputLabel: { shrink: true } }} />
+        <Button variant="outlined" size="small" onClick={load} sx={{ minHeight: 48, alignSelf: { xs: 'stretch', sm: 'auto' } }}>Refresh</Button>
+      </FilterToolbar>
       {loading ? (
         <Box sx={{ py: 4, textAlign: 'center' }}><CircularProgress /></Box>
       ) : sales.length === 0 ? (
@@ -673,41 +675,41 @@ export function LubricantPage() {
 
   return (
     <Box>
-      {/* Header */}
-      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1} sx={{ mb: 2 }}>
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>Lubricants</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage lubricant stock, record sales and inward receipts.
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1}>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<AddIcon />}
-            onClick={() => { setSaleTarget(undefined); setSaleDialog(true); }}
-          >
-            Record sale
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<InventoryOutlinedIcon />}
-            onClick={() => { setStockTarget(undefined); setStockDialog(true); }}
-          >
-            Add stock
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<AddIcon />}
-            onClick={() => { setEditingLub(null); setLubDialog(true); }}
-          >
-            Add product
-          </Button>
-        </Stack>
-      </Stack>
+      <PageHeader
+        title="Lubricants"
+        subtitle="Manage lubricant stock, record sales and inward receipts."
+        action={
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => { setSaleTarget(undefined); setSaleDialog(true); }}
+              sx={{ minHeight: 48 }}
+            >
+              Record sale
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<InventoryOutlinedIcon />}
+              onClick={() => { setStockTarget(undefined); setStockDialog(true); }}
+              sx={{ minHeight: 48 }}
+            >
+              Add stock
+            </Button>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => { setEditingLub(null); setLubDialog(true); }}
+              sx={{ minHeight: 48 }}
+            >
+              Add product
+            </Button>
+          </Stack>
+        }
+      />
 
       {lowStock.length > 0 && (
         <Alert severity="warning" sx={{ mb: 2 }}>

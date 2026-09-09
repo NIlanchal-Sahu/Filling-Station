@@ -11,11 +11,11 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   Typography,
 } from '@mui/material';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
 import type {
@@ -340,10 +340,11 @@ export function CashBankCollectionReportPanel(props: {
             <CollectionDonut summary={summary} />
           </Paper>
 
-          <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+          <Paper elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
               Shift-wise collection (period total)
             </Typography>
+            <ResponsiveTableContainer stickyFirstColumn>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -376,12 +377,14 @@ export function CashBankCollectionReportPanel(props: {
                 ))}
               </TableBody>
             </Table>
-          </TableContainer>
+            </ResponsiveTableContainer>
+          </Paper>
 
-          <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+          <Paper elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
               Daily collection by pump day
             </Typography>
+            <ResponsiveTableContainer stickyFirstColumn>
             <Table size="small" sx={{ minWidth: 880 }}>
               <TableHead>
                 <TableRow>
@@ -476,13 +479,15 @@ export function CashBankCollectionReportPanel(props: {
                 </TableRow>
               </TableBody>
             </Table>
-          </TableContainer>
+            </ResponsiveTableContainer>
+          </Paper>
 
           {shiftDetails.length > 0 ? (
-            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+            <Paper elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
                 Shift detail
               </Typography>
+              <ResponsiveTableContainer stickyFirstColumn>
               <Table size="small" sx={{ minWidth: 960 }}>
                 <TableHead>
                   <TableRow>
@@ -539,7 +544,8 @@ export function CashBankCollectionReportPanel(props: {
                   ))}
                 </TableBody>
               </Table>
-            </TableContainer>
+              </ResponsiveTableContainer>
+            </Paper>
           ) : null}
         </>
       )}

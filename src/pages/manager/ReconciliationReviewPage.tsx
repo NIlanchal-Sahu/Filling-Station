@@ -15,9 +15,11 @@ import {
   Paper,
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
-import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
+import { usePermissions } from '@/hooks/usePermissions';
 import { listPendingReconciliations, setReconciliationStatus } from '@/services/reconciliationService';
 import { getUser } from '@/services/usersService';
 import type { ShiftReconciliation } from '@/types/entities';
@@ -39,6 +41,8 @@ function parsePumpAttendantNames(raw: string | undefined): string[] {
 }
 
 export function ReconciliationReviewPage() {
+  const { readOnlyOps, can } = usePermissions();
+  const canApprove = can('approve:reconciliation');
   const [list, setList] = useState<ShiftReconciliation[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -64,40 +68,22 @@ export function ReconciliationReviewPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <FactCheckOutlinedIcon sx={{ opacity: 0.95 }} />
-          <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-            Approval queue
-          </Typography>
-        </Stack>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Reconciliations
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 640 }}>
-          Review operator submissions: totals, Paytm/cards/credit/cash split, and short/over. Each card lists{' '}
-          <strong>all pump boys / girls</strong> recorded on that shift. Approve or reject with an optional note.
-        </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<RefreshOutlinedIcon />}
-          onClick={() => void load()}
-          disabled={loading}
-          sx={{ mt: 2, borderRadius: 1.5, color: 'inherit', borderColor: alpha('#fff', 0.55) }}
-        >
-          Reload queue
-        </Button>
-      </Box>
+      {readOnlyOps ? <ReadOnlyBanner /> : null}
+      <PageHeader
+        title="Reconciliations"
+        subtitle="Review operator submissions: totals, Paytm/cards/credit/cash split, and short/over. Each card lists all pump boys / girls recorded on that shift. Approve or reject with an optional note."
+        action={
+          <Button
+            variant="outlined"
+            startIcon={<RefreshOutlinedIcon />}
+            onClick={() => void load()}
+            disabled={loading}
+            sx={{ minHeight: 48, alignSelf: { xs: 'stretch', sm: 'auto' } }}
+          >
+            Reload queue
+          </Button>
+        }
+      />
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -150,52 +136,58 @@ export function ReconciliationReviewPage() {
                   sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
                 />
                 <Stack direction="row" spacing={1.5} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
-                  <Button
-                    component={RouterLink}
-                    to={`/shifts/${r.shiftId}/reconcile?edit=1`}
-                    size="medium"
-                    variant="outlined"
-                    startIcon={<EditOutlinedIcon />}
-                    sx={{ borderRadius: 1.5 }}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    size="medium"
-                    color="success"
-                    variant="contained"
-                    disabled={actionId === r.id}
-                    onClick={async () => {
-                      setActionId(r.id);
-                      try {
-                        await setReconciliationStatus(r.id, 'approved', comment[r.id]);
-                        await load();
-                      } finally {
-                        setActionId(null);
-                      }
-                    }}
-                    sx={{ borderRadius: 1.5 }}
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    size="medium"
-                    color="warning"
-                    variant="outlined"
-                    disabled={actionId === r.id}
-                    onClick={async () => {
-                      setActionId(r.id);
-                      try {
-                        await setReconciliationStatus(r.id, 'rejected', comment[r.id]);
-                        await load();
-                      } finally {
-                        setActionId(null);
-                      }
-                    }}
-                    sx={{ borderRadius: 1.5 }}
-                  >
-                    Reject
-                  </Button>
+                  {!readOnlyOps ? (
+                    <Button
+                      component={RouterLink}
+                      to={`/shifts/${r.shiftId}/reconcile?edit=1`}
+                      size="medium"
+                      variant="outlined"
+                      startIcon={<EditOutlinedIcon />}
+                      sx={{ borderRadius: 1.5 }}
+                    >
+                      Edit
+                    </Button>
+                  ) : null}
+                  {canApprove ? (
+                    <>
+                      <Button
+                        size="medium"
+                        color="success"
+                        variant="contained"
+                        disabled={actionId === r.id}
+                        onClick={async () => {
+                          setActionId(r.id);
+                          try {
+                            await setReconciliationStatus(r.id, 'approved', comment[r.id]);
+                            await load();
+                          } finally {
+                            setActionId(null);
+                          }
+                        }}
+                        sx={{ borderRadius: 1.5 }}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="medium"
+                        color="warning"
+                        variant="outlined"
+                        disabled={actionId === r.id}
+                        onClick={async () => {
+                          setActionId(r.id);
+                          try {
+                            await setReconciliationStatus(r.id, 'rejected', comment[r.id]);
+                            await load();
+                          } finally {
+                            setActionId(null);
+                          }
+                        }}
+                        sx={{ borderRadius: 1.5 }}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  ) : null}
                 </Stack>
               </CardContent>
             </Card>

@@ -10,7 +10,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   Tabs,
@@ -18,7 +17,11 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
+import { FilterToolbar } from '@/components/ui/FilterToolbar';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
+import { usePermissions } from '@/hooks/usePermissions';
 import { format } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
 import { listClosedShiftsInEndTimeWindow } from '@/services/shiftsService';
@@ -63,6 +66,7 @@ function fmtRupeesCell(n: number): string {
 type TabId = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export function ReportsPage() {
+  const { readOnlyOps } = usePermissions();
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<TabId>(0);
   const [from, setFrom] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -212,31 +216,11 @@ export function ReportsPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <AssessmentOutlinedIcon sx={{ opacity: 0.95 }} />
-          <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-            Analytics
-          </Typography>
-        </Stack>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Reports
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 640 }}>
-          Pick a tab, set From–To, then <strong>Run report</strong>. Daily sales uses closed shifts; other tabs use the same
-          date window.
-        </Typography>
-      </Box>
+      {readOnlyOps ? <ReadOnlyBanner /> : null}
+      <PageHeader
+        title="Reports"
+        subtitle="Pick a tab, set From–To, then Run report. Daily sales uses closed shifts; other tabs use the same date window."
+      />
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -261,7 +245,7 @@ export function ReportsPage() {
             <Tab label="Cash & bank" />
           </Tabs>
         </Box>
-        <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, p: 2, alignItems: 'center' }}>
+        <FilterToolbar sx={{ p: 2 }}>
           <TextField
             type="date"
             label="From"
@@ -313,10 +297,10 @@ export function ReportsPage() {
             variant="outlined"
             sx={{ fontWeight: 600, display: { xs: 'none', sm: 'flex' } }}
           />
-          <Button variant="contained" color="secondary" onClick={run} disabled={loading} sx={{ borderRadius: 1.5, px: 2.5 }}>
+          <Button variant="contained" color="secondary" onClick={run} disabled={loading} sx={{ borderRadius: 1.5, px: 2.5, minHeight: 48 }}>
             {loading ? 'Loading…' : 'Run report'}
           </Button>
-        </Stack>
+        </FilterToolbar>
       </Paper>
 
       {tab === 0 && (
@@ -324,7 +308,8 @@ export function ReportsPage() {
           <Typography variant="subtitle1" gutterBottom>
             Daily sales by date (meter readings on shifts closed each day — same layout as cashier sheet)
           </Typography>
-          <TableContainer component={Paper} variant="outlined" sx={{ maxWidth: '100%', overflowX: 'auto' }}>
+          <Paper variant="outlined">
+            <ResponsiveTableContainer stickyFirstColumn>
             <Table
               size="small"
               sx={{
@@ -414,7 +399,8 @@ export function ReportsPage() {
                 ))}
               </TableBody>
             </Table>
-          </TableContainer>
+            </ResponsiveTableContainer>
+          </Paper>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, lineHeight: 1.6 }}>
             TOTAL AMOUNTS = AMOUNTS + AMOUNTS2 + AMOUNTS3
             {showOtherFuelCol ? ' + AMOUNTS4' : ''} for each date. Rows cover every calendar day from From–To (zero when no
@@ -524,15 +510,8 @@ export function ReportsPage() {
             </Typography>
           ) : (
             <>
-              <TableContainer
-                component={Paper}
-                variant="outlined"
-                sx={{
-                  maxWidth: '100%',
-                  overflowX: 'auto',
-                  borderRadius: 1,
-                }}
-              >
+              <Paper variant="outlined" sx={{ borderRadius: 1 }}>
+                <ResponsiveTableContainer stickyFirstColumn>
                 <Table size="small" sx={{ minWidth: 820 }}>
                   <TableHead>
                     <TableRow
@@ -579,7 +558,8 @@ export function ReportsPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </TableContainer>
+                </ResponsiveTableContainer>
+              </Paper>
               <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5, lineHeight: 1.6 }}>
                 Same shift with several names produces one row per name. If no names were entered on Start shift, you still
                 see one row with “—” so the shift appears on the roster.
@@ -710,7 +690,8 @@ export function ReportsPage() {
             {stockReportKind === 'variation' && 'Variation report — rows where |variation| exceeds limit or dip missing'}
             {stockReportKind === 'monthly' && 'Monthly stock reconciliation — full period summary'}
           </Typography>
-          <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
+          <Paper variant="outlined">
+            <ResponsiveTableContainer stickyFirstColumn>
             <Table size="small" sx={{ minWidth: 900 }}>
               <TableHead>
                 <TableRow>
@@ -752,7 +733,8 @@ export function ReportsPage() {
                   ))}
               </TableBody>
             </Table>
-          </TableContainer>
+            </ResponsiveTableContainer>
+          </Paper>
           <Button
             size="small"
             sx={{ mt: 1 }}

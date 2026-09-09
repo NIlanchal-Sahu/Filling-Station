@@ -3,8 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
   Alert,
-  alpha,
-  Box,
   Button,
   CircularProgress,
   MenuItem,
@@ -13,14 +11,17 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
   Typography,
 } from '@mui/material';
-import LocalGasStationOutlinedIcon from '@mui/icons-material/LocalGasStationOutlined';
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
+
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
+import { usePermissions } from '@/hooks/usePermissions';
 
 import { useAuth } from '@/context/AuthContext';
 import { listFuelReceiptsInRange, recordFuelReceipt } from '@/services/fuelReceiptsService';
@@ -101,6 +102,7 @@ function buildPurchaseRow(receipt: FuelReceipt, fuelCode: string): PurchaseRow {
 
 export function FuelPurchasePage() {
   const { profile } = useAuth();
+  const { readOnlyOps } = usePermissions();
   const [searchParams] = useSearchParams();
   const dateBounds = dateInputBoundsForRole(profile?.role);
 
@@ -281,33 +283,13 @@ export function FuelPurchasePage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
+      {readOnlyOps ? <ReadOnlyBanner /> : null}
       <FuelStockSubNav />
 
-      <Box
-        sx={{
-          borderRadius: 3,
-          overflow: 'hidden',
-          background: (t) =>
-            `linear-gradient(120deg, ${t.palette.primary.dark} 0%, ${t.palette.primary.main} 52%, ${t.palette.primary.light} 115%)`,
-          color: 'primary.contrastText',
-          p: { xs: 2.5, sm: 3 },
-          boxShadow: (t) => `0 12px 40px ${alpha(t.palette.primary.main, 0.3)}`,
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-          <LocalGasStationOutlinedIcon sx={{ opacity: 0.95 }} />
-          <Typography variant="overline" sx={{ opacity: 0.92, letterSpacing: '0.12em', fontWeight: 600 }}>
-            Tank stock
-          </Typography>
-        </Stack>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Fuel purchase register
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.75, maxWidth: 760 }}>
-          Record inward deliveries in KL with invoice, material code, rate, and VAT (HSD 24%, MS/XP 28%).
-          Stock uses liters (KL × 1,000).
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Fuel purchase"
+        subtitle="Record inward deliveries in KL with invoice, material code, rate, and VAT (HSD 24%, MS/XP 28%). Stock uses liters (KL × 1,000)."
+      />
 
       {err ? <Alert severity="error">{err}</Alert> : null}
       {ok ? <Alert severity="success">{ok}</Alert> : null}
@@ -371,6 +353,7 @@ export function FuelPurchasePage() {
             value={pumpDayIso}
             onChange={(e) => setPumpDayIso(clampEntryDateForRole(profile?.role, e.target.value))}
             size="small"
+            disabled={readOnlyOps}
             slotProps={{
               inputLabel: { shrink: true },
               htmlInput: { min: dateBounds.min, max: dateBounds.max },
@@ -383,6 +366,7 @@ export function FuelPurchasePage() {
             value={quantityKl}
             onChange={(e) => setQuantityKl(e.target.value)}
             size="small"
+            disabled={readOnlyOps}
             sx={{ width: 100 }}
             slotProps={{ htmlInput: { min: 0, step: 1 } }}
           />
@@ -391,6 +375,7 @@ export function FuelPurchasePage() {
             value={invoiceNo}
             onChange={(e) => setInvoiceNo(e.target.value)}
             size="small"
+            disabled={readOnlyOps}
             sx={{ width: 140 }}
           />
           <TextField
@@ -398,6 +383,7 @@ export function FuelPurchasePage() {
             value={materialCode}
             onChange={(e) => setMaterialCode(e.target.value)}
             size="small"
+            disabled={readOnlyOps}
             sx={{ width: 120 }}
           />
           <TextField
@@ -406,6 +392,7 @@ export function FuelPurchasePage() {
             value={ratePerKl}
             onChange={(e) => setRatePerKl(e.target.value)}
             size="small"
+            disabled={readOnlyOps}
             sx={{ width: 130 }}
             slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
           />
@@ -433,7 +420,7 @@ export function FuelPurchasePage() {
           <Button
             variant="contained"
             startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <AddOutlinedIcon />}
-            disabled={saving || loading}
+            disabled={readOnlyOps || saving || loading}
             onClick={() => void handleAdd()}
             sx={{ alignSelf: { xs: 'stretch', lg: 'center' }, whiteSpace: 'nowrap' }}
           >
@@ -447,7 +434,8 @@ export function FuelPurchasePage() {
           <CircularProgress />
         </Paper>
       ) : (
-        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, overflowX: 'auto' }}>
+        <Paper variant="outlined" sx={{ borderRadius: 2 }}>
+        <ResponsiveTableContainer stickyFirstColumn>
           <Table size="small" sx={{ minWidth: 960, borderCollapse: 'collapse' }}>
             <TableHead>
               <TableRow>
@@ -532,7 +520,8 @@ export function FuelPurchasePage() {
               ) : null}
             </TableBody>
           </Table>
-        </TableContainer>
+        </ResponsiveTableContainer>
+        </Paper>
       )}
     </Stack>
   );
