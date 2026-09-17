@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Chip, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Chip, Paper, Stack, TextField } from '@mui/material';
 import Grid from '@mui/material/Grid2';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import CreditCardOutlinedIcon from '@mui/icons-material/CreditCardOutlined';
@@ -16,7 +16,7 @@ import { DashboardSection } from '@/components/ui/DashboardSection';
 import { KpiStat } from '@/components/ui/KpiStat';
 import { KpiStatSkeleton } from '@/components/ui/KpiStatSkeleton';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { QuickActionBar } from '@/components/ui/QuickActionBar';
+import { FloatingActionPanel } from '@/components/ui/FloatingActionPanel';
 import { CashBankCollectionSummary } from '@/pages/manager/CashBankCollectionSummary';
 import { SalesByFuelChart } from '@/pages/manager/SalesByFuelChart';
 import { TankStockDipSummary } from '@/pages/manager/TankStockDipSummary';
@@ -154,165 +154,183 @@ export function OwnerDashboardPage() {
   }, [pendingRecon, shortage, variationCount, variationLiters, overdueCount, overdueCredit]);
 
   return (
-    <Stack spacing={3.5} sx={{ pb: 4 }}>
-      <PageHeader
-        title="Owner dashboard"
-        subtitle={`${reportLabel}${isSelectedToday ? ' · Today' : ''}`}
-        action={
-          isSelectedToday ? (
-            <Chip label="Live" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
-          ) : null
-        }
-      />
+    <>
+      <Stack spacing={3.5} sx={{ pb: 4, pr: { xs: 6, sm: 7 } }}>
+        <PageHeader
+          title="Owner dashboard"
+          subtitle={`${reportLabel}${isSelectedToday ? ' · Today' : ''}`}
+          action={
+            isSelectedToday ? (
+              <Chip label="Live" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
+            ) : null
+          }
+        />
 
-      <Paper
-        elevation={0}
-        sx={{
-          p: 1.75,
-          borderRadius: 2,
-          border: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <CalendarMonthOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }} />
-            <TextField
-              type="date"
-              label="Pump day"
-              value={reportIso}
-              onChange={(e) => setReportIso(e.target.value)}
-              size="small"
-              slotProps={{
-                htmlInput: { max: maxSelectableIso },
-                inputLabel: { shrink: true },
-              }}
-              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-            />
+        <Paper
+          elevation={0}
+          sx={{
+            p: 1.75,
+            borderRadius: 2,
+            border: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <CalendarMonthOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }} />
+              <TextField
+                type="date"
+                label="Pump day"
+                value={reportIso}
+                onChange={(e) => setReportIso(e.target.value)}
+                size="small"
+                slotProps={{
+                  htmlInput: { max: maxSelectableIso },
+                  inputLabel: { shrink: true },
+                }}
+                sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+              />
+            </Stack>
           </Stack>
-        </Stack>
-      </Paper>
+        </Paper>
 
-      {kpisLoading ? null : attention.length === 0 ? (
-        <Alert severity="success" sx={{ borderRadius: 2 }}>
-          Day looks clean — no pending recon, shortage, tank variation, or overdue credit.
-        </Alert>
-      ) : (
-        <Stack spacing={1}>
-          {attention.map((item) => (
-            <Alert
-              key={item.message}
-              severity={item.severity}
-              sx={{ borderRadius: 2 }}
-              action={
-                <Chip
-                  component={RouterLink}
-                  to={item.to}
-                  clickable
-                  size="small"
-                  label="Open"
-                  color={item.severity === 'error' ? 'error' : 'warning'}
-                  sx={{ fontWeight: 700 }}
-                />
-              }
-            >
-              {item.message}
-            </Alert>
-          ))}
-        </Stack>
-      )}
-
-      <Grid container spacing={2}>
-        {kpisLoading ? (
-          Array.from({ length: 6 }, (_, i) => (
-            <Grid key={i} size={{ xs: 6, sm: 4, md: 2 }}>
-              <KpiStatSkeleton />
-            </Grid>
-          ))
+        {kpisLoading ? null : attention.length === 0 ? (
+          <Alert severity="success" sx={{ borderRadius: 2 }}>
+            Day looks clean — no pending recon, shortage, tank variation, or overdue credit.
+          </Alert>
         ) : (
-          <>
-            <Grid size={{ xs: 6, sm: 4, md: 2 }}>
-              <KpiStat
-                label="Meter sales"
-                value={fmtInr(meterSales)}
-                subtitle={`${fmtInr(reconciledSales)} in the books`}
-                icon={PaymentsOutlinedIcon}
-              />
-            </Grid>
-            <Grid size={{ xs: 6, sm: 4, md: 2 }}>
-              <KpiStat label="Cash collected" value={fmtInr(cashCollected)} icon={PaymentsOutlinedIcon} color="success" />
-            </Grid>
-            <Grid size={{ xs: 6, sm: 4, md: 2 }}>
-              <KpiStat
-                label="Shortage"
-                value={fmtInr(shortage)}
-                icon={WarningAmberOutlinedIcon}
-                color={shortage > 0.005 ? 'error' : 'success'}
-              />
-            </Grid>
-            <Grid size={{ xs: 6, sm: 4, md: 2 }}>
-              <KpiStat
-                label="Pending recon"
-                value={pendingRecon}
-                icon={FactCheckOutlinedIcon}
-                color={pendingRecon > 0 ? 'warning' : 'success'}
-              />
-            </Grid>
-            <Grid size={{ xs: 6, sm: 4, md: 2 }}>
-              <KpiStat
-                label="Tank variation"
-                value={`${variationLiters.toLocaleString('en-IN')} L`}
-                subtitle={variationCount === 0 ? 'Within limit' : `${variationCount} tank${variationCount === 1 ? '' : 's'}`}
-                icon={OpacityOutlinedIcon}
-                color={variationCount > 0 ? 'warning' : 'success'}
-              />
-            </Grid>
-            <Grid size={{ xs: 6, sm: 4, md: 2 }}>
-              <KpiStat
-                label="Overdue credit"
-                value={fmtInr(overdueCredit)}
-                subtitle={
-                  overdueCount === 0
-                    ? `None over ${CREDIT_OVERDUE_DAYS} days`
-                    : `${overdueCount} part${overdueCount === 1 ? 'y' : 'ies'}`
+          <Stack spacing={1}>
+            {attention.map((item) => (
+              <Alert
+                key={item.message}
+                severity={item.severity}
+                sx={{ borderRadius: 2 }}
+                action={
+                  <Chip
+                    component={RouterLink}
+                    to={item.to}
+                    clickable
+                    size="small"
+                    label="Open"
+                    color={item.severity === 'error' ? 'error' : 'warning'}
+                    sx={{ fontWeight: 700 }}
+                  />
                 }
-                icon={CreditCardOutlinedIcon}
-                color={overdueCount > 0 ? 'secondary' : 'success'}
-              />
-            </Grid>
-          </>
+              >
+                {item.message}
+              </Alert>
+            ))}
+          </Stack>
         )}
-      </Grid>
 
-      <QuickActionBar actions={[...ownerQuickActions]} label="QUICK LINKS" />
+        <Grid container spacing={2}>
+          {kpisLoading ? (
+            Array.from({ length: 6 }, (_, i) => (
+              <Grid key={i} size={{ xs: 6, sm: 4, md: 2 }}>
+                <KpiStatSkeleton />
+              </Grid>
+            ))
+          ) : (
+            <>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                <KpiStat
+                  label="Meter sales"
+                  value={fmtInr(meterSales)}
+                  subtitle={`${fmtInr(reconciledSales)} in the books`}
+                  icon={PaymentsOutlinedIcon}
+                  animateOnMount
+                  staggerIndex={1}
+                />
+              </Grid>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                <KpiStat
+                  label="Cash collected"
+                  value={fmtInr(cashCollected)}
+                  icon={PaymentsOutlinedIcon}
+                  color="success"
+                  animateOnMount
+                  staggerIndex={2}
+                />
+              </Grid>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                <KpiStat
+                  label="Shortage"
+                  value={fmtInr(shortage)}
+                  icon={WarningAmberOutlinedIcon}
+                  color={shortage > 0.005 ? 'error' : 'success'}
+                  animateOnMount
+                  staggerIndex={3}
+                />
+              </Grid>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                <KpiStat
+                  label="Pending recon"
+                  value={pendingRecon}
+                  icon={FactCheckOutlinedIcon}
+                  color={pendingRecon > 0 ? 'warning' : 'success'}
+                  animateOnMount
+                  staggerIndex={4}
+                />
+              </Grid>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                <KpiStat
+                  label="Tank variation"
+                  value={`${variationLiters.toLocaleString('en-IN')} L`}
+                  subtitle={variationCount === 0 ? 'Within limit' : `${variationCount} tank${variationCount === 1 ? '' : 's'}`}
+                  icon={OpacityOutlinedIcon}
+                  color={variationCount > 0 ? 'warning' : 'success'}
+                  animateOnMount
+                  staggerIndex={5}
+                />
+              </Grid>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                <KpiStat
+                  label="Overdue credit"
+                  value={fmtInr(overdueCredit)}
+                  subtitle={
+                    overdueCount === 0
+                      ? `None over ${CREDIT_OVERDUE_DAYS} days`
+                      : `${overdueCount} part${overdueCount === 1 ? 'y' : 'ies'}`
+                  }
+                  icon={CreditCardOutlinedIcon}
+                  color={overdueCount > 0 ? 'secondary' : 'success'}
+                  animateOnMount
+                  staggerIndex={6}
+                />
+              </Grid>
+            </>
+          )}
+        </Grid>
 
-      <DashboardSection title="Shift performance">
-        <TodaySalesByShiftSection pumpDayIso={reportIso} reportLabel={reportLabel} />
-      </DashboardSection>
+        <DashboardSection title="Shift performance">
+          <TodaySalesByShiftSection pumpDayIso={reportIso} reportLabel={reportLabel} />
+        </DashboardSection>
 
-      <DashboardSection title="Cash & bank collections">
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <CashBankCollectionSummary pumpDayIso={reportIso} />
-        </Paper>
-      </DashboardSection>
+        <DashboardSection title="Cash & bank collections">
+          <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+            <CashBankCollectionSummary pumpDayIso={reportIso} />
+          </Paper>
+        </DashboardSection>
 
-      <DashboardSection title="Sales by fuel">
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <SalesByFuelChart pumpDayIso={reportIso} />
-        </Paper>
-      </DashboardSection>
+        <DashboardSection title="Sales by fuel">
+          <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+            <SalesByFuelChart pumpDayIso={reportIso} />
+          </Paper>
+        </DashboardSection>
 
-      <DashboardSection title="Tank & inventory">
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <TankStockDipSummary pumpDayIso={reportIso} reportLabel={reportLabel} />
-        </Paper>
-      </DashboardSection>
+        <DashboardSection title="Tank & inventory">
+          <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+            <TankStockDipSummary pumpDayIso={reportIso} reportLabel={reportLabel} />
+          </Paper>
+        </DashboardSection>
 
-      <DashboardSection title="Shift activity">
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <TodayShiftStatusSection pumpDayIso={reportIso} />
-        </Paper>
-      </DashboardSection>
-    </Stack>
+        <DashboardSection title="Shift activity">
+          <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+            <TodayShiftStatusSection pumpDayIso={reportIso} />
+          </Paper>
+        </DashboardSection>
+      </Stack>
+      <FloatingActionPanel actions={[...ownerQuickActions]} label="Shortcuts" />
+    </>
   );
 }

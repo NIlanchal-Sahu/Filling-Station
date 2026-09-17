@@ -102,6 +102,8 @@ export function OperatorDashboardPage() {
                 value={open ? 'On shift' : 'Off duty'}
                 icon={WorkOutlineOutlinedIcon}
                 color={open ? 'success' : 'secondary'}
+                animateOnMount
+                staggerIndex={1}
               />
             </Grid>
             <Grid size={{ xs: 6 }}>
@@ -110,6 +112,8 @@ export function OperatorDashboardPage() {
                 value={open?.shiftLabel ?? '—'}
                 icon={ScheduleOutlinedIcon}
                 subtitle={openBusinessDateDdMm}
+                animateOnMount
+                staggerIndex={2}
               />
             </Grid>
           </>
@@ -171,6 +175,7 @@ export function OperatorDashboardPage() {
           </Card>
         ) : (
           <EmptyState
+            illustration="empty-shift"
             icon={<LocalGasStationOutlinedIcon sx={{ fontSize: 48 }} />}
             title="No active shift"
             action={

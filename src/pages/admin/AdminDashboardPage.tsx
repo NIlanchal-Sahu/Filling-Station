@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Chip, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Chip, Paper, Stack, TextField } from '@mui/material';
 import Grid from '@mui/material/Grid2';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
@@ -188,10 +188,17 @@ export function AdminDashboardPage() {
         ) : (
           <>
             <Grid size={{ xs: 6, sm: 4 }}>
-              <KpiStat label="Active users" value={userCount} icon={GroupsOutlinedIcon} />
+              <KpiStat label="Active users" value={userCount} icon={GroupsOutlinedIcon} animateOnMount staggerIndex={1} />
             </Grid>
             <Grid size={{ xs: 6, sm: 4 }}>
-              <KpiStat label="Open shifts (today)" value={openShiftsToday} icon={PlayCircleOutlineOutlinedIcon} color="success" />
+              <KpiStat
+                label="Open shifts (today)"
+                value={openShiftsToday}
+                icon={PlayCircleOutlineOutlinedIcon}
+                color="success"
+                animateOnMount
+                staggerIndex={2}
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 4 }}>
               <KpiStat
@@ -199,6 +206,8 @@ export function AdminDashboardPage() {
                 value={pendingReconToday}
                 icon={FactCheckOutlinedIcon}
                 color="warning"
+                animateOnMount
+                staggerIndex={3}
               />
             </Grid>
           </>

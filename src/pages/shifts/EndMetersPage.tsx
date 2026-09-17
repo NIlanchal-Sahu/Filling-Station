@@ -18,6 +18,7 @@ import {
   TableRow,
 } from '@mui/material';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { MotionButton } from '@/components/motion/MotionButton';
 import { useShiftAccess } from '@/hooks/useShiftAccess';
 import { listReadingsForShift, updateReadingsOnEnd, computeLiters, getLastClosingForNozzle, getMachineLabelForShift } from '@/services/shiftReadingsService';
 import { getNozzle } from '@/services/nozzlesService';
@@ -374,9 +375,9 @@ export function EndMetersPage() {
       </Paper>
       {formError && <Alert severity="error" sx={{ mt: 2 }}>{formError}</Alert>}
       <Stack direction="row" spacing={2} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
-        <Button variant="contained" size="large" onClick={() => void handleSave()} disabled={saving || rows.length === 0} sx={{ borderRadius: 1.5, minHeight: 48 }}>
+        <MotionButton variant="contained" size="large" onClick={() => void handleSave()} disabled={saving || rows.length === 0} sx={{ borderRadius: 1.5, minHeight: 48 }}>
           {saving ? 'Saving…' : 'Save & go to reconciliation'}
-        </Button>
+        </MotionButton>
         <Button variant="outlined" onClick={() => nav(-1)} sx={{ borderRadius: 1.5 }}>
           Back
         </Button>

@@ -18,6 +18,7 @@ import {
   Typography,
 } from '@mui/material';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { MotionButton } from '@/components/motion/MotionButton';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { listNozzles } from '@/services/nozzlesService';
@@ -250,9 +251,9 @@ export function StartShiftPage() {
       </FormGroup>
       {formError && <Alert severity="error">{formError}</Alert>}
       <Stack direction="row" spacing={2} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
-        <Button type="submit" variant="contained" disabled={saving} size="large" sx={{ borderRadius: 1.5, minHeight: 48, width: { xs: '100%', sm: 'auto' } }}>
+        <MotionButton type="submit" variant="contained" disabled={saving} size="large" sx={{ borderRadius: 1.5, minHeight: 48, width: { xs: '100%', sm: 'auto' } }}>
           {saving ? 'Saving…' : 'Start shift'}
-        </Button>
+        </MotionButton>
         <Button type="button" variant="outlined" onClick={() => nav(-1)} sx={{ borderRadius: 1.5 }}>
           Cancel
         </Button>

@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
+import { MotionBox } from '@/components/motion/MotionBox';
 
 type Props = {
   title: string;
   subtitle?: string;
   children: ReactNode;
+  contentReady?: boolean;
 };
 
-export function DashboardSection({ title, subtitle, children }: Props) {
+export function DashboardSection({ title, subtitle, children, contentReady = true }: Props) {
   return (
     <Box component="section">
       <Stack spacing={0.5} sx={{ mb: 2 }}>
@@ -24,7 +26,11 @@ export function DashboardSection({ title, subtitle, children }: Props) {
           </Typography>
         ) : null}
       </Stack>
-      {children}
+      {contentReady ? (
+        <MotionBox preset="fadeUp" transition={{ duration: 0.3 }} key="content">
+          {children}
+        </MotionBox>
+      ) : null}
     </Box>
   );
 }

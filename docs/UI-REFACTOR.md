@@ -10,6 +10,7 @@ Phased refresh of PumpStock layout, dashboards, and role-based navigation.
 | 2 | Done | Four roles, permissions matrix, route guards, Firestore rules |
 | 3 | Done | Dashboard UI — KPIs, shared components, worker touch UX |
 | 4 | Done | Operational pages — `PageHeader`, responsive tables, owner read-only |
+| 5 | Done | Visual polish — hero imagery, Motion animations, page transitions |
 | 6 | Planned | Optional `src/features/` folder restructure |
 
 ## Route map by role
@@ -35,6 +36,17 @@ Full permission details: [ROLES.md](./ROLES.md).
 | `ReadOnlyBanner` | Owner view-only notice on operational pages |
 | `ResponsiveTableContainer` | Horizontal scroll + optional sticky first column for wide tables |
 | `FilterToolbar` | Date/filter controls that stack vertically on `xs`, row on `sm+` |
+| `HeroImage` | WebP hero with SVG fallback on load error |
+| `MotionBox` / `StaggerChildren` / `AnimatedOutlet` | Shared motion wrappers — see conventions below |
+
+## Motion conventions (Phase 5)
+
+- Library: [`motion`](https://motion.dev) — import from `motion/react`, not `framer-motion`.
+- **`useReducedMotion()`** — all stagger, slide, and tap animations respect OS `prefers-reduced-motion`.
+- **Marketing** (landing, login): stagger entrances, hero scale-in, card hover lift.
+- **Dashboards**: KPI row stagger + icon pop; `DashboardSection` content fades in after KPI load.
+- **Operational pages**: `PageHeader` fade only; primary shift buttons use `whileTap` scale — no table row animation.
+- **Hero assets**: `public/hero/*.webp` with SVG fallbacks — regeneration prompts in [HERO-ASSETS.md](./HERO-ASSETS.md).
 
 ## Operational page convention (Phase 4)
 

@@ -188,7 +188,6 @@ function GroupedAlerts(props: { summary: TankStockDaySummary }) {
 
 export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: string }) {
   const { pumpDayIso, reportLabel } = props;
-  const theme = useTheme();
   const [summary, setSummary] = useState<TankStockDaySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Container, Drawer, Snackbar, useMediaQuery, useTheme } from '@mui/material';
-import { Outlet, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { AnimatedOutlet } from '@/components/motion/AnimatedOutlet';
 import { useAuth } from '@/context/AuthContext';
 import { getMobileBottomNavItems, getNavGroupsForRole } from '@/config/navConfig';
 import { parseUserRole } from '@/utils/roles';
@@ -47,7 +48,7 @@ export function AppShell() {
         <TopBar showMenuButton={isMobile} onMenuClick={() => setDrawerOpen(true)} />
         <Box component="main" sx={{ flex: 1, minWidth: 0, pb: { xs: 9, md: 3 }, pt: { xs: 2, sm: 3 } }}>
           <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 }, minWidth: 0, width: '100%' }}>
-            <Outlet />
+            <AnimatedOutlet />
           </Container>
         </Box>
         <MobileBottomNav items={bottomNavItems} />
