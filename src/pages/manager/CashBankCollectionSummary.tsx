@@ -528,7 +528,7 @@ export function CashBankCollectionSummary(props: { pumpDayIso: string }) {
         </>
       ) : !loading ? (
         <Alert severity="info" sx={{ borderRadius: 2 }}>
-          No reconciled collections for this period. Complete shift reconciliation to populate this summary.
+          No collections in this period.
         </Alert>
       ) : null}
     </Stack>

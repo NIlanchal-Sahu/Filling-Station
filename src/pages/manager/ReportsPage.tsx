@@ -27,9 +27,11 @@ import { useSearchParams } from 'react-router-dom';
 import { listClosedShiftsInEndTimeWindow } from '@/services/shiftsService';
 import {
   getDailySalesFuelPivot,
+  getMeterRegisterRowsInRange,
   getOperatorPerformanceInRange,
   getPumpAttendantAttendanceRowsInRange,
   type DailySalesPivotRow,
+  type MeterRegisterRow,
   type OperatorPerf,
   type PumpAttendantAttendanceRow,
 } from '@/services/aggregatesService';
@@ -38,6 +40,7 @@ import { listAllCreditSales } from '@/services/creditSalesService';
 import { listAllCreditPayments } from '@/services/creditPaymentsService';
 import { listExpensesInRange, listLedgerInRange } from '@/services/ledgerService';
 import { downloadCsv } from '@/utils/csvExport';
+import { parsePumpDayParam } from '@/utils/dateEntryPolicy';
 import { getDailyFuelStockReport } from '@/services/fuelStockReconciliationService';
 import { getReconciliationForShift } from '@/services/reconciliationService';
 import {
@@ -63,7 +66,7 @@ function fmtRupeesCell(n: number): string {
   return `₹ ${t}`;
 }
 
-type TabId = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+type TabId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export function ReportsPage() {
   const { readOnlyOps } = usePermissions();
@@ -78,6 +81,7 @@ export function ReportsPage() {
   const [dailyCredit, setDailyCredit] = useState(0);
   const [dailyExp, setDailyExp] = useState(0);
   const [dailyNet, setDailyNet] = useState(0);
+  const [meterRows, setMeterRows] = useState<MeterRegisterRow[]>([]);
 
   const [op, setOp] = useState<OperatorPerf[]>([]);
   const [creditRows, setCreditRows] = useState<
@@ -100,7 +104,12 @@ export function ReportsPage() {
 
   useEffect(() => {
     if (searchParams.get('report') === 'collections') {
-      setTab(6);
+      setTab(7);
+    }
+    const day = parsePumpDayParam(searchParams.get('day'));
+    if (day) {
+      setFrom(day);
+      setTo(day);
     }
   }, [searchParams]);
 
@@ -136,10 +145,12 @@ export function ReportsPage() {
         const ex2 = allEx.reduce((s, l) => s + l.amount, 0);
         setDailyNet(inc - ex2);
       } else if (tab === 1) {
-        setOp(await getOperatorPerformanceInRange(a, b));
+        setMeterRows(await getMeterRegisterRowsInRange(a, b));
       } else if (tab === 2) {
-        setAttendanceRows(await getPumpAttendantAttendanceRowsInRange(a, b));
+        setOp(await getOperatorPerformanceInRange(a, b));
       } else if (tab === 3) {
+        setAttendanceRows(await getPumpAttendantAttendanceRowsInRange(a, b));
+      } else if (tab === 4) {
         const [cust, sales, pays] = await Promise.all([
           listCreditCustomers(true),
           listAllCreditSales(),
@@ -181,7 +192,7 @@ export function ReportsPage() {
           });
         }
         setCreditRows(out);
-      } else if (tab === 4) {
+      } else if (tab === 5) {
         const ex = await listExpensesInRange(a, b);
         const t: Record<string, number> = {};
         const r = ex.map((e) => {
@@ -195,9 +206,9 @@ export function ReportsPage() {
         });
         setExpRows(r);
         setExpTot(t);
-      } else if (tab === 5) {
-        setStockRows(await getDailyFuelStockReport(from, to));
       } else if (tab === 6) {
+        setStockRows(await getDailyFuelStockReport(from, to));
+      } else if (tab === 7) {
         const [summary, daily, shifts] = await Promise.all([
           getCashBankCollectionSummary(from, to),
           getCashBankCollectionDailyRows(from, to),
@@ -217,10 +228,7 @@ export function ReportsPage() {
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
       {readOnlyOps ? <ReadOnlyBanner /> : null}
-      <PageHeader
-        title="Reports"
-        subtitle="Pick a tab, set From–To, then Run report. Daily sales uses closed shifts; other tabs use the same date window."
-      />
+      <PageHeader title="Reports" />
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -237,6 +245,7 @@ export function ReportsPage() {
             }}
           >
             <Tab label="Daily sales" />
+            <Tab label="Meter register" />
             <Tab label="Employee" />
             <Tab label="Pump boys / girls" />
             <Tab label="Credit" />
@@ -264,7 +273,7 @@ export function ReportsPage() {
             slotProps={{ inputLabel: { shrink: true } }}
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
           />
-          {tab === 3 && (
+          {tab === 4 && (
             <TextField
               size="small"
               label="Customer name filter"
@@ -273,7 +282,7 @@ export function ReportsPage() {
               sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             />
           )}
-          {tab === 5 && (
+          {tab === 6 && (
             <TextField
               select
               size="small"
@@ -306,7 +315,7 @@ export function ReportsPage() {
       {tab === 0 && (
         <Box>
           <Typography variant="subtitle1" gutterBottom>
-            Daily sales by date (meter readings on shifts closed each day — same layout as cashier sheet)
+            Daily sales
           </Typography>
           <Paper variant="outlined">
             <ResponsiveTableContainer stickyFirstColumn>
@@ -401,14 +410,8 @@ export function ReportsPage() {
             </Table>
             </ResponsiveTableContainer>
           </Paper>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, lineHeight: 1.6 }}>
-            TOTAL AMOUNTS = AMOUNTS + AMOUNTS2 + AMOUNTS3
-            {showOtherFuelCol ? ' + AMOUNTS4' : ''} for each date. Rows cover every calendar day from From–To (zero when no
-            closed shift ended that day). Petrol/Diesel/XP grouping follows fuel type names from Manager → Fuel prices.
-          </Typography>
           <Typography variant="body2" sx={{ mt: 1 }}>
-            Total credit in reconciliations (shifts ending in range): ₹{dailyCredit.toFixed(2)} · Expenses: ₹
-            {dailyExp.toFixed(2)} · Net (ledger in range, income − expense): ₹{dailyNet.toFixed(2)}
+            Credit: ₹{dailyCredit.toFixed(2)} · Expenses: ₹{dailyExp.toFixed(2)} · Net: ₹{dailyNet.toFixed(2)}
           </Typography>
           <Button
             size="small"
@@ -448,6 +451,147 @@ export function ReportsPage() {
       )}
 
       {tab === 1 && (
+        <Box>
+          {meterRows.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No rows for this range.
+            </Typography>
+          ) : (
+            <>
+              <Paper variant="outlined">
+                <ResponsiveTableContainer stickyFirstColumn>
+                  <Table
+                    size="small"
+                    sx={{
+                      minWidth: 1100,
+                      borderCollapse: 'collapse',
+                      '& th, & td': { border: '1px solid', borderColor: 'divider' },
+                    }}
+                  >
+                    <TableHead>
+                      <TableRow
+                        sx={{
+                          bgcolor: (t) => alpha(t.palette.grey[300], 0.45),
+                          '& th': {
+                            fontWeight: 700,
+                            fontSize: '0.7rem',
+                            letterSpacing: '0.06em',
+                            textTransform: 'uppercase',
+                            color: 'text.secondary',
+                            whiteSpace: 'nowrap',
+                          },
+                        }}
+                      >
+                        <TableCell>Date</TableCell>
+                        <TableCell align="right">Machine</TableCell>
+                        <TableCell align="right">Nozzle</TableCell>
+                        <TableCell>Pump boy/girls</TableCell>
+                        <TableCell>Time in &amp; out</TableCell>
+                        <TableCell>Fuel type</TableCell>
+                        <TableCell align="right">Opening</TableCell>
+                        <TableCell align="right">Closing</TableCell>
+                        <TableCell align="right">Total</TableCell>
+                        <TableCell align="right">TAS</TableCell>
+                        <TableCell align="right">Sales</TableCell>
+                        <TableCell align="right">Rate</TableCell>
+                        <TableCell align="right">Amount</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {meterRows.map((r, idx) => (
+                        <TableRow
+                          key={`${r.dateIso}-${r.machine}-${r.nozzle}-${r.timeInOut}-${idx}`}
+                          sx={{
+                            bgcolor:
+                              idx % 2 === 1 ? (t) => alpha(t.palette.grey[500], 0.06) : 'background.paper',
+                          }}
+                        >
+                          <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                            {r.dateLabel}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.machine}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.nozzle}
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 500 }}>{r.pumpBoyGirls}</TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.timeInOut}</TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{r.fuelType}</TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.opening.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.closing.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.total.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.tas.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.sales.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.rate.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
+                            {r.amount.toFixed(2)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ResponsiveTableContainer>
+              </Paper>
+              <Button
+                size="small"
+                sx={{ mt: 1 }}
+                onClick={() =>
+                  downloadCsv(
+                    'meter_register.csv',
+                    [
+                      'Date',
+                      'Machine',
+                      'Nozzle',
+                      'Pump boy/girls',
+                      'Time in & out',
+                      'Fuel type',
+                      'Opening',
+                      'Closing',
+                      'Total',
+                      'TAS',
+                      'Sales',
+                      'Rate',
+                      'Amount',
+                    ],
+                    meterRows.map((r) => [
+                      r.dateLabel,
+                      r.machine,
+                      r.nozzle,
+                      r.pumpBoyGirls,
+                      r.timeInOut,
+                      r.fuelType,
+                      r.opening,
+                      r.closing,
+                      r.total,
+                      r.tas,
+                      r.sales,
+                      r.rate,
+                      r.amount,
+                    ]),
+                  )
+                }
+              >
+                Download CSV
+              </Button>
+            </>
+          )}
+        </Box>
+      )}
+
+      {tab === 2 && (
         <Box>
           <Table size="small">
             <TableHead>
@@ -489,24 +633,11 @@ export function ReportsPage() {
         </Box>
       )}
 
-      {tab === 2 && (
+      {tab === 3 && (
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700 }} gutterBottom>
-            Pump boys / girls attendants sheet
-          </Typography>
-          <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-            Attendance roster by pump day (who was on duty — not a payment or sales split)
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 900 }}>
-            One row per name listed under <strong>Pump attendants</strong> on each <strong>closed</strong> shift. The pump
-            day is the <strong>calendar date</strong> chosen when starting the shift. Columns show shift type, operator
-            (cashier), and actual start/end times. For cash, UPI, and card breakdowns use shift reconciliation and other
-            report tabs — this sheet is only the roster.
-          </Typography>
           {attendanceRows.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
-              No rows yet. Run the report for a range that includes closed shifts with pump days in that period, and
-              ensure attendant names are entered on <strong>Start shift</strong>.
+              No rows for this range.
             </Typography>
           ) : (
             <>
@@ -560,10 +691,6 @@ export function ReportsPage() {
                 </Table>
                 </ResponsiveTableContainer>
               </Paper>
-              <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5, lineHeight: 1.6 }}>
-                Same shift with several names produces one row per name. If no names were entered on Start shift, you still
-                see one row with “—” so the shift appears on the roster.
-              </Typography>
               <Button
                 size="small"
                 sx={{ mt: 1 }}
@@ -602,7 +729,7 @@ export function ReportsPage() {
         </Box>
       )}
 
-      {tab === 3 && (
+      {tab === 4 && (
         <Box>
           <Table size="small">
             <TableHead>
@@ -639,7 +766,7 @@ export function ReportsPage() {
         </Box>
       )}
 
-      {tab === 4 && (
+      {tab === 5 && (
         <Box>
           <Typography variant="body2" gutterBottom>
             Totals by category:
@@ -682,13 +809,13 @@ export function ReportsPage() {
         </Box>
       )}
 
-      {tab === 5 && (
+      {tab === 6 && (
         <Box>
           <Typography variant="subtitle1" gutterBottom>
-            {stockReportKind === 'daily' && 'Daily dip report — dip readings and calculated stock'}
-            {stockReportKind === 'tank' && 'Tank stock report — opening, sales, receipts, expected vs actual'}
-            {stockReportKind === 'variation' && 'Variation report — rows where |variation| exceeds limit or dip missing'}
-            {stockReportKind === 'monthly' && 'Monthly stock reconciliation — full period summary'}
+            {stockReportKind === 'daily' && 'Daily dip'}
+            {stockReportKind === 'tank' && 'Tank stock'}
+            {stockReportKind === 'variation' && 'Variation'}
+            {stockReportKind === 'monthly' && 'Monthly stock'}
           </Typography>
           <Paper variant="outlined">
             <ResponsiveTableContainer stickyFirstColumn>
@@ -760,7 +887,7 @@ export function ReportsPage() {
           </Button>
         </Box>
       )}
-      {tab === 6 && (
+      {tab === 7 && (
         <CashBankCollectionReportPanel
           fromIso={from}
           toIso={to}

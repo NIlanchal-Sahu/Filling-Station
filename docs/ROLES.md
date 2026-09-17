@@ -29,6 +29,7 @@ Any password works in demo mode.
 | View dashboard | yes | yes | yes | yes |
 | View reports | yes | yes | yes | no |
 | View operations | yes | yes | yes | own shift |
+| View credit / ledger | yes | yes (read-only) | yes | no |
 | Edit shifts | yes | no | yes | own |
 | Edit credit / ledger / fuel | yes | no | yes | limited |
 | Approve reconciliation | yes | yes | yes | no |
@@ -41,7 +42,7 @@ Implementation: [`src/utils/permissions.ts`](../src/utils/permissions.ts)
 ## Route map (high level)
 
 - **Admin:** `/admin`, `/admin/team`, `/admin/settings`, `/manager/reports` (read)
-- **Owner:** `/owner`, `/manager/reports`, `/manager/reconciliations`, `/manager/fuel-stock/*`, `/manager/fuel` (read-only UI)
+- **Owner:** `/owner`, `/manager/reports`, `/manager/reconciliations`, `/manager/fuel-stock/*`, `/manager/fuel`, `/manager/credit`, `/manager/ledger`, `/manager/daily-sheet` (read-only UI; can approve/reject reconciliations)
 - **Manager:** `/manager/*` except `/manager/team` (redirects to `/admin/team`)
 - **Worker:** `/operator`, `/shifts/*`
 

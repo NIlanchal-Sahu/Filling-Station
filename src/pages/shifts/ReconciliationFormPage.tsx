@@ -44,6 +44,7 @@ import {
 } from '@/utils/meterSalesByFuel';
 import type { ReconciliationCreditLine, FuelType, LedgerEntry } from '@/types/entities';
 import { creditSheetBodyCellSx, creditSheetHeaderCellSx } from '@/pages/manager/manualCreditSaleFormStyles';
+import { formatAttendantPostsLine } from '@/utils/attendantPosts';
 
 const EPS = 0.01;
 
@@ -200,17 +201,6 @@ export function ReconciliationFormPage() {
   }, [sumOtherChannels, cashAmountComputed]);
 
   const difference = totalReceived - totalSales;
-
-  const ledgerDayLabel = useMemo(() => {
-    if (!shift?.readingsCompleteAt) {
-      return '';
-    }
-    const iso =
-      shift.calendarDate?.trim() && /^\d{4}-\d{2}-\d{2}$/.test(shift.calendarDate.trim())
-        ? shift.calendarDate.trim()
-        : format(shift.startTime.toDate(), 'yyyy-MM-dd');
-    return format(new Date(`${iso}T12:00:00`), 'dd MMM yyyy');
-  }, [shift]);
 
   const cashBookRows: CashBookSummaryRow[] = useMemo(() => {
     if (!isManagerLike(profile?.role)) {
@@ -404,7 +394,9 @@ export function ReconciliationFormPage() {
         difference: totalReceived - totalSales,
         creditLineItems,
       });
-      if (isManagerLike(profile?.role)) {
+      if (profile?.role === 'admin') {
+        nav('/admin', { replace: true });
+      } else if (isManagerLike(profile?.role)) {
         nav('/manager', { replace: true });
       } else {
         nav('/operator', { replace: true });
@@ -460,10 +452,7 @@ export function ReconciliationFormPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 3, maxWidth: 960 }}>
-      <PageHeader
-        title="End-of-shift reconciliation"
-        subtitle="Enter Paytm, cards, credit, and short so Cash matches your meter total. Manager sees the daily cash summary when logged in."
-      />
+      <PageHeader title="End-of-shift reconciliation" />
 
       {isManagerEdit && existing?.status === 'pending' ? (
         <Alert severity="info" sx={{ borderRadius: 2 }}>
@@ -488,7 +477,11 @@ export function ReconciliationFormPage() {
       <Typography variant="body1" gutterBottom>
         Total sales amount: <strong>₹ {totalSales.toFixed(2)}</strong> for <strong>{operatorName}</strong>
       </Typography>
-      {shift?.pumpAttendants?.trim() ? (
+      {shift?.attendantPosts && shift.attendantPosts.length > 0 ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          On duty: <strong>{formatAttendantPostsLine(shift.attendantPosts)}</strong>
+        </Typography>
+      ) : shift?.pumpAttendants?.trim() ? (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Pump attendants: <strong>{shift.pumpAttendants.trim()}</strong>
         </Typography>
@@ -529,7 +522,6 @@ export function ReconciliationFormPage() {
         onChange={(e) => setCredit(e.target.value)}
         type="number"
         margin="normal"
-        helperText="If &gt; 0, allocate to customers below."
       />
       <TextField
         fullWidth
@@ -539,7 +531,6 @@ export function ReconciliationFormPage() {
         type="number"
         margin="normal"
         slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
-        helperText="Cash shortage to deduct after online / cards / credit."
       />
       <TextField
         fullWidth
@@ -551,7 +542,7 @@ export function ReconciliationFormPage() {
         helperText={
           cashAmountComputed < -EPS
             ? 'Non-cash allocations exceed meter sales — reduce Paytm, cards, or credit.'
-            : 'Meter total − Paytm − ICICI − Fleet − Credit − Short'
+            : undefined
         }
         slotProps={{
           input: { readOnly: true },
@@ -572,12 +563,6 @@ export function ReconciliationFormPage() {
       <Paper variant="outlined" sx={{ p: 2, mt: 2, bgcolor: 'background.default' }}>
         <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>
           Daily cash summary
-        </Typography>
-        <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1.5 }}>
-          Same structure as your cashier sheet. The top section is this shift&apos;s split of meter sales. Opening
-          balance, cash received, and paid-out lines come from <strong>Manager → Ledger</strong> dated{' '}
-          <strong>{ledgerDayLabel}</strong>. Post opening as a <strong>CASH</strong> receipt with &quot;opening&quot; in NAMES
-          or PARTICULAR.
         </Typography>
         <TableContainer>
           <Table
@@ -758,9 +743,6 @@ export function ReconciliationFormPage() {
               </TableBody>
             </Table>
           </TableContainer>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-            Type any party name — matches an existing credit customer or creates a new one.
-          </Typography>
           <Typography variant="caption" color="text.secondary">
             Sum of line totals: ₹ {creditLinesSum.toFixed(2)} (must match credit amount)
           </Typography>

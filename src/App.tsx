@@ -79,6 +79,7 @@ export default function App() {
 
           <Route element={<ProtectedRoute requireRole="operator" />}>
             <Route path="operator" element={<OperatorDashboardPage />} />
+            <Route path="operator/prices" element={<FuelPricesPage />} />
           </Route>
 
           <Route element={<ProtectedRoute requireRole="owner" />}>

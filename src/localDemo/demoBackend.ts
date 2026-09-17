@@ -16,6 +16,7 @@ import type {
   Nozzle,
   ReconciliationCreditLine,
   Shift,
+  ShiftAttendantPost,
   ShiftReading,
   ShiftReconciliation,
   User,
@@ -34,6 +35,7 @@ import {
   normalizeCreditPaymentMode,
 } from '@/types/entities';
 import { parseUserRole } from '@/utils/roles';
+import { parseAttendantPosts } from '@/utils/attendantPosts';
 
 const STORAGE_KEY = 'pumpstock-local-demo-v11';
 const TANK_STOCK_CLEAN_FLAG = 'pumpstock-tank-stock-cleared-v11';
@@ -91,6 +93,7 @@ type StoredShift = {
   readingsCompleteMs: number | null;
   notes?: string | null;
   pumpAttendants?: string | null;
+  attendantPosts?: ShiftAttendantPost[] | null;
   calendarDate?: string | null;
 };
 type StoredReading = {
@@ -273,6 +276,7 @@ function ensureLoaded(): void {
         row.users['demo-owner'] = { name: 'Demo Owner', role: 'owner', isActive: true };
         persist();
       }
+      ensureDemoPumpRoster();
       ensureTankDefaults();
     } else {
       seed();
@@ -280,6 +284,27 @@ function ensureLoaded(): void {
     }
   } catch {
     seed();
+    persist();
+  }
+}
+
+function applyDemoPumpRoster(): void {
+  const extras: Record<string, { name: string; role: 'operator'; isActive: true }> = {
+    'demo-staff-ravi': { name: 'Ravi', role: 'operator', isActive: true },
+    'demo-staff-suresh': { name: 'Suresh', role: 'operator', isActive: true },
+    'demo-staff-priya': { name: 'Priya', role: 'operator', isActive: true },
+  };
+  for (const [id, u] of Object.entries(extras)) {
+    if (!row.users[id]) {
+      row.users[id] = u;
+    }
+  }
+}
+
+function ensureDemoPumpRoster(): void {
+  const before = Object.keys(row.users).length;
+  applyDemoPumpRoster();
+  if (Object.keys(row.users).length !== before) {
     persist();
   }
 }
@@ -382,6 +407,7 @@ function seed(): void {
   row.users['demo-owner'] = { name: 'Demo Owner', role: 'owner', isActive: true };
   row.users['demo-manager'] = { name: 'Demo Manager', role: 'manager', isActive: true };
   row.users['demo-operator'] = { name: 'Demo Operator', role: 'operator', isActive: true };
+  applyDemoPumpRoster();
   const now = Date.now();
   seedTankConfig(now);
   /* M×N grid: M1(N1,N2 PETROL; N3,N4 XP); M2(N1,N2 DIESEL; N3,N4 PETROL); M3(all DIESEL) */
@@ -501,6 +527,10 @@ function mapShift(id: string, s: StoredShift): Shift {
     status: s.status,
     notes: s.notes ?? undefined,
     pumpAttendants: s.pumpAttendants?.trim() ? s.pumpAttendants.trim() : undefined,
+    attendantPosts: (() => {
+      const posts = parseAttendantPosts(s.attendantPosts);
+      return posts.length > 0 ? posts : undefined;
+    })(),
     calendarDate: cal,
     startTime: Timestamp.fromMillis(s.startMs),
     endTime: s.endMs === null ? null : Timestamp.fromMillis(s.endMs),
@@ -877,11 +907,13 @@ export async function demoCreateShift(input: {
   calendarDate: string;
   notes?: string;
   pumpAttendants?: string;
+  attendantPosts?: ShiftAttendantPost[];
 }): Promise<string> {
   ensureLoaded();
   const id = newId('shift');
   const now = Date.now();
   const pt = input.pumpAttendants?.trim();
+  const posts = parseAttendantPosts(input.attendantPosts);
   const cal = /^\d{4}-\d{2}-\d{2}$/.test(input.calendarDate.trim())
     ? input.calendarDate.trim()
     : format(new Date(now), 'yyyy-MM-dd');
@@ -891,6 +923,7 @@ export async function demoCreateShift(input: {
     calendarDate: cal,
     notes: input.notes ?? null,
     pumpAttendants: pt ? pt : null,
+    attendantPosts: posts.length > 0 ? posts : null,
     status: 'open',
     startMs: now,
     endMs: null,
@@ -1088,20 +1121,32 @@ async function bumpCustomerBalance(customerId: string, deltaCredit: number): Pro
   if (!c) return;
   c.currentBalance = (c.currentBalance ?? 0) + deltaCredit;
 }
+function pumpDayMsForShift(shiftId: string): number {
+  const s = row.shifts[shiftId];
+  if (!s) {
+    return Date.now();
+  }
+  const cal =
+    typeof s.calendarDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.calendarDate.trim())
+      ? s.calendarDate.trim()
+      : format(new Date(s.startMs), 'yyyy-MM-dd');
+  return new Date(`${cal}T12:00:00`).getTime();
+}
+
 export async function demoCreateCreditSalesForReconciliation(
   _rid: string,
   shiftId: string,
   lines: ReconciliationCreditLine[],
 ): Promise<void> {
   ensureLoaded();
-  const nowMs = Date.now();
+  const dateMs = pumpDayMsForShift(shiftId);
   for (const line of lines) {
     if (line.amount <= 0) continue;
     const id = newId('sale');
     row.creditSales[id] = {
       customerId: line.customerId,
       shiftId,
-      dateMs: nowMs,
+      dateMs,
       amount: line.amount,
       fuelTypeId: line.fuelTypeId ?? null,
       liters: line.liters ?? null,
@@ -1412,11 +1457,16 @@ export async function demoRecordPayment(input: {
 }
 
 function mapSale(id: string, s: StoredCreditSale): CreditSale {
+  const recon = (s.reference ?? '').startsWith('SHIFT_RECON:') && s.shiftId && s.shiftId !== '__mgr_credit__';
+  const dateMs = recon ? pumpDayMsForShift(s.shiftId) : s.dateMs;
+  if (recon && s.dateMs !== dateMs) {
+    s.dateMs = dateMs;
+  }
   return {
     id,
     customerId: s.customerId,
     shiftId: s.shiftId,
-    date: Timestamp.fromMillis(s.dateMs),
+    date: Timestamp.fromMillis(dateMs),
     amount: s.amount,
     fuelTypeId: s.fuelTypeId ?? undefined,
     liters: s.liters ?? undefined,
@@ -1426,14 +1476,18 @@ function mapSale(id: string, s: StoredCreditSale): CreditSale {
 }
 export async function demoListSalesForCustomer(customerId: string): Promise<CreditSale[]> {
   ensureLoaded();
-  return Object.entries(row.creditSales)
+  const sales = Object.entries(row.creditSales)
     .filter(([, s]) => s.customerId === customerId)
     .map(([id, s]) => mapSale(id, s))
     .sort((a, b) => b.date.toMillis() - a.date.toMillis());
+  persist();
+  return sales;
 }
 export async function demoListAllCreditSales(): Promise<CreditSale[]> {
   ensureLoaded();
-  return Object.entries(row.creditSales).map(([id, s]) => mapSale(id, s));
+  const sales = Object.entries(row.creditSales).map(([id, s]) => mapSale(id, s));
+  persist();
+  return sales;
 }
 
 function mapLed(id: string, e: StoredLedger): LedgerEntry {

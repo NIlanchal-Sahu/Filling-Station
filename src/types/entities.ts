@@ -127,6 +127,12 @@ export interface Nozzle {
 
 export type ShiftStatus = 'open' | 'closed';
 
+export interface ShiftAttendantPost {
+  name: string;
+  /** Dispenser machine number without the M prefix, e.g. "1". */
+  machineNumber: string;
+}
+
 export interface Shift {
   id: string;
   operatorId: string;
@@ -139,6 +145,8 @@ export interface Shift {
   notes?: string;
   /** Names of pump attendants / staff on duty this shift (optional). */
   pumpAttendants?: string;
+  /** Who is on which dispenser for this shift (optional). */
+  attendantPosts?: ShiftAttendantPost[];
   /** Business calendar day chosen when starting shift (yyyy-MM-dd, local date). */
   calendarDate?: string;
 }
@@ -377,10 +385,6 @@ export interface LubricantSale {
 
 export const LUBRICANT_UNITS = ['litre', '500ml', 'quart', 'kg', 'can', 'bottle'] as const;
 export type LubricantUnit = (typeof LUBRICANT_UNITS)[number];
-
-export const LUBRICANT_GRADES = [
-  '20W-40', '20W-50', '15W-40', '10W-30', '10W-40', '5W-30', '5W-40', 'Other',
-] as const;
 
 export const LUBRICANT_UNIT_LABELS: Record<string, string> = {
   litre: 'Litre',

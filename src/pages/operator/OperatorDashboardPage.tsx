@@ -8,6 +8,7 @@ import {
   CardContent,
   Chip,
   Stack,
+  Typography,
 } from '@mui/material';
 import Grid from '@mui/material/Grid2';
 import LocalGasStationOutlinedIcon from '@mui/icons-material/LocalGasStationOutlined';
@@ -18,6 +19,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { KpiStat } from '@/components/ui/KpiStat';
 import { KpiStatSkeleton } from '@/components/ui/KpiStatSkeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { DashboardSection } from '@/components/ui/DashboardSection';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { listOpenShiftsForOperator } from '@/services/shiftsService';
@@ -78,10 +80,7 @@ export function OperatorDashboardPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <PageHeader
-        title="Worker dashboard"
-        subtitle="Start or continue your shift — enter meter readings and reconcile payments before close."
-      />
+      <PageHeader title="Worker dashboard" />
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -117,17 +116,80 @@ export function OperatorDashboardPage() {
         )}
       </Grid>
 
-      {loading ? (
-        <Card elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <CardContent sx={{ py: 4 }}>
-            <Stack spacing={2}>
-              <Box sx={{ height: 24, bgcolor: 'action.hover', borderRadius: 1, width: '40%' }} />
-              <Box sx={{ height: 16, bgcolor: 'action.hover', borderRadius: 1, width: '70%' }} />
-              <Box sx={{ height: 48, bgcolor: 'action.hover', borderRadius: 1.5, width: '100%' }} />
-            </Stack>
-          </CardContent>
-        </Card>
-      ) : open ? (
+      <DashboardSection title="Shift">
+        {loading ? (
+          <Card elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+            <CardContent sx={{ py: 4 }}>
+              <Stack spacing={2}>
+                <Box sx={{ height: 24, bgcolor: 'action.hover', borderRadius: 1, width: '40%' }} />
+                <Box sx={{ height: 16, bgcolor: 'action.hover', borderRadius: 1, width: '70%' }} />
+                <Box sx={{ height: 48, bgcolor: 'action.hover', borderRadius: 1.5, width: '100%' }} />
+              </Stack>
+            </CardContent>
+          </Card>
+        ) : open ? (
+          <Card
+            elevation={0}
+            sx={{
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              overflow: 'hidden',
+              '&:hover': { boxShadow: (t) => `0 8px 24px ${alpha(t.palette.common.black, 0.06)}` },
+            }}
+          >
+            <Box sx={{ height: 3, bgcolor: 'info.main' }} />
+            <CardContent sx={{ pt: 2.5 }}>
+              <Stack spacing={2}>
+                <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
+                  <Chip label={open.shiftLabel} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
+                  {openBusinessDateDdMm != null ? (
+                    <Chip label={openBusinessDateDdMm} size="small" variant="filled" sx={{ fontWeight: 600 }} />
+                  ) : null}
+                </Stack>
+                {!open.readingsCompleteAt ? (
+                  <Button
+                    variant="contained"
+                    size="large"
+                    onClick={() => nav(`/shifts/${open.id}/meters`)}
+                    sx={touchButtonSx}
+                  >
+                    Enter meter readings
+                  </Button>
+                ) : (
+                  <Button
+                    variant="contained"
+                    size="large"
+                    onClick={() => nav(`/shifts/${open.id}/reconcile`)}
+                    sx={touchButtonSx}
+                  >
+                    End-of-shift reconciliation
+                  </Button>
+                )}
+              </Stack>
+            </CardContent>
+          </Card>
+        ) : (
+          <EmptyState
+            icon={<LocalGasStationOutlinedIcon sx={{ fontSize: 48 }} />}
+            title="No active shift"
+            action={
+              <Button
+                variant="contained"
+                color="secondary"
+                size="large"
+                startIcon={<PlayCircleOutlineOutlinedIcon />}
+                onClick={() => nav('/shifts/new')}
+                sx={touchButtonSx}
+              >
+                Start shift
+              </Button>
+            }
+          />
+        )}
+      </DashboardSection>
+
+      <DashboardSection title="Fuel prices">
         <Card
           elevation={0}
           sx={{
@@ -138,57 +200,29 @@ export function OperatorDashboardPage() {
             '&:hover': { boxShadow: (t) => `0 8px 24px ${alpha(t.palette.common.black, 0.06)}` },
           }}
         >
-          <Box sx={{ height: 3, bgcolor: 'info.main' }} />
+          <Box sx={{ height: 3, bgcolor: 'success.main' }} />
           <CardContent sx={{ pt: 2.5 }}>
-            <Stack spacing={2}>
-              <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
-                <Chip label={open.shiftLabel} color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
-                {openBusinessDateDdMm != null ? (
-                  <Chip label={openBusinessDateDdMm} size="small" variant="filled" sx={{ fontWeight: 600 }} />
-                ) : null}
+            <Stack spacing={1.5}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <LocalGasStationOutlinedIcon color="success" />
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Fuel prices
+                </Typography>
               </Stack>
-              {!open.readingsCompleteAt ? (
-                <Button
-                  variant="contained"
-                  size="large"
-                  onClick={() => nav(`/shifts/${open.id}/meters`)}
-                  sx={touchButtonSx}
-                >
-                  Enter meter readings
-                </Button>
-              ) : (
-                <Button
-                  variant="contained"
-                  size="large"
-                  onClick={() => nav(`/shifts/${open.id}/reconcile`)}
-                  sx={touchButtonSx}
-                >
-                  End-of-shift reconciliation
-                </Button>
-              )}
+              <Button
+                variant="contained"
+                color="success"
+                size="large"
+                startIcon={<LocalGasStationOutlinedIcon />}
+                onClick={() => nav('/operator/prices')}
+                sx={touchButtonSx}
+              >
+                Open fuel prices
+              </Button>
             </Stack>
           </CardContent>
         </Card>
-      ) : (
-        <EmptyState
-          icon={<LocalGasStationOutlinedIcon sx={{ fontSize: 48 }} />}
-          title="No active shift"
-          description="Start a shift when you arrive on duty to record meter readings and reconcile payments."
-          action={
-            <Button
-              variant="contained"
-              color="secondary"
-              size="large"
-              startIcon={<PlayCircleOutlineOutlinedIcon />}
-              onClick={() => nav('/shifts/new')}
-              sx={touchButtonSx}
-            >
-              Start shift
-            </Button>
-          }
-        />
-      )}
-
+      </DashboardSection>
     </Stack>
   );
 }

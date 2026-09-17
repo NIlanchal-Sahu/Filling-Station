@@ -30,7 +30,6 @@ import type { FuelReceipt, FuelType } from '@/types/entities';
 import { fuelStockDisplayMeta, FUEL_STOCK_UPDATED_EVENT } from '@/utils/fuelStockDisplay';
 import {
   assertEntryDateAllowed,
-  canBackdateEntries,
   clampEntryDateForRole,
   dateInputBoundsForRole,
   todayIso,
@@ -286,10 +285,7 @@ export function FuelPurchasePage() {
       {readOnlyOps ? <ReadOnlyBanner /> : null}
       <FuelStockSubNav />
 
-      <PageHeader
-        title="Fuel purchase"
-        subtitle="Record inward deliveries in KL with invoice, material code, rate, and VAT (HSD 24%, MS/XP 28%). Stock uses liters (KL × 1,000)."
-      />
+      <PageHeader title="Fuel purchase" />
 
       {err ? <Alert severity="error">{err}</Alert> : null}
       {ok ? <Alert severity="success">{ok}</Alert> : null}
@@ -334,11 +330,6 @@ export function FuelPurchasePage() {
             }}
             sx={{ width: 160 }}
           />
-          <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
-            {canBackdateEntries(profile?.role)
-              ? 'Admin can view and enter past dates.'
-              : 'Managers: today only for new entries.'}
-          </Typography>
         </Stack>
       </Paper>
 

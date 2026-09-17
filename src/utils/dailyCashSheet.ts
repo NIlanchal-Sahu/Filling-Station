@@ -1,6 +1,6 @@
 import { eachDayOfInterval, format } from 'date-fns';
 import type { LedgerEntry, Shift, ShiftReconciliation } from '@/types/entities';
-import { effectiveLedgerChannel } from '@/utils/cashBookSummary';
+import { effectiveLedgerChannel, isDrawerCashIncome } from '@/utils/cashBookSummary';
 import { latestReconciliationsPerShift, sheetDayIsoForReconciliation } from '@/utils/dailyCashBookVertical';
 import { roundMoney2, totalCashFromMeterAndChannels } from '@/utils/meterSalesByFuel';
 
@@ -43,16 +43,18 @@ export type DailyCashSheetRow = {
   shortAmount: number;
   /** Total sales − credit − Phone Pe − ICICI − Fleet − short (latest recon per shift). */
   totalCashShift: number;
-  /** Other cash receipts in ledger (excluding lines detected as opening). */
+  /** Other cash receipts in ledger (excluding opening and credit-due cash). */
   cashReceivedLedger: number;
   expenses: number;
   salary: number;
   advanceSalary: number;
-  /** Opening + shift cash + receipts − category outflows above. */
+  /** Opening + shift cash − expenses − salary − advance (cash received is added after this). */
   balanceCash: number;
-  /** Cash collected against credit (Receive payment, CASH). Shown as Cash received / Cash adj. */
+  /** Cash collected against credit (Receive payment, CASH). */
   cashAdjustColumn: number;
-  /** Same as balance in simple model (before locker breakdown). */
+  /** All extra cash in: ledger receipts + credit cash collections. Shown as Cash received. */
+  cashReceived: number;
+  /** Balance cash + cash received, before locker / odd / party payouts. */
   totalCash2: number;
   locker: number;
   oddBalance: number;
@@ -65,14 +67,14 @@ export type DailyCashSheetRow = {
 };
 
 function openingIncomeMatch(entry: LedgerEntry): boolean {
-  if (entry.type !== 'income' || effectiveLedgerChannel(entry) !== 'cash') return false;
+  if (!isDrawerCashIncome(entry)) return false;
   const blob = `${entry.particulars} ${entry.paidToOrReceivedFrom}`.toLowerCase();
   return /\bopening\b/.test(blob);
 }
 
 /** Credit party paid in cash (Credit → Receive payment, mode CASH). */
 function isCreditCashReceived(entry: LedgerEntry): boolean {
-  if (entry.type !== 'income' || effectiveLedgerChannel(entry) !== 'cash') return false;
+  if (!isDrawerCashIncome(entry)) return false;
   if (entry.relatedCreditPaymentId) return true;
   const blob = `${entry.particulars} ${entry.paidToOrReceivedFrom}`.toLowerCase();
   return blob.includes('due received');
@@ -288,13 +290,7 @@ export function buildDailyCashSheet(
       .filter(isCreditCashReceived)
       .reduce((s, e) => s + e.amount, 0);
     const cashReceivedLedger = dayLedger
-      .filter(
-        (e) =>
-          e.type === 'income' &&
-          effectiveLedgerChannel(e) === 'cash' &&
-          !openingIncomeMatch(e) &&
-          !isCreditCashReceived(e),
-      )
+      .filter((e) => isDrawerCashIncome(e) && !openingIncomeMatch(e) && !isCreditCashReceived(e))
       .reduce((s, e) => s + e.amount, 0);
 
     let expenses = 0;
@@ -328,12 +324,12 @@ export function buildDailyCashSheet(
     }
 
     const cashAdjustColumn = creditCashReceived;
-    const grossIn = openingBalance + shiftCash + cashReceivedLedger + cashAdjustColumn;
+    const cashReceived = roundMoney2(cashReceivedLedger + cashAdjustColumn);
     const categoryPaid = expenses + salary + advanceSalary;
-    const balanceCash = grossIn - categoryPaid;
-    const totalCash2 = balanceCash;
+    const balanceCash = roundMoney2(openingBalance + shiftCash - categoryPaid);
+    const totalCash2 = roundMoney2(balanceCash + cashReceived);
 
-    const afterLockerOdd = balanceCash - locker - oddBalance;
+    const afterLockerOdd = totalCash2 - locker - oddBalance;
     const partyPayouts = [...partyMap.values()].sort((a, b) => a.name.localeCompare(b.name));
     const partySum = partyPayouts.reduce((s, p) => s + p.amount, 0);
     const cashInHand = afterLockerOdd;
@@ -356,6 +352,7 @@ export function buildDailyCashSheet(
       advanceSalary,
       balanceCash,
       cashAdjustColumn,
+      cashReceived,
       totalCash2,
       locker,
       oddBalance,

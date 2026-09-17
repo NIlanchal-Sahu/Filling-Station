@@ -18,36 +18,33 @@ import {
   Typography,
 } from '@mui/material';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { listNozzles } from '@/services/nozzlesService';
-import { listActiveUsers, listUsersForManager } from '@/services/usersService';
 import { getLastClosingForNozzle, createInitialReadings } from '@/services/shiftReadingsService';
 import { createShift } from '@/services/shiftsService';
-import { SHIFT_LABELS, type Nozzle, type User } from '@/types/entities';
+import { SHIFT_LABELS, type Nozzle } from '@/types/entities';
 import { compareNozzleOrder } from '@/utils/nozzleSort';
 import { formatMachineLabelFromNozzleSelection } from '@/utils/machineDisplay';
-import { requireNonEmpty } from '@/utils/validation';
-import { isManagerLike, homePathForRole } from '@/utils/roles';
 import {
   assertEntryDateAllowed,
   clampEntryDateForRole,
   dateInputBoundsForRole,
+  parsePumpDayParam,
+  recalledAdminPumpDay,
   todayIso,
 } from '@/utils/dateEntryPolicy';
+import { attendantNameList, joinAttendantNames, shiftOptionLabel } from '@/utils/shiftStatusDisplay';
 
 export function StartShiftPage() {
   const { profile } = useAuth();
   const nav = useNavigate();
-  const isManager = isManagerLike(profile?.role);
+  const [searchParams] = useSearchParams();
   const dateBounds = dateInputBoundsForRole(profile?.role);
 
-  const [operators, setOperators] = useState<User[]>([]);
   const [nozzles, setNozzles] = useState<Nozzle[]>([]);
-  const [operatorId, setOperatorId] = useState('');
   const [calendarDate, setCalendarDate] = useState(() => todayIso());
   const [shiftLabel, setShiftLabel] = useState<string>(SHIFT_LABELS[0]);
-  /** Names of pump staff on duty — single field above the shift time selection. */
   const [pumpAttendants, setPumpAttendants] = useState('');
   const [notes, setNotes] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -64,23 +61,11 @@ export function StartShiftPage() {
     (async () => {
       setLoading(true);
       try {
-        const [oz, nz] = await Promise.all([
-          isManager ? listUsersForManager() : listActiveUsers(),
-          listNozzles(true),
-        ]);
+        const nz = await listNozzles(true);
         if (!ok) {
           return;
         }
-        const opOnly = (isManager ? oz : oz.filter((u) => u.role === 'operator')).filter(
-          (u) => u.isActive,
-        );
-        setOperators(opOnly);
         setNozzles(nz);
-        if (!isManager) {
-          setOperatorId(profile.id);
-        } else if (opOnly[0]) {
-          setOperatorId(opOnly[0].id);
-        }
       } catch (e) {
         if (ok) {
           setLoadErr(e instanceof Error ? e.message : 'Failed to load data');
@@ -94,7 +79,17 @@ export function StartShiftPage() {
     return () => {
       ok = false;
     };
-  }, [profile, isManager]);
+  }, [profile]);
+
+  useEffect(() => {
+    const fromUrl = parsePumpDayParam(searchParams.get('day'));
+    const recalled = profile?.role === 'admin' ? recalledAdminPumpDay() : null;
+    const raw = fromUrl ?? recalled;
+    if (!raw) {
+      return;
+    }
+    setCalendarDate(clampEntryDateForRole(profile?.role, raw));
+  }, [searchParams, profile?.role]);
 
   function toggleNozzle(id: string) {
     setSelected((prev) => {
@@ -116,9 +111,7 @@ export function StartShiftPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    const oErr = isManager ? requireNonEmpty(operatorId, 'Operator') : undefined;
-    if (oErr) {
-      setFormError(oErr);
+    if (!profile) {
       return;
     }
     if (selected.size === 0) {
@@ -129,8 +122,8 @@ export function StartShiftPage() {
     try {
       const day = clampEntryDateForRole(profile?.role, calendarDate);
       assertEntryDateAllowed(profile?.role, day);
-      const oid = isManager ? operatorId : profile!.id;
-      const pt = pumpAttendants.trim();
+      const oid = profile.id;
+      const pt = joinAttendantNames(attendantNameList(pumpAttendants));
       const shiftId = await createShift({
         operatorId: oid,
         shiftLabel,
@@ -149,7 +142,7 @@ export function StartShiftPage() {
         opening[nId] = await getLastClosingForNozzle(nId);
       }
       await createInitialReadings(shiftId, nozzleIds, opening);
-      nav(homePathForRole(profile?.role), { replace: true });
+      nav(`/shifts/${shiftId}/meters`, { replace: true });
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Could not start shift');
     } finally {
@@ -172,10 +165,7 @@ export function StartShiftPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 3, maxWidth: 600 }}>
-      <PageHeader
-        title="Start shift"
-        subtitle="Pick calendar day, operator, nozzles on duty, and optional pump attendant names for the roster report."
-      />
+      <PageHeader title="Start shift" />
 
       <Paper
         component="form"
@@ -193,24 +183,6 @@ export function StartShiftPage() {
         <Box sx={{ height: 3, bgcolor: 'primary.main', borderRadius: '2px 2px 0 0', mb: 2 }} />
       {loadErr && <Alert severity="error" sx={{ mb: 1 }}>{loadErr}</Alert>}
 
-      {isManager && (
-        <FormControl fullWidth margin="normal">
-          <InputLabel id="op-label">Operator</InputLabel>
-          <Select
-            labelId="op-label"
-            label="Operator"
-            value={operatorId}
-            onChange={(e) => setOperatorId(e.target.value as string)}
-          >
-            {operators.map((o) => (
-              <MenuItem key={o.id} value={o.id}>
-                {o.name} ({o.role})
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      )}
-
       <TextField
         fullWidth
         margin="normal"
@@ -222,21 +194,6 @@ export function StartShiftPage() {
           inputLabel: { shrink: true },
           htmlInput: { min: dateBounds.min, max: dateBounds.max },
         }}
-        helperText={
-          isManager && profile?.role === 'admin'
-            ? 'Owner can set a past business day to correct historical shifts.'
-            : 'Business day this shift belongs to (today only for manager/operator).'
-        }
-      />
-
-      <TextField
-        fullWidth
-        margin="normal"
-        label="Pump attendants"
-        placeholder="Names on pump duty (boys / girls) — optional"
-        value={pumpAttendants}
-        onChange={(e) => setPumpAttendants(e.target.value)}
-        helperText="Names on dispenser duty. Separate several people with commas — dashboard splits that shift&apos;s sales equally for rewards."
       />
 
       <FormControl fullWidth margin="normal">
@@ -245,15 +202,26 @@ export function StartShiftPage() {
           labelId="sl-label"
           label="Shift"
           value={shiftLabel}
-          onChange={(e) => setShiftLabel(e.target.value as (typeof SHIFT_LABELS)[number])}
+          onChange={(e) => {
+            setShiftLabel(e.target.value as (typeof SHIFT_LABELS)[number]);
+          }}
         >
           {SHIFT_LABELS.map((l) => (
             <MenuItem key={l} value={l}>
-              {l}
+              {shiftOptionLabel(l)}
             </MenuItem>
           ))}
         </Select>
       </FormControl>
+
+      <TextField
+        fullWidth
+        margin="normal"
+        label="Pump attendants"
+        value={pumpAttendants}
+        onChange={(e) => setPumpAttendants(e.target.value)}
+        placeholder="Priya, Ravi"
+      />
 
       <TextField
         fullWidth

@@ -222,7 +222,7 @@ export function SalesByFuelChart(props: { pumpDayIso: string }) {
         <>
           {data.totalAmount <= 0 ? (
             <Alert severity="info" sx={{ borderRadius: 2 }}>
-              No reconciled shift sales for this period. Complete shift reconciliation to populate the chart.
+              No sales in this period.
             </Alert>
           ) : (
             <>

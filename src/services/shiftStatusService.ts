@@ -73,9 +73,8 @@ function scheduledEndOnPumpDay(pumpDayIso: string, meta: ShiftScheduleMeta): Dat
 function pickShiftForLabel(shifts: Shift[], label: ShiftLabel): Shift | undefined {
   const matches = shifts.filter((s) => s.shiftLabel.trim() === label);
   if (matches.length === 0) return undefined;
-  const open = matches.find((s) => s.status === 'open');
-  if (open) return open;
-  return matches.sort((a, b) => b.startTime.toMillis() - a.startTime.toMillis())[0];
+  const byNewest = [...matches].sort((a, b) => b.startTime.toMillis() - a.startTime.toMillis());
+  return byNewest.find((s) => s.status === 'open') ?? byNewest[0];
 }
 
 function formatShiftTime(ts: Date): string {

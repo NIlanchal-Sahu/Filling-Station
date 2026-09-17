@@ -44,25 +44,31 @@ service cloud.firestore {
       return isSignedIn() && shiftData(shiftId).operatorId == request.auth.uid;
     }
 
-    /* Users — admin manages team; others read own profile. */
+    /* Users — admin manages team; signed-in staff can read names for the shift roster. */
     match /users/{userId} {
-      allow read: if isSignedIn() && (userId == request.auth.uid || isAdmin());
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
     match /fuelTypes/{id} {
       allow read: if isSignedIn();
-      allow write: if isOpsWriter();
+      allow create, delete: if isOpsWriter();
+      allow update: if isOpsWriter()
+        || (isOperator()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['currentStockLiters', 'lastDipCm', 'lastDipAt', 'currentRate', 'lastUpdatedAt']));
     }
 
     match /fuelTankDips/{id} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isOpsWriter();
+      allow create, update: if isOpsWriter() || isOperator();
+      allow delete: if isOpsWriter();
     }
 
     match /fuelReceipts/{id} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isOpsWriter();
+      allow create, update: if isOpsWriter() || isOperator();
+      allow delete: if isOpsWriter();
     }
 
     match /nozzles/{id} {

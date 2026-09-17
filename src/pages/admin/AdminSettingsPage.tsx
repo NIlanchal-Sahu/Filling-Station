@@ -46,19 +46,13 @@ export function AdminSettingsPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <PageHeader
-        title="System settings"
-        subtitle="Environment checklist and demo tools. Secrets are never shown in the UI."
-      />
+      <PageHeader title="System settings" />
 
       <Alert severity="info">{modeDescription}</Alert>
 
       <Paper elevation={0} sx={{ p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
           Required environment variables
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Set these in <code>.env</code> locally or in Vercel → Project → Settings → Environment Variables.
         </Typography>
         <List dense disablePadding>
           {ENV_VARS.map((name) => (

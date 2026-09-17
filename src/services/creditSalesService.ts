@@ -21,12 +21,47 @@ import {
   demoListSalesForCustomer,
   demoReplaceCreditSalesForShift,
 } from '@/localDemo/demoBackend';
+import { getShift, shiftPumpDayIso } from '@/services/shiftsService';
 
 /** Sentinel shift id for credit lines posted from customer detail (not tied to shift recon). */
 export const MANAGER_CREDIT_SHIFT_ID = '__mgr_credit__';
 
 function roundMoney2(x: number): number {
   return Math.round((x + Number.EPSILON) * 100) / 100;
+}
+
+function localNoon(iso: string): Date {
+  return new Date(`${iso}T12:00:00`);
+}
+
+async function creditSaleDateForShift(shiftId: string): Promise<Date> {
+  const shift = await getShift(shiftId);
+  if (!shift) {
+    return new Date();
+  }
+  return localNoon(shiftPumpDayIso(shift));
+}
+
+async function applyShiftPumpDayDates(sales: CreditSale[]): Promise<CreditSale[]> {
+  const ids = [
+    ...new Set(
+      sales
+        .map((s) => s.shiftId)
+        .filter((id) => id && id !== MANAGER_CREDIT_SHIFT_ID),
+    ),
+  ];
+  if (ids.length === 0) {
+    return sales;
+  }
+  const shifts = await Promise.all(ids.map((id) => getShift(id)));
+  const byId = new Map(ids.map((id, i) => [id, shifts[i]]));
+  return sales.map((s) => {
+    const sh = byId.get(s.shiftId);
+    if (!sh) {
+      return s;
+    }
+    return { ...s, date: Timestamp.fromDate(localNoon(shiftPumpDayIso(sh))) };
+  });
 }
 
 function mapCreditSale(id: string, data: DocumentData): CreditSale {
@@ -81,8 +116,8 @@ export async function createCreditSalesForReconciliation(
   if (LOCAL_DEMO) {
     return demoCreateCreditSalesForReconciliation(_reconciliationId, shiftId, lines);
   }
+  const saleDate = Timestamp.fromDate(await creditSaleDateForShift(shiftId));
   const batch = writeBatch(getDb());
-  const now = Timestamp.now();
   for (const line of lines) {
     if (line.amount <= 0) {
       continue;
@@ -91,7 +126,7 @@ export async function createCreditSalesForReconciliation(
     const payload: Record<string, unknown> = {
       customerId: line.customerId,
       shiftId,
-      date: now,
+      date: saleDate,
       amount: roundMoney2(line.amount),
       reference: `SHIFT_RECON:${shiftId}`,
     };
@@ -164,20 +199,21 @@ export async function createManualCreditSale(input: {
 
 export async function listSalesForCustomer(customerId: string): Promise<CreditSale[]> {
   if (LOCAL_DEMO) {
-    return demoListSalesForCustomer(customerId);
+    return applyShiftPumpDayDates(await demoListSalesForCustomer(customerId));
   }
   const ref = collection(getDb(), COLLECTIONS.creditSales);
   const qy = query(ref, where('customerId', '==', customerId));
   const snap = await getDocs(qy);
-  return snap.docs
+  const sales = snap.docs
     .map((d) => mapCreditSale(d.id, d.data()))
     .sort((a, b) => b.date.toMillis() - a.date.toMillis());
+  return applyShiftPumpDayDates(sales);
 }
 
 export async function listAllCreditSales(): Promise<CreditSale[]> {
   if (LOCAL_DEMO) {
-    return demoListAllCreditSales();
+    return applyShiftPumpDayDates(await demoListAllCreditSales());
   }
   const snap = await getDocs(collection(getDb(), COLLECTIONS.creditSales));
-  return snap.docs.map((d) => mapCreditSale(d.id, d.data()));
+  return applyShiftPumpDayDates(snap.docs.map((d) => mapCreditSale(d.id, d.data())));
 }

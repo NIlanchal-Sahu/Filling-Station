@@ -14,8 +14,16 @@ export function effectiveLedgerChannel(entry: LedgerEntry): 'cash' | 'bank' | 'u
   return entry.type === 'expense' ? 'cash' : 'bank';
 }
 
+/** Cash coming into the drawer (ledger RECEIVED + CASH, or unspecified channel). */
+export function isDrawerCashIncome(entry: LedgerEntry): boolean {
+  if (entry.type !== 'income') return false;
+  const ch = entry.paymentChannel;
+  if (ch === 'bank' || ch === 'upi') return false;
+  return true;
+}
+
 function openingBalanceMatch(entry: LedgerEntry): boolean {
-  if (entry.type !== 'income' || effectiveLedgerChannel(entry) !== 'cash') return false;
+  if (!isDrawerCashIncome(entry)) return false;
   const blob = `${entry.particulars} ${entry.paidToOrReceivedFrom}`.toLowerCase();
   return /\bopening\b/.test(blob);
 }
@@ -212,14 +220,15 @@ export function buildCashBookSummary(params: {
     opening = openingBalanceOverride;
   } else {
     for (const e of ledgerSameDay) {
-      if (e.type !== 'income' || effectiveLedgerChannel(e) !== 'cash') continue;
       if (openingBalanceMatch(e)) opening += e.amount;
     }
   }
 
   let cashReceived = 0;
   for (const e of ledgerSameDay) {
-    if (isCreditCashReceived(e)) cashReceived += e.amount;
+    if (!isDrawerCashIncome(e)) continue;
+    if (openingBalanceMatch(e)) continue;
+    cashReceived += e.amount;
   }
 
   rows.push({

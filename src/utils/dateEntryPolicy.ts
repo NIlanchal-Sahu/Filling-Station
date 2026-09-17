@@ -6,6 +6,44 @@ export function todayIso(): string {
   return format(new Date(), 'yyyy-MM-dd');
 }
 
+export const PUMP_DAY_QUERY_KEY = 'day';
+
+const ADMIN_PUMP_DAY_STORAGE = 'pumpstock-admin-pump-day';
+
+export function parsePumpDayParam(raw: string | null | undefined): string | null {
+  const iso = raw?.trim() ?? '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null;
+}
+
+export function withPumpDayQuery(path: string, iso: string): string {
+  const hashIndex = path.indexOf('#');
+  const hash = hashIndex >= 0 ? path.slice(hashIndex) : '';
+  const withoutHash = hashIndex >= 0 ? path.slice(0, hashIndex) : path;
+  const qIndex = withoutHash.indexOf('?');
+  const pathname = qIndex >= 0 ? withoutHash.slice(0, qIndex) : withoutHash;
+  const existing = qIndex >= 0 ? withoutHash.slice(qIndex + 1) : '';
+  const params = new URLSearchParams(existing);
+  params.set(PUMP_DAY_QUERY_KEY, iso);
+  const q = params.toString();
+  return `${pathname}${q ? `?${q}` : ''}${hash}`;
+}
+
+export function rememberAdminPumpDay(iso: string): void {
+  if (typeof sessionStorage === 'undefined') {
+    return;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    sessionStorage.setItem(ADMIN_PUMP_DAY_STORAGE, iso);
+  }
+}
+
+export function recalledAdminPumpDay(): string | null {
+  if (typeof sessionStorage === 'undefined') {
+    return null;
+  }
+  return parsePumpDayParam(sessionStorage.getItem(ADMIN_PUMP_DAY_STORAGE));
+}
+
 /**
  * Owner and admin may enter or edit data for past pump days.
  * Managers and workers are locked to today.

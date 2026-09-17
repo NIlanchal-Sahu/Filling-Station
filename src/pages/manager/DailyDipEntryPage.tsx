@@ -34,9 +34,9 @@ import type { DailyFuelStockRow, FuelType } from '@/types/entities';
 import { fuelStockDisplayMeta, FUEL_STOCK_UPDATED_EVENT } from '@/utils/fuelStockDisplay';
 import {
   assertEntryDateAllowed,
-  canBackdateEntries,
   clampEntryDateForRole,
   dateInputBoundsForRole,
+  recalledAdminPumpDay,
   todayIso,
 } from '@/utils/dateEntryPolicy';
 import { canonicalDipCm, normalizeDipCm } from '@/utils/fuelTankCalibration';
@@ -98,6 +98,11 @@ export function DailyDipEntryPage() {
     const fromUrl = searchParams.get('day');
     if (fromUrl && /^\d{4}-\d{2}-\d{2}$/.test(fromUrl)) {
       setPumpDayIso(clampEntryDateForRole(profile?.role, fromUrl));
+      return;
+    }
+    const recalled = profile?.role === 'admin' ? recalledAdminPumpDay() : null;
+    if (recalled) {
+      setPumpDayIso(clampEntryDateForRole(profile?.role, recalled));
     }
   }, [searchParams, profile?.role]);
 
@@ -203,7 +208,6 @@ export function DailyDipEntryPage() {
 
       <PageHeader
         title="Daily dip entry"
-        subtitle="Enter dip readings in cm for MS, HSD, and XP. Stock in liters is calculated from the calibration chart. Expected stock = opening + receipts − meter sales."
         action={
           <Button
             variant="contained"
@@ -232,11 +236,6 @@ export function DailyDipEntryPage() {
               inputLabel: { shrink: true },
               htmlInput: { min: dateBounds.min, max: dateBounds.max },
             }}
-            helperText={
-              canBackdateEntries(profile?.role)
-                ? 'Owner can enter or correct past pump days.'
-                : 'Managers can enter today only.'
-            }
           />
         </Stack>
       </Paper>
@@ -252,23 +251,41 @@ export function DailyDipEntryPage() {
             <TableHead>
               <TableRow>
                 <TableCell sx={headSx}>Fuel</TableCell>
-                <TableCell sx={headSx} align="right">Opening dip (cm)</TableCell>
-                <TableCell sx={headSx} align="right">Closing dip (cm)</TableCell>
+                <TableCell sx={headSx} align="right">Opening Dip (CM)</TableCell>
+                <TableCell sx={headSx} align="right">Opening Stock (L)</TableCell>
                 <TableCell sx={headSx} align="right">Receipts (L)</TableCell>
-                <TableCell sx={headSx} align="right">Opening stock</TableCell>
-                <TableCell sx={headSx} align="right">Sales</TableCell>
-                <TableCell sx={headSx} align="right">Expected</TableCell>
-                <TableCell sx={headSx} align="right">Actual</TableCell>
-                <TableCell sx={headSx} align="right">Variation</TableCell>
+                <TableCell sx={headSx} align="right">Total Stock (L)</TableCell>
+                <TableCell sx={headSx} align="right">Sales (L)</TableCell>
+                <TableCell sx={headSx} align="right">Expected Closing Stock (L)</TableCell>
+                <TableCell sx={headSx} align="right">Closing Dip (CM)</TableCell>
+                <TableCell sx={headSx} align="right">Actual Closing Stock (L)</TableCell>
+                <TableCell sx={headSx} align="right">Variation (L)</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {formRows.map((row) => {
                 const meta = fuelStockDisplayMeta(row.fuelName);
                 const calc = computed.get(row.fuelTypeId);
+                const openingPreview =
+                  row.openingDipCm.trim() !== ''
+                    ? previewStockFromDipCm(Number(row.openingDipCm), row.fuelName)
+                    : null;
                 const closingPreview =
                   row.closingDipCm.trim() !== ''
                     ? previewStockFromDipCm(Number(row.closingDipCm), row.fuelName)
+                    : null;
+                const openingStockLiters = openingPreview ?? calc?.openingStockLiters ?? null;
+                const receiptTrim = row.receiptLiters.trim();
+                const receiptLiters = receiptTrim === '' ? (calc?.receiptLiters ?? 0) : Number(receiptTrim);
+                const salesLiters = calc?.salesLiters ?? 0;
+                const totalStockLiters =
+                  openingStockLiters != null ? Math.round(openingStockLiters + receiptLiters) : null;
+                const expectedStockLiters =
+                  totalStockLiters != null ? Math.round(totalStockLiters - salesLiters) : null;
+                const actualStockLiters = closingPreview ?? calc?.actualStockLiters ?? null;
+                const variationLiters =
+                  actualStockLiters != null && expectedStockLiters != null
+                    ? Math.round(actualStockLiters - expectedStockLiters)
                     : null;
                 return (
                   <TableRow key={row.fuelTypeId} hover>
@@ -290,6 +307,28 @@ export function DailyDipEntryPage() {
                         slotProps={{ htmlInput: { step: '0.1', min: 0 } }}
                       />
                     </TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {openingStockLiters != null ? formatFuelLiters(openingStockLiters) : '—'}
+                    </TableCell>
+                    <TableCell align="right">
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={row.receiptLiters}
+                        onChange={(e) => updateRow(row.fuelTypeId, { receiptLiters: e.target.value })}
+                        sx={{ width: 96 }}
+                        slotProps={{ htmlInput: { min: 0 } }}
+                      />
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {totalStockLiters != null ? formatFuelLiters(totalStockLiters) : '—'}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {calc ? formatFuelLiters(salesLiters) : '—'}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {expectedStockLiters != null ? formatFuelLiters(expectedStockLiters) : '—'}
+                    </TableCell>
                     <TableCell align="right">
                       <TextField
                         size="small"
@@ -305,31 +344,8 @@ export function DailyDipEntryPage() {
                         </Typography>
                       ) : null}
                     </TableCell>
-                    <TableCell align="right">
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={row.receiptLiters}
-                        onChange={(e) => updateRow(row.fuelTypeId, { receiptLiters: e.target.value })}
-                        sx={{ width: 96 }}
-                        slotProps={{ htmlInput: { min: 0 } }}
-                      />
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {calc ? formatFuelLiters(calc.openingStockLiters) : '—'}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {calc ? formatFuelLiters(calc.salesLiters) : '—'}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {calc ? formatFuelLiters(calc.expectedStockLiters) : '—'}
-                    </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                      {closingPreview != null
-                        ? formatFuelLiters(closingPreview)
-                        : calc?.actualStockLiters != null
-                          ? formatFuelLiters(calc.actualStockLiters)
-                          : '—'}
+                      {actualStockLiters != null ? formatFuelLiters(actualStockLiters) : '—'}
                     </TableCell>
                     <TableCell
                       align="right"
@@ -339,8 +355,8 @@ export function DailyDipEntryPage() {
                         color: calc?.variationAlert ? 'error.main' : 'inherit',
                       }}
                     >
-                      {calc?.variationLiters != null
-                        ? `${calc.variationLiters > 0 ? '+' : ''}${calc.variationLiters.toLocaleString('en-IN')} L`
+                      {variationLiters != null
+                        ? `${variationLiters > 0 ? '+' : ''}${variationLiters.toLocaleString('en-IN')} L`
                         : '—'}
                     </TableCell>
                   </TableRow>

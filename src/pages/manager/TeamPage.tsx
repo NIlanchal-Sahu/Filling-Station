@@ -130,11 +130,6 @@ export function TeamPage() {
     <Box>
       <PageHeader
         title="Team"
-        subtitle={
-          LOCAL_DEMO
-            ? 'Demo mode: add or edit staff stored in this browser. In production, each row matches a Firebase Auth user id.'
-            : 'Firestore profiles must use the same document id as Firebase Authentication (UID). Create the user in Firebase Console → Authentication, then link their profile here.'
-        }
         action={
           <Button variant="contained" onClick={openAdd} disabled={loading}>
             {LOCAL_DEMO ? 'Add user' : 'Link profile'}
@@ -195,7 +190,6 @@ export function TeamPage() {
                 label="Firebase Auth UID"
                 value={form.uid}
                 onChange={(e) => setForm((f) => ({ ...f, uid: e.target.value }))}
-                helperText="Copy from Firebase Console → Authentication → Users"
                 fullWidth
                 required
                 size="small"

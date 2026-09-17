@@ -8,7 +8,6 @@ import {
   Box,
   Button,
   Card,
-  CardContent,
   Chip,
   CircularProgress,
   LinearProgress,
@@ -96,13 +95,14 @@ function exportTankStockSummary(summary: TankStockDaySummary): void {
     [
       'Date',
       'Fuel',
-      'DipCm',
-      'StockL',
-      'OpeningL',
+      'OpeningDipCm',
+      'OpeningStockL',
+      'ReceiptsL',
+      'TotalStockL',
       'SalesL',
-      'PurchaseL',
-      'ExpectedL',
-      'ActualL',
+      'ExpectedClosingStockL',
+      'ClosingDipCm',
+      'ActualClosingStockL',
       'VariationL',
       'FillPct',
       'Status',
@@ -110,12 +110,13 @@ function exportTankStockSummary(summary: TankStockDaySummary): void {
     summary.rows.map((r) => [
       summary.pumpDayIso,
       r.shortCode,
-      r.currentDipCm ?? '',
-      r.currentStockLiters,
+      r.openingDipCm ?? '',
       r.openingStockLiters,
-      r.salesLiters,
       r.receiptLiters,
+      Math.round(r.openingStockLiters + r.receiptLiters),
+      r.salesLiters,
       r.expectedStockLiters,
+      r.closingDipCm ?? '',
       r.actualStockLiters ?? '',
       r.variationLiters ?? '',
       Math.round(r.availablePercent * 10) / 10,
@@ -247,9 +248,6 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
               </Typography>
               <Chip label={dateChipLabel} size="small" variant="outlined" sx={{ height: 22 }} />
             </Stack>
-            <Typography variant="caption" color="text.secondary">
-              Dip cm → liters via calibration chart. Expected = opening + purchase − sales.
-            </Typography>
           </Box>
         </Stack>
         <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ flexShrink: 0, alignSelf: { xs: 'flex-start', sm: 'center' } }}>
@@ -304,7 +302,7 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
         </Card>
       ) : !hasRows ? (
         <Alert severity="info" sx={{ borderRadius: 2 }}>
-          No tank stock configured. Enter dip readings on the daily dip entry page.
+          No tank stock configured.
         </Alert>
       ) : (
         <>
@@ -315,7 +313,7 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
               <Table
                 size="small"
                 sx={{
-                  minWidth: 960,
+                  minWidth: 1100,
                   borderCollapse: 'collapse',
                   '& .MuiTableCell-root': {
                     borderRight: '1px solid',
@@ -327,20 +325,23 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
                 <TableHead>
                   <TableRow>
                     <TableCell sx={headSx}>Fuel</TableCell>
-                    <TableCell sx={headSx} align="right">Dip (cm)</TableCell>
-                    <TableCell sx={headSx} align="right">Stock (L)</TableCell>
-                    <TableCell sx={headSx} align="right">Opening</TableCell>
-                    <TableCell sx={headSx} align="right">Sales</TableCell>
-                    <TableCell sx={headSx} align="right">Purchase</TableCell>
-                    <TableCell sx={headSx} align="right">Expected</TableCell>
-                    <TableCell sx={headSx} align="right">Actual</TableCell>
-                    <TableCell sx={headSx} align="right">Variation</TableCell>
+                    <TableCell sx={headSx} align="right">Opening Dip (CM)</TableCell>
+                    <TableCell sx={headSx} align="right">Opening Stock (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Receipts (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Total Stock (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Sales (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Expected Closing Stock (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Closing Dip (CM)</TableCell>
+                    <TableCell sx={headSx} align="right">Actual Closing Stock (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Variation (L)</TableCell>
                     <TableCell sx={headSx}>Fill %</TableCell>
                     <TableCell sx={headSx}>Status</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {summary?.rows.map((row) => (
+                  {summary?.rows.map((row) => {
+                    const totalStockLiters = Math.round(row.openingStockLiters + row.receiptLiters);
+                    return (
                     <TableRow
                       key={row.fuelTypeId}
                       hover
@@ -358,22 +359,25 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
                         </Typography>
                       </TableCell>
                       <TableCell align="right" sx={cellSx}>
-                        {row.currentDipCm != null ? formatDipCm(row.currentDipCm) : '—'}
-                      </TableCell>
-                      <TableCell align="right" sx={{ ...cellSx, fontWeight: 700 }}>
-                        {formatFuelLiters(row.currentStockLiters)}
+                        {row.openingDipCm != null ? formatDipCm(row.openingDipCm) : '—'}
                       </TableCell>
                       <TableCell align="right" sx={cellSx}>
                         {formatFuelLiters(row.openingStockLiters)}
                       </TableCell>
                       <TableCell align="right" sx={cellSx}>
-                        {formatFuelLiters(row.salesLiters)}
-                      </TableCell>
-                      <TableCell align="right" sx={cellSx}>
                         {formatFuelLiters(row.receiptLiters)}
                       </TableCell>
                       <TableCell align="right" sx={cellSx}>
+                        {formatFuelLiters(totalStockLiters)}
+                      </TableCell>
+                      <TableCell align="right" sx={cellSx}>
+                        {formatFuelLiters(row.salesLiters)}
+                      </TableCell>
+                      <TableCell align="right" sx={cellSx}>
                         {formatFuelLiters(row.expectedStockLiters)}
+                      </TableCell>
+                      <TableCell align="right" sx={cellSx}>
+                        {row.closingDipCm != null ? formatDipCm(row.closingDipCm) : '—'}
                       </TableCell>
                       <TableCell align="right" sx={{ ...cellSx, fontWeight: 600 }}>
                         {row.actualStockLiters != null ? formatFuelLiters(row.actualStockLiters) : '—'}
@@ -391,15 +395,11 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
                         {fuelStockHealthEmoji(row.health)} {fuelStockHealthLabel(row.health)}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>
-            <CardContent sx={{ py: 1.5, bgcolor: alpha(theme.palette.primary.main, 0.04), borderTop: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="caption" color="text.secondary">
-                Variation alert when |actual − expected| exceeds ±{VARIATION_ALERT_LITERS} L. Click a row for dip history.
-              </Typography>
-            </CardContent>
           </Card>
         </>
       )}

@@ -62,6 +62,14 @@ export function shiftScheduleForLabel(label: string): ShiftScheduleMeta | undefi
   return SHIFT_SCHEDULE.find((s) => s.label === label.trim());
 }
 
+export function shiftOptionLabel(label: string): string {
+  const meta = shiftScheduleForLabel(label);
+  if (!meta) {
+    return label;
+  }
+  return `${meta.displayName} (${meta.label})`;
+}
+
 export function shiftStatusLabel(status: ShiftActivityStatus): string {
   if (status === 'active') return 'Active';
   if (status === 'not_started') return 'Not Started';
@@ -89,12 +97,24 @@ export function shiftStatusChipColor(
 }
 
 export function formatAttendantNames(raw: string | undefined): string {
-  if (!raw?.trim()) return '—';
-  const names = raw
+  const names = attendantNameList(raw);
+  return names.length > 0 ? names.join(', ') : '—';
+}
+
+export function attendantNameList(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return raw
     .split(/[,;|\n]+/)
     .map((x) => x.trim().replace(/\s+/g, ' '))
     .filter(Boolean);
-  return names.length > 0 ? names.join(', ') : '—';
+}
+
+/** Persist selected roster names on one shift (same format reports already parse). */
+export function joinAttendantNames(names: string[]): string {
+  return names
+    .map((n) => n.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .join(', ');
 }
 
 export function formatClock12(hour: number, minute: number): string {

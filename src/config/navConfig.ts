@@ -89,19 +89,19 @@ const NAV_GROUPS: NavGroup[] = [
         to: '/manager/credit',
         label: 'Credit',
         icon: CreditCardOutlinedIcon,
-        permission: 'edit:credit',
+        permission: 'view:credit',
       },
       {
         to: '/manager/ledger',
         label: 'Ledger',
         icon: AccountBalanceWalletOutlinedIcon,
-        permission: 'edit:ledger',
+        permission: 'view:ledger',
       },
       {
         to: '/manager/daily-sheet',
         label: 'Daily sheet',
         icon: ReceiptLongOutlinedIcon,
-        permission: 'edit:ledger',
+        permission: 'view:ledger',
       },
     ],
   },
@@ -163,6 +163,40 @@ function itemVisibleForRole(item: NavItem, role: UserRole): boolean {
 }
 
 export function getNavGroupsForRole(role: UserRole): NavGroup[] {
+  if (role === 'operator') {
+    return [
+      {
+        label: 'Overview',
+        items: [
+          {
+            to: resolveDashboardPath(role),
+            label: 'Home',
+            icon: DashboardOutlinedIcon,
+            end: true,
+            permission: 'view:dashboard',
+          },
+        ],
+      },
+      {
+        label: 'On duty',
+        items: [
+          {
+            to: '/shifts/new',
+            label: 'Start shift',
+            icon: PlayCircleOutlineOutlinedIcon,
+            permission: 'edit:shifts',
+          },
+          {
+            to: '/operator/prices',
+            label: 'Fuel prices',
+            icon: LocalGasStationOutlinedIcon,
+            permission: 'view:operations',
+          },
+        ],
+      },
+    ];
+  }
+
   return NAV_GROUPS.map((group) => ({
     label: group.label,
     items: group.items
@@ -187,16 +221,16 @@ export function getMobileBottomNavItems(role: UserRole): NavItem[] {
     return [
       dashboard,
       {
+        to: '/shifts/new',
+        label: 'Shift',
+        icon: PlayCircleOutlineOutlinedIcon,
+        permission: 'edit:shifts',
+      },
+      {
         to: '/admin/team',
         label: 'Team',
         icon: GroupsOutlinedIcon,
         permission: 'manage:team',
-      },
-      {
-        to: '/admin/settings',
-        label: 'Settings',
-        icon: SettingsOutlinedIcon,
-        permission: 'manage:settings',
       },
       {
         to: '/manager/reports',
@@ -211,21 +245,21 @@ export function getMobileBottomNavItems(role: UserRole): NavItem[] {
     return [
       dashboard,
       {
-        to: '/manager/reports',
-        label: 'Reports',
-        icon: AssessmentOutlinedIcon,
-        permission: 'view:reports',
+        to: '/manager/daily-sheet',
+        label: 'Sheet',
+        icon: ReceiptLongOutlinedIcon,
+        permission: 'view:ledger',
+      },
+      {
+        to: '/manager/credit',
+        label: 'Credit',
+        icon: CreditCardOutlinedIcon,
+        permission: 'view:credit',
       },
       {
         to: '/manager/reconciliations',
         label: 'Recon',
         icon: FactCheckOutlinedIcon,
-        permission: 'view:operations',
-      },
-      {
-        to: '/manager/fuel-stock/daily',
-        label: 'Stock',
-        icon: OpacityOutlinedIcon,
         permission: 'view:operations',
       },
     ];
@@ -262,6 +296,12 @@ export function getMobileBottomNavItems(role: UserRole): NavItem[] {
       label: 'Shift',
       icon: PlayCircleOutlineOutlinedIcon,
       permission: 'edit:shifts',
+    },
+    {
+      to: '/operator/prices',
+      label: 'Prices',
+      icon: LocalGasStationOutlinedIcon,
+      permission: 'view:operations',
     },
   ];
 }

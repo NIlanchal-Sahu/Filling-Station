@@ -1,5 +1,6 @@
 import { Tab, Tabs } from '@mui/material';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const TABS = [
   { label: 'Daily dip', path: '/manager/fuel-stock/daily' },
@@ -7,9 +8,14 @@ const TABS = [
 ] as const;
 
 export function FuelStockSubNav() {
+  const { role } = usePermissions();
   const location = useLocation();
   const tabIndex = TABS.findIndex((t) => location.pathname.startsWith(t.path));
   const value = tabIndex >= 0 ? tabIndex : 0;
+
+  if (role === 'operator') {
+    return null;
+  }
 
   return (
     <Tabs

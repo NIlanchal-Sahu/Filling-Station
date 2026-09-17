@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  Box,
   Paper,
   Stack,
   Table,
@@ -26,7 +27,7 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 
 import { downloadCsv } from '@/utils/csvExport';
@@ -49,18 +50,23 @@ import {
 import { downloadCashBookCsv, downloadCashBookExcel, downloadCashBookPdf } from '@/utils/cashBookExport';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
+import { usePermissions } from '@/hooks/usePermissions';
+import { parsePumpDayParam, recalledAdminPumpDay } from '@/utils/dateEntryPolicy';
+import { useAuth } from '@/context/AuthContext';
 
 const headerSx = {
   fontWeight: 700,
   textTransform: 'uppercase' as const,
   fontSize: '0.72rem',
   letterSpacing: '0.06em',
-  bgcolor: 'action.hover',
   color: 'text.secondary',
   whiteSpace: 'nowrap' as const,
   border: '1px solid',
   borderColor: 'divider',
+  minWidth: 116,
+  px: 1,
 };
 
 const cellSx = {
@@ -69,10 +75,15 @@ const cellSx = {
   border: '1px solid',
   borderColor: 'divider',
   fontVariantNumeric: 'tabular-nums' as const,
+  minWidth: 116,
+  px: 1,
 };
 
 export function DailyCashSheetPage() {
   const theme = useTheme();
+  const { profile } = useAuth();
+  const { readOnlyOps } = usePermissions();
+  const [searchParams] = useSearchParams();
   const [fromIso, setFromIso] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [toIso, setToIso] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -88,6 +99,17 @@ export function DailyCashSheetPage() {
   const [cashBookDlgLoading, setCashBookDlgLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    const day = parsePumpDayParam(searchParams.get('day'));
+    const recalled = profile?.role === 'admin' ? recalledAdminPumpDay() : null;
+    const pumpDay = day ?? recalled;
+    if (!pumpDay) {
+      return;
+    }
+    setFromIso(pumpDay);
+    setToIso(pumpDay);
+  }, [searchParams, profile?.role]);
 
   const rangeOk = useMemo(() => {
     const a = new Date(fromIso + 'T00:00:00').getTime();
@@ -179,6 +201,8 @@ export function DailyCashSheetPage() {
   }, [rows]);
 
   const emptyColSpan = 20 + partyKeys.length;
+  const tableMinWidth = 96 + 108 + (18 + partyKeys.length) * 120;
+  const headerFill = theme.palette.mode === 'dark' ? theme.palette.grey[800] : theme.palette.grey[100];
 
   const cashBookDialogLabel = cashBookDlg
     ? format(new Date(cashBookDlg.iso + 'T12:00:00'), 'dd-MMM-yyyy')
@@ -236,11 +260,11 @@ export function DailyCashSheetPage() {
   }, [rangeOk, fromIso, toIso]);
 
   return (
-    <Stack spacing={3} sx={{ pb: 4 }}>
-      <PageHeader
-        title="Daily cash sheet"
-        subtitle="Excel-style pivot: one row per calendar day. Total cash = total sales − less credit − Phone Pe − ICICI − Fleet − short. The rightmost Cash in hand column is what remains after named bank / party payouts for that day."
-      />
+    <Stack spacing={3} sx={{ pb: 4, minWidth: 0, width: '100%', maxWidth: '100%' }}>
+      {readOnlyOps ? (
+        <ReadOnlyBanner message="You can review and export the daily sheet. Staff post the underlying ledger and shifts." />
+      ) : null}
+      <PageHeader title="Daily cash sheet" />
 
       <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
         <FilterToolbar>
@@ -317,7 +341,7 @@ export function DailyCashSheetPage() {
                     fmtSheet(r.salary),
                     fmtSheet(r.advanceSalary),
                     fmtSheet(r.balanceCash),
-                    fmtSheet(r.cashAdjustColumn),
+                    fmtSheet(r.cashReceived),
                     fmtSheet(r.totalCash2),
                     fmtSheet(r.locker),
                     fmtSheet(r.oddBalance),
@@ -370,7 +394,7 @@ export function DailyCashSheetPage() {
           <Typography color="text.secondary">Building pivot from shifts, reconciliation, and ledger…</Typography>
         </Paper>
       ) : (
-        <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+        <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden', width: '100%', maxWidth: '100%', minWidth: 0 }}>
           <Stack
             direction="row"
             alignItems="center"
@@ -389,23 +413,34 @@ export function DailyCashSheetPage() {
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                 Cash sheet grid
               </Typography>
-              <Chip label="Scroll → for banks / parties; last column = cash in hand" size="small" variant="outlined" sx={{ fontWeight: 600 }} />
             </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 420 }}>
-              Date column stays fixed while scrolling. Person names from Ledger payouts appear as extra columns.
-            </Typography>
           </Stack>
-          <ResponsiveTableContainer sx={{ minWidth: 1200 }} stickyFirstColumn>
-              <Table size="small" stickyHeader>
+          <Box sx={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
+            <ResponsiveTableContainer stickyFirstColumn>
+              <Table
+                size="small"
+                stickyHeader
+                sx={{
+                  minWidth: tableMinWidth,
+                  borderCollapse: 'separate',
+                  borderSpacing: 0,
+                  '& thead th': {
+                    bgcolor: headerFill,
+                    zIndex: 2,
+                  },
+                }}
+              >
                 <TableHead>
                   <TableRow>
                     <TableCell
                       sx={(t) => ({
                         ...headerSx,
+                        minWidth: 96,
                         position: 'sticky',
                         left: 0,
+                        top: 0,
                         zIndex: 4,
-                        bgcolor: 'action.hover',
+                        bgcolor: headerFill,
                         boxShadow: `1px 0 0 ${t.palette.divider}`,
                       })}
                     >
@@ -463,7 +498,7 @@ export function DailyCashSheetPage() {
                       Subtotal (pre-bank)
                     </TableCell>
                     {partyKeys.map((k) => (
-                      <TableCell key={k} sx={headerSx} align="right">
+                      <TableCell key={k} sx={{ ...headerSx, minWidth: 128 }} align="right">
                         {k}
                       </TableCell>
                     ))}
@@ -485,13 +520,18 @@ export function DailyCashSheetPage() {
                   ) : (
                     rows.map((r, idx) => {
                       const stripeBg =
-                        idx % 2 === 1 ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.1 : 0.045) : undefined;
+                        idx % 2 === 1
+                          ? theme.palette.mode === 'dark'
+                            ? theme.palette.grey[900]
+                            : theme.palette.grey[50]
+                          : undefined;
                       const partyAmt = Object.fromEntries(r.partyPayouts.map((p) => [p.name, p.amount]));
                       return (
                         <TableRow key={r.dateIso} sx={{ ...(stripeBg ? { bgcolor: stripeBg } : {}) }}>
                           <TableCell
                             sx={{
                               ...cellSx,
+                              minWidth: 96,
                               position: 'sticky',
                               left: 0,
                               zIndex: 1,
@@ -539,7 +579,7 @@ export function DailyCashSheetPage() {
                             {fmtSheet(r.balanceCash)}
                           </TableCell>
                           <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
-                            {fmtSheet(r.cashAdjustColumn)}
+                            {fmtSheet(r.cashReceived)}
                           </TableCell>
                           <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="right">
                             {fmtSheet(r.totalCash2)}
@@ -563,7 +603,7 @@ export function DailyCashSheetPage() {
                           </TableCell>
                           <TableCell sx={{ ...cellSx, bgcolor: stripeBg }} align="center">
                             <Stack direction="row" spacing={0} sx={{ justifyContent: 'center' }}>
-                              <Tooltip title="Cash book — Excel-style TOTAL SALES → CLOSING">
+                              <Tooltip title="Cash book">
                                 <IconButton
                                   size="small"
                                   color="primary"
@@ -592,6 +632,7 @@ export function DailyCashSheetPage() {
                 </TableBody>
               </Table>
             </ResponsiveTableContainer>
+          </Box>
         </Paper>
       )}
 
@@ -661,14 +702,6 @@ export function DailyCashSheetPage() {
               </ResponsiveTableContainer>
             </Paper>
           )}
-          {!cashBookDlgLoading ? (
-            <>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block', lineHeight: 1.6 }}>
-                Total cash = total sales − Phone Pe − ICICI − Fleet − credit − short. Cash received is credit collected
-                in cash. Closing = gross cash minus expenses, salary, locker, and named payouts.
-              </Typography>
-            </>
-          ) : null}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5, pt: 2, gap: 1, flexWrap: 'wrap', justifyContent: 'space-between' }}>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>

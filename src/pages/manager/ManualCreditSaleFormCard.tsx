@@ -20,6 +20,7 @@ import {
 import PlaylistAddOutlinedIcon from '@mui/icons-material/PlaylistAddOutlined';
 import { alpha } from '@mui/material/styles';
 import { useAuth } from '@/context/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 import { createManualCreditSale } from '@/services/creditSalesService';
 import { listFuelTypes } from '@/services/fuelTypesService';
 import { requireMin } from '@/utils/validation';
@@ -28,6 +29,8 @@ import {
   assertEntryDateAllowed,
   clampEntryDateForRole,
   dateInputBoundsForRole,
+  parsePumpDayParam,
+  recalledAdminPumpDay,
   todayIso,
 } from '@/utils/dateEntryPolicy';
 
@@ -52,6 +55,7 @@ export type ManualCreditSaleFormCardProps = {
 export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
   const { onSuccess } = props;
   const { profile } = useAuth();
+  const [searchParams] = useSearchParams();
   const dateBounds = dateInputBoundsForRole(profile?.role);
   const [fuels, setFuels] = useState<Array<{ id: string; name: string; currentRate: number }>>([]);
   const [fuelsErr, setFuelsErr] = useState<string | null>(null);
@@ -95,6 +99,16 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
       ok = false;
     };
   }, []);
+
+  useEffect(() => {
+    const fromUrl = parsePumpDayParam(searchParams.get('day'));
+    const recalled = profile?.role === 'admin' ? recalledAdminPumpDay() : null;
+    const raw = fromUrl ?? recalled;
+    if (!raw) {
+      return;
+    }
+    setSaleDate(clampEntryDateForRole(profile?.role, raw));
+  }, [searchParams, profile?.role]);
 
   useEffect(() => {
     if (fuels.length && !fuelTypeId) {
@@ -160,7 +174,7 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
         rateAtSale: rtVal,
       });
       setLiters('');
-      setSaleDate(todayIso());
+      setSaleDate(day);
       await onSuccess();
     } catch (er) {
       setSaleErr(er instanceof Error ? er.message : 'Save failed');
@@ -193,9 +207,6 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               Add credit sale
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Post litres × rate to raise the party balance (same entries flow into the ledger and register).
-            </Typography>
           </Box>
         </Stack>
 
@@ -212,7 +223,7 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
           <Table size="small" sx={{ minWidth: 720, borderCollapse: 'collapse' }}>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 120 }}>Date</TableCell>
+                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 148 }}>Date</TableCell>
                 <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 140 }}>Party</TableCell>
                 <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 140 }}>Fuel</TableCell>
                 <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 72 }} align="right">

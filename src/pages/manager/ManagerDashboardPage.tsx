@@ -186,49 +186,34 @@ export function ManagerDashboardPage() {
               sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             />
           </Stack>
-          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-            All sections below follow this pump business day.
-          </Typography>
         </Stack>
       </Paper>
 
       <QuickActionBar actions={[...managerQuickActions]} />
 
-      <DashboardSection
-        title="Shift performance"
-        subtitle="Compare Shift 1 vs Shift 2 meter sales for the selected day."
-      >
+      <DashboardSection title="Shift performance">
         <TodaySalesByShiftSection pumpDayIso={reportIso} reportLabel={reportLabel} />
       </DashboardSection>
 
-      <DashboardSection
-        title="Cash & bank collections"
-        subtitle="Today's collections categorized by payment method."
-      >
+      <DashboardSection title="Cash & bank collections">
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <CashBankCollectionSummary pumpDayIso={reportIso} />
         </Paper>
       </DashboardSection>
 
-      <DashboardSection
-        title="Sales by fuel"
-        subtitle="Revenue and volume split across MS, HSD, and XP from reconciled shifts."
-      >
+      <DashboardSection title="Sales by fuel">
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <SalesByFuelChart pumpDayIso={reportIso} />
         </Paper>
       </DashboardSection>
 
-      <DashboardSection title="Tank & inventory" subtitle="Dip readings, stock levels, and daily reconciliation.">
+      <DashboardSection title="Tank & inventory">
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <TankStockDipSummary pumpDayIso={reportIso} reportLabel={reportLabel} />
         </Paper>
       </DashboardSection>
 
-      <DashboardSection
-        title="Shift activity"
-        subtitle="Live shift status, attendants, and reconciliation progress."
-      >
+      <DashboardSection title="Shift activity">
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <TodayShiftStatusSection pumpDayIso={reportIso} />
         </Paper>

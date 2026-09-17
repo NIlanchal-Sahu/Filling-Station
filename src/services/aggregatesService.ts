@@ -1,21 +1,25 @@
 import { listReadingsForShift, getMachineLabelForShift } from '@/services/shiftReadingsService';
-import { getNozzle } from '@/services/nozzlesService';
-import { getFuelType } from '@/services/fuelTypesService';
+import { getNozzle, listNozzles } from '@/services/nozzlesService';
+import { getFuelType, listFuelTypes } from '@/services/fuelTypesService';
 import { getReconciliationForShift } from '@/services/reconciliationService';
 import {
   listClosedShiftsByPumpDayRange,
   listClosedShiftsInEndTimeWindow,
+  listShiftsForCashSheetMerge,
   shiftPumpDayIso,
 } from '@/services/shiftsService';
 import { listCreditCustomers } from '@/services/creditCustomersService';
+import { listAllCreditPayments } from '@/services/creditPaymentsService';
 import { getUser } from '@/services/usersService';
 import { listAllReconciliations, listReconciliationsInWindow } from '@/services/reportsHelpers';
 import { listAllLedgerForBalance } from '@/services/ledgerService';
-import type { LedgerEntry } from '@/types/entities';
+import type { LedgerEntry, Shift } from '@/types/entities';
 import { SHIFT_LABELS } from '@/types/entities';
 import { fuelStockDisplayMeta } from '@/utils/fuelStockDisplay';
 import { latestReconciliationsPerShift } from '@/utils/dailyCashBookVertical';
 import { totalCashFromMeterAndChannels, roundMoney2 } from '@/utils/meterSalesByFuel';
+import { machineTag, parseAttendantPosts } from '@/utils/attendantPosts';
+import { compareNozzleOrder } from '@/utils/nozzleSort';
 import { eachDayOfInterval, format, parseISO } from 'date-fns';
 
 function startOfDay(d: Date): Date {
@@ -86,6 +90,94 @@ export async function getTodayReconciliationPaymentTotals(
 export async function getTotalOutstandingCredit(): Promise<number> {
   const customers = await listCreditCustomers(false);
   return customers.reduce((acc, c) => acc + c.currentBalance, 0);
+}
+
+/** Parties with a balance who have not paid in this many days. */
+export const CREDIT_OVERDUE_DAYS = 15;
+
+export type OverdueCreditSummary = {
+  outstanding: number;
+  overdueAmount: number;
+  overdueCount: number;
+};
+
+export async function getOverdueCreditSummary(now = new Date()): Promise<OverdueCreditSummary> {
+  const [customers, payments] = await Promise.all([listCreditCustomers(false), listAllCreditPayments()]);
+  const lastPayByCustomer = new Map<string, number>();
+  for (const p of payments) {
+    const ms = p.date.toMillis();
+    const prev = lastPayByCustomer.get(p.customerId) ?? 0;
+    if (ms > prev) {
+      lastPayByCustomer.set(p.customerId, ms);
+    }
+  }
+  const cutoff = now.getTime() - CREDIT_OVERDUE_DAYS * 24 * 60 * 60 * 1000;
+  let outstanding = 0;
+  let overdueAmount = 0;
+  let overdueCount = 0;
+  for (const c of customers) {
+    const bal = Number(c.currentBalance ?? 0);
+    outstanding += bal;
+    if (bal <= 0.005) {
+      continue;
+    }
+    const lastPay = lastPayByCustomer.get(c.id);
+    if (lastPay == null || lastPay < cutoff) {
+      overdueAmount += bal;
+      overdueCount += 1;
+    }
+  }
+  return {
+    outstanding: roundMoney2(outstanding),
+    overdueAmount: roundMoney2(overdueAmount),
+    overdueCount,
+  };
+}
+
+/** Meter sales for a pump day including open shifts, plus recon cash / shortage. */
+export type PumpDaySalesOverview = {
+  meterSalesAmount: number;
+  reconciledSalesAmount: number;
+  cashCollected: number;
+  shortageAmount: number;
+};
+
+export async function getPumpDaySalesOverview(pumpDayIso: string): Promise<PumpDaySalesOverview> {
+  const start = parseISO(`${pumpDayIso}T00:00:00`);
+  const end = parseISO(`${pumpDayIso}T23:59:59.999`);
+  const shifts = (await listShiftsForCashSheetMerge(start, end)).filter(
+    (s) => shiftPumpDayIso(s) === pumpDayIso,
+  );
+
+  let meterSalesAmount = 0;
+  let reconciledSalesAmount = 0;
+  let cashCollected = 0;
+  let shortageAmount = 0;
+
+  for (const sh of shifts) {
+    const readings = await listReadingsForShift(sh.id);
+    for (const r of readings) {
+      meterSalesAmount += Number(r.totalAmount ?? 0);
+    }
+    const recon = await getReconciliationForShift(sh.id);
+    if (!recon || recon.status === 'rejected') {
+      continue;
+    }
+    cashCollected += Number(recon.cashAmount ?? 0);
+    const short = Number(recon.shortAmount ?? 0);
+    const diff = Math.abs(Number(recon.difference ?? 0));
+    shortageAmount += short > 0.005 ? short : diff > 0.02 ? diff : 0;
+    if (recon.status === 'approved') {
+      reconciledSalesAmount += Number(recon.totalSalesAmount ?? 0);
+    }
+  }
+
+  return {
+    meterSalesAmount: roundMoney2(meterSalesAmount),
+    reconciledSalesAmount: roundMoney2(reconciledSalesAmount),
+    cashCollected: roundMoney2(cashCollected),
+    shortageAmount: roundMoney2(shortageAmount),
+  };
 }
 
 /** Matches Ledger page: cash drawer vs bank/UPI settlement. */
@@ -194,6 +286,29 @@ export async function getPumpAttendantAttendanceRowsInRange(
     const remarks = (sh.notes ?? '').trim().replace(/\s+/g, ' ');
     const shiftLabel = sh.shiftLabel?.trim() || '—';
     const machineLabel = await getMachineLabelForShift(sh.id);
+
+    const posts = parseAttendantPosts(sh.attendantPosts);
+    if (posts.length > 0) {
+      const sortedPosts = [...posts].sort((a, b) => {
+        const byMachine = a.machineNumber.localeCompare(b.machineNumber, undefined, { numeric: true });
+        if (byMachine !== 0) return byMachine;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      });
+      for (const post of sortedPosts) {
+        rows.push({
+          pumpDayIso,
+          dateLabel,
+          pumpBoyGirl: post.name,
+          shiftLabel,
+          operatorName,
+          machineLabel: machineTag(post.machineNumber),
+          startAt,
+          endAt,
+          remarks,
+        });
+      }
+      continue;
+    }
 
     const names = parsePumpAttendants(sh.pumpAttendants ?? '');
     if (names.length === 0) {
@@ -654,4 +769,109 @@ export async function getSalesByFuelForRange(fromIso: string, toIso: string): Pr
     totalAmount,
     reconciledShiftCount,
   };
+}
+
+export type MeterRegisterRow = {
+  dateIso: string;
+  dateLabel: string;
+  machine: string;
+  nozzle: string;
+  pumpBoyGirls: string;
+  timeInOut: string;
+  fuelType: string;
+  opening: number;
+  closing: number;
+  total: number;
+  tas: number;
+  sales: number;
+  rate: number;
+  amount: number;
+};
+
+function meterRegisterAttendantLabel(sh: Shift): string {
+  const names = parsePumpAttendants(sh.pumpAttendants ?? '');
+  if (names.length > 0) {
+    return names.join(', ');
+  }
+  const posts = parseAttendantPosts(sh.attendantPosts);
+  if (posts.length === 0) {
+    return '—';
+  }
+  const unique = [...new Set(posts.map((p) => p.name))];
+  return unique.length > 0 ? unique.join(', ') : '—';
+}
+
+function shiftSlotSortIndex(label: string): number {
+  const i = SHIFT_LABELS.indexOf(label as (typeof SHIFT_LABELS)[number]);
+  return i >= 0 ? i : 99;
+}
+
+/**
+ * Cashier Excel meter register: one row per nozzle reading whose shift pump day is in range.
+ * Uses saved shiftReadings (open or closed). Empty attendants show "—".
+ */
+export async function getMeterRegisterRowsInRange(from: Date, to: Date): Promise<MeterRegisterRow[]> {
+  const fromIso = format(from, 'yyyy-MM-dd');
+  const toIso = format(to, 'yyyy-MM-dd');
+  const [merged, nozzles, fuels] = await Promise.all([
+    listShiftsForCashSheetMerge(from, to),
+    listNozzles(false),
+    listFuelTypes(),
+  ]);
+  const nozzleById = new Map(nozzles.map((n) => [n.id, n]));
+  const fuelById = new Map(fuels.map((f) => [f.id, f]));
+
+  const shifts = merged.filter((s) => {
+    const day = shiftPumpDayIso(s);
+    return day >= fromIso && day <= toIso;
+  });
+
+  const rows: MeterRegisterRow[] = [];
+
+  for (const sh of shifts) {
+    const readings = await listReadingsForShift(sh.id);
+    if (readings.length === 0) {
+      continue;
+    }
+    const dateIso = shiftPumpDayIso(sh);
+    const dateLabel = formatDateDdMmYyyy(new Date(`${dateIso}T12:00:00`));
+    const pumpBoyGirls = meterRegisterAttendantLabel(sh);
+    const timeInOut = sh.shiftLabel?.trim() || '—';
+
+    for (const r of readings) {
+      const n = nozzleById.get(r.nozzleId);
+      const fuelName = n ? (fuelById.get(n.fuelTypeId)?.name ?? '') : '';
+      const opening = Number(r.openingReading ?? 0);
+      const closing = Number(r.closingReading ?? 0);
+      rows.push({
+        dateIso,
+        dateLabel,
+        machine: n?.machineNumber ?? '—',
+        nozzle: n?.nozzleNumber ?? '—',
+        pumpBoyGirls,
+        timeInOut,
+        fuelType: fuelName.trim() ? fuelName.trim().toUpperCase() : '—',
+        opening,
+        closing,
+        total: closing - opening,
+        tas: Number(r.testLiters ?? 0),
+        sales: Number(r.finalSalesLiters ?? 0),
+        rate: Number(r.rateAtSale ?? 0),
+        amount: Number(r.totalAmount ?? 0),
+      });
+    }
+  }
+
+  rows.sort((a, b) => {
+    const byDay = a.dateIso.localeCompare(b.dateIso);
+    if (byDay !== 0) return byDay;
+    const byNozzle = compareNozzleOrder(
+      { machineNumber: a.machine, nozzleNumber: a.nozzle },
+      { machineNumber: b.machine, nozzleNumber: b.nozzle },
+    );
+    if (byNozzle !== 0) return byNozzle;
+    return shiftSlotSortIndex(a.timeInOut) - shiftSlotSortIndex(b.timeInOut);
+  });
+
+  return rows;
 }

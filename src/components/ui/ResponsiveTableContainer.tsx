@@ -16,8 +16,10 @@ export function ResponsiveTableContainer({
     <TableContainer
       {...rest}
       sx={{
+        width: '100%',
         maxWidth: '100%',
-        overflowX: 'auto',
+        minWidth: 0,
+        overflow: 'auto',
         WebkitOverflowScrolling: 'touch',
         ...(stickyFirstColumn
           ? {
@@ -26,11 +28,11 @@ export function ResponsiveTableContainer({
                 left: 0,
                 zIndex: 1,
                 bgcolor: 'background.paper',
-                boxShadow: '2px 0 4px -2px rgba(0,0,0,0.1)',
+                boxShadow: '2px 0 4px -2px rgba(0,0,0,0.18)',
               },
               '& thead th:first-of-type': {
-                zIndex: 2,
-                bgcolor: 'action.hover',
+                zIndex: 3,
+                bgcolor: 'background.paper',
               },
             }
           : {}),

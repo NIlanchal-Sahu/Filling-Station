@@ -24,6 +24,7 @@ import { getNozzle } from '@/services/nozzlesService';
 import { getFuelType } from '@/services/fuelTypesService';
 import { setShiftReadingsComplete } from '@/services/shiftsService';
 import { requireMin } from '@/utils/validation';
+import { formatAttendantPostsLine } from '@/utils/attendantPosts';
 import type { ShiftReading } from '@/types/entities';
 
 type Row = ShiftReading & { fuelName: string; rate: number; nozzleLabel: string };
@@ -244,10 +245,7 @@ export function EndMetersPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 3 }}>
-      <PageHeader
-        title="End-of-shift readings"
-        subtitle="Enter closing and test (TAST) per nozzle. Sales litres and ₹ update from your entries and current fuel prices."
-      />
+      <PageHeader title="End-of-shift readings" />
 
       <Paper
         variant="outlined"
@@ -258,7 +256,11 @@ export function EndMetersPage() {
           boxShadow: (t) => `0 8px 28px ${alpha(t.palette.common.black, t.palette.mode === 'dark' ? 0.2 : 0.06)}`,
         }}
       >
-      {shift?.pumpAttendants?.trim() ? (
+      {shift?.attendantPosts && shift.attendantPosts.length > 0 ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          On duty: <strong>{formatAttendantPostsLine(shift.attendantPosts)}</strong>
+        </Typography>
+      ) : shift?.pumpAttendants?.trim() ? (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Pump attendants: <strong>{shift.pumpAttendants.trim()}</strong>
         </Typography>

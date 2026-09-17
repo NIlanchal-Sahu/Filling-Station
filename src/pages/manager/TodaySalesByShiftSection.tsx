@@ -17,6 +17,7 @@ import {
 
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
 
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   getTodaySalesByShift,
   type FuelShiftSalesRow,
@@ -103,7 +104,9 @@ function ShiftSalesCard(props: {
   accent: string;
 }) {
   const { bucket, fuelRows, sharePct, isTop, accent } = props;
-  const detailTo = bucket.shiftId ? `/shifts/${bucket.shiftId}/reconcile?edit=1` : undefined;
+  const { readOnlyOps } = usePermissions();
+  const detailTo =
+    !readOnlyOps && bucket.shiftId ? `/shifts/${bucket.shiftId}/reconcile?edit=1` : undefined;
 
   const body = (
     <>
@@ -142,11 +145,7 @@ function ShiftSalesCard(props: {
             {bucket.transactionCount.toLocaleString('en-IN')}
           </Box>
         </Typography>
-        {detailTo ? (
-          <Typography variant="caption" color="primary" sx={{ mt: 1.5, display: 'block' }}>
-            Tap for shift report →
-          </Typography>
-        ) : (
+        {detailTo ? null : (
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>
             No closed shift yet
           </Typography>
@@ -214,9 +213,6 @@ function TotalSalesCard(props: {
           <Box component="span" sx={{ fontWeight: 700, color: 'text.primary' }}>
             {transactionCount.toLocaleString('en-IN')}
           </Box>
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>
-          Shift 1 + Shift 2 (+ night shift if closed)
         </Typography>
       </CardContent>
     </Card>

@@ -14,9 +14,10 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
-import type { Shift, ShiftStatus } from '@/types/entities';
+import type { Shift, ShiftAttendantPost, ShiftStatus } from '@/types/entities';
 import { COLLECTIONS, getDb } from '@/lib/firebase';
 import { notifyShiftStatusUpdated } from '@/utils/shiftStatusDisplay';
+import { parseAttendantPosts } from '@/utils/attendantPosts';
 import { format } from 'date-fns';
 import {
   demoCloseShift,
@@ -45,6 +46,10 @@ function mapShift(id: string, data: DocumentData): Shift {
       typeof data.pumpAttendants === 'string' && data.pumpAttendants.trim()
         ? String(data.pumpAttendants).trim()
         : undefined,
+    attendantPosts: (() => {
+      const posts = parseAttendantPosts(data.attendantPosts);
+      return posts.length > 0 ? posts : undefined;
+    })(),
     calendarDate:
       typeof data.calendarDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.calendarDate.trim())
         ? data.calendarDate.trim()
@@ -209,12 +214,14 @@ export async function createShift(input: {
   calendarDate: string;
   notes?: string;
   pumpAttendants?: string;
+  attendantPosts?: ShiftAttendantPost[];
 }): Promise<string> {
   if (LOCAL_DEMO) {
     const id = await demoCreateShift(input);
     notifyShiftStatusUpdated();
     return id;
   }
+  const posts = parseAttendantPosts(input.attendantPosts);
   const ref = await addDoc(collection(getDb(), COLLECTIONS.shifts), {
     operatorId: input.operatorId,
     shiftLabel: input.shiftLabel,
@@ -225,6 +232,7 @@ export async function createShift(input: {
     readingsCompleteAt: null,
     notes: input.notes ?? null,
     pumpAttendants: input.pumpAttendants?.trim() || null,
+    attendantPosts: posts.length > 0 ? posts : null,
   });
   notifyShiftStatusUpdated();
   return ref.id;

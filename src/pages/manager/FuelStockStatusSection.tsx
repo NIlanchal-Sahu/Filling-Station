@@ -120,9 +120,6 @@ function FuelStockCard(props: { item: FuelStockItem; onClick: () => void }) {
 
             <Box>
               <AnimatedProgressBar value={item.availablePercent} color={accent} />
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
-                Progress: {formatFuelPercent(item.availablePercent)}
-              </Typography>
             </Box>
 
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -280,10 +277,6 @@ export function FuelStockStatusSection() {
               />
             ))}
           </Box>
-
-          <Typography variant="caption" color="text.secondary">
-            Tap a fuel card for dip history. Readings refresh automatically after dip entry.
-          </Typography>
         </Stack>
       )}
     </Stack>

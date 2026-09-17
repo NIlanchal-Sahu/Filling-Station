@@ -42,7 +42,9 @@ import { ManualCreditSaleFormCard } from '@/pages/manager/ManualCreditSaleFormCa
 import { trimNumberDisplay } from '@/pages/manager/creditRegisterFormatters';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
+import { usePermissions } from '@/hooks/usePermissions';
 
 function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -50,6 +52,7 @@ function fmtRs(n: number): string {
 
 export function CreditCustomersPage() {
   const nav = useNavigate();
+  const { readOnlyOps } = usePermissions();
   const [list, setList] = useState<CreditCustomer[]>([]);
   const [q, setQ] = useState('');
   const [showInactive, setShowInactive] = useState(false);
@@ -201,10 +204,10 @@ export function CreditCustomersPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <PageHeader
-        title="Credit"
-        subtitle="Track party balances, post manual fuel sales on credit, and browse the dated register — same flow as your written credit book."
-      />
+      {readOnlyOps ? (
+        <ReadOnlyBanner message="You can review parties and the credit register. Staff post sales and new accounts." />
+      ) : null}
+      <PageHeader title="Credit" />
 
       <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
         <FilterToolbar>
@@ -308,6 +311,7 @@ export function CreditCustomersPage() {
 
       {err && <Alert severity="error">{err}</Alert>}
 
+      {!readOnlyOps ? (
       <Card
         elevation={0}
         component="form"
@@ -329,9 +333,6 @@ export function CreditCustomersPage() {
               New credit party
             </Typography>
           </Stack>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Creates an account you can bill on shift reconciliation or via quick credit sale below.
-          </Typography>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'flex-start' }}>
             <TextField
               required
@@ -357,8 +358,9 @@ export function CreditCustomersPage() {
           )}
         </CardContent>
       </Card>
+      ) : null}
 
-      {activeForCreditSale.length > 0 && (
+      {!readOnlyOps && activeForCreditSale.length > 0 && (
         <ManualCreditSaleFormCard
           mode="pickCustomer"
           customers={activeForCreditSale}
@@ -424,19 +426,22 @@ export function CreditCustomersPage() {
                 Export register CSV
               </Button>
             </Stack>
-            <ResponsiveTableContainer sx={{ maxHeight: 420 }} stickyFirstColumn>
+            <ResponsiveTableContainer sx={{ maxHeight: 420, minWidth: 0 }} stickyFirstColumn>
               <Table
                 size="small"
                 stickyHeader
                 aria-label="Credit register"
                 sx={{
-                  tableLayout: 'fixed',
+                  minWidth: 780,
+                  tableLayout: 'auto',
+                  borderCollapse: 'separate',
+                  borderSpacing: 0,
                   '& th': {
                     py: 1.25,
                     fontWeight: 700,
                     fontSize: '0.72rem',
                     letterSpacing: '0.06em',
-                    bgcolor: 'action.hover',
+                    bgcolor: (t) => (t.palette.mode === 'dark' ? t.palette.grey[800] : t.palette.grey[100]),
                   },
                   '& td': {
                     borderBottom: '1px solid',
@@ -447,16 +452,26 @@ export function CreditCustomersPage() {
               >
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ width: '12%', whiteSpace: 'nowrap' }}>Date</TableCell>
-                    <TableCell sx={{ width: '24%' }}>Party</TableCell>
-                    <TableCell sx={{ width: '14%', whiteSpace: 'nowrap' }}>Fuel</TableCell>
-                    <TableCell align="right" sx={{ width: '14%', whiteSpace: 'nowrap' }}>
+                    <TableCell
+                      sx={{
+                        width: 136,
+                        minWidth: 136,
+                        maxWidth: 136,
+                        whiteSpace: 'nowrap',
+                        zIndex: 4,
+                      }}
+                    >
+                      Date
+                    </TableCell>
+                    <TableCell sx={{ minWidth: 168 }}>Party</TableCell>
+                    <TableCell sx={{ minWidth: 108, whiteSpace: 'nowrap' }}>Fuel</TableCell>
+                    <TableCell align="right" sx={{ minWidth: 88, whiteSpace: 'nowrap' }}>
                       Litres
                     </TableCell>
-                    <TableCell align="right" sx={{ width: '14%', whiteSpace: 'nowrap' }}>
+                    <TableCell align="right" sx={{ minWidth: 88, whiteSpace: 'nowrap' }}>
                       ₹/L
                     </TableCell>
-                    <TableCell align="right" sx={{ width: '16%', whiteSpace: 'nowrap' }}>
+                    <TableCell align="right" sx={{ minWidth: 104, whiteSpace: 'nowrap' }}>
                       Amount
                     </TableCell>
                   </TableRow>
@@ -470,7 +485,15 @@ export function CreditCustomersPage() {
                           idx % 2 === 1 ? (t) => alpha(t.palette.primary.main, 0.035) : 'transparent',
                       }}
                     >
-                      <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      <TableCell
+                        sx={{
+                          width: 136,
+                          minWidth: 136,
+                          maxWidth: 136,
+                          whiteSpace: 'nowrap',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
                         {r.dateLabel}
                       </TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>{r.party}</TableCell>
@@ -572,16 +595,18 @@ export function CreditCustomersPage() {
                       <Button variant="contained" size="small" onClick={() => nav(`/manager/credit/${c.id}`)}>
                         Open ledger
                       </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={async () => {
-                          await updateCustomer(c.id, { isActive: !c.isActive });
-                          await load();
-                        }}
-                      >
-                        {c.isActive ? 'Deactivate' : 'Activate'}
-                      </Button>
+                      {!readOnlyOps ? (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={async () => {
+                            await updateCustomer(c.id, { isActive: !c.isActive });
+                            await load();
+                          }}
+                        >
+                          {c.isActive ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      ) : null}
                     </Stack>
                   </CardContent>
                 </Card>

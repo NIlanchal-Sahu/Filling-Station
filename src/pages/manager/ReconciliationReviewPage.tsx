@@ -25,19 +25,10 @@ import { getUser } from '@/services/usersService';
 import type { ShiftReconciliation } from '@/types/entities';
 import { getShift } from '@/services/shiftsService';
 import { getMachineLabelForShift } from '@/services/shiftReadingsService';
+import { attendantNameList } from '@/utils/shiftStatusDisplay';
 
 function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function parsePumpAttendantNames(raw: string | undefined): string[] {
-  if (!raw?.trim()) {
-    return [];
-  }
-  return raw
-    .split(/[,;|\n]+/)
-    .map((x) => x.trim().replace(/\s+/g, ' '))
-    .filter(Boolean);
 }
 
 export function ReconciliationReviewPage() {
@@ -68,10 +59,11 @@ export function ReconciliationReviewPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      {readOnlyOps ? <ReadOnlyBanner /> : null}
+      {readOnlyOps ? (
+        <ReadOnlyBanner message="You can approve or reject. Staff enter the numbers." />
+      ) : null}
       <PageHeader
         title="Reconciliations"
-        subtitle="Review operator submissions: totals, Paytm/cards/credit/cash split, and short/over. Each card lists all pump boys / girls recorded on that shift. Approve or reject with an optional note."
         action={
           <Button
             variant="outlined"
@@ -221,7 +213,7 @@ function ReconciliationCardHeader({ r }: { r: ShiftReconciliation }) {
             : '';
         const base = sh?.shiftLabel ?? '';
         setLabel(cal ? `${base} · ${cal}` : base);
-        setPumpAttendants(parsePumpAttendantNames(sh?.pumpAttendants));
+        setPumpAttendants(attendantNameList(sh?.pumpAttendants));
         setMachineLabel(machines);
       }
     })();
@@ -256,10 +248,7 @@ function ReconciliationCardHeader({ r }: { r: ShiftReconciliation }) {
 
       <Box>
         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.04em' }}>
-          Pump boys / girls on duty
-        </Typography>
-        <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.25, mb: 0.75, display: 'block' }}>
-          From <strong>Start shift</strong> (comma-separated names)
+          Pump attendants
         </Typography>
         {pumpAttendants.length > 0 ? (
           <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ gap: 0.75 }}>
@@ -269,7 +258,7 @@ function ReconciliationCardHeader({ r }: { r: ShiftReconciliation }) {
           </Stack>
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-            No names recorded — add pump attendants when starting the shift to show the full team here.
+            No names recorded — type attendant names when starting the shift.
           </Typography>
         )}
       </Box>

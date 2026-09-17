@@ -1,6 +1,10 @@
 import { alpha, Box, Paper, Typography } from '@mui/material';
 
-export function ReadOnlyBanner() {
+type Props = {
+  message?: string;
+};
+
+export function ReadOnlyBanner({ message }: Props) {
   return (
     <Box sx={{ mb: 2 }}>
       <Paper
@@ -15,7 +19,7 @@ export function ReadOnlyBanner() {
         }}
       >
         <Typography variant="body2" color="info.main">
-          View-only mode — you can review data but cannot make changes.
+          {message ?? 'View-only mode — you can review data but cannot make changes.'}
         </Typography>
       </Paper>
     </Box>

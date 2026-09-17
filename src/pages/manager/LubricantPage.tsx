@@ -13,7 +13,6 @@ import {
   Divider,
   IconButton,
   InputAdornment,
-  MenuItem,
   Paper,
   Stack,
   Tab,
@@ -32,11 +31,12 @@ import AddIcon from '@mui/icons-material/Add';
 import InventoryOutlinedIcon from '@mui/icons-material/InventoryOutlined';
 import ShoppingCartOutlinedIcon from '@mui/icons-material/ShoppingCartOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
 import type { Lubricant, LubricantSale, LubricantStockEntry } from '@/types/entities';
-import { LUBRICANT_UNITS, LUBRICANT_GRADES, LUBRICANT_UNIT_LABELS } from '@/types/entities';
+import { LUBRICANT_UNIT_LABELS } from '@/types/entities';
 import {
   listLubricants,
   createLubricant,
@@ -58,12 +58,21 @@ function fmtRs(v: number) {
   return '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function findLubricantByName(lubricants: Lubricant[], name: string): Lubricant | undefined {
+  const key = name.trim().toLowerCase();
+  if (!key) return undefined;
+  return lubricants.find((l) => l.name.trim().toLowerCase() === key);
+}
+
+function lubricantNameForId(lubricants: Lubricant[], id?: string): string {
+  if (!id) return '';
+  return lubricants.find((l) => l.id === id)?.name ?? '';
+}
+
 // ── Add/Edit Lubricant Dialog ─────────────────────────────────────────────────
 
 interface LubricantFormState {
   name: string;
-  brand: string;
-  grade: string;
   unit: string;
   sellingPrice: string;
   purchasePrice: string;
@@ -72,9 +81,7 @@ interface LubricantFormState {
 
 const emptyLubForm = (): LubricantFormState => ({
   name: '',
-  brand: '',
-  grade: '20W-40',
-  unit: 'litre',
+  unit: '',
   sellingPrice: '',
   purchasePrice: '',
   minStockAlert: '5',
@@ -96,8 +103,6 @@ function LubricantFormDialog(props: {
     if (editing) {
       setForm({
         name: editing.name,
-        brand: editing.brand,
-        grade: editing.grade,
         unit: editing.unit,
         sellingPrice: String(editing.sellingPrice),
         purchasePrice: String(editing.purchasePrice),
@@ -120,9 +125,9 @@ function LubricantFormDialog(props: {
     try {
       const payload = {
         name: form.name.trim(),
-        brand: form.brand.trim(),
-        grade: form.grade,
-        unit: form.unit,
+        brand: '',
+        grade: '',
+        unit: form.unit.trim(),
         sellingPrice: parseFloat(form.sellingPrice) || 0,
         purchasePrice: parseFloat(form.purchasePrice) || 0,
         minStockAlert: parseFloat(form.minStockAlert) || 0,
@@ -148,14 +153,24 @@ function LubricantFormDialog(props: {
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           {err && <Alert severity="error">{err}</Alert>}
-          <TextField label="Product name" value={form.name} onChange={(e) => set('name', e.target.value)} fullWidth required size="small" />
-          <TextField label="Brand" value={form.brand} onChange={(e) => set('brand', e.target.value)} fullWidth size="small" />
-          <TextField label="Grade / Viscosity" value={form.grade} onChange={(e) => set('grade', e.target.value)} fullWidth size="small" select>
-            {LUBRICANT_GRADES.map((g) => <MenuItem key={g} value={g}>{g}</MenuItem>)}
-          </TextField>
-          <TextField label="Unit" value={form.unit} onChange={(e) => set('unit', e.target.value)} fullWidth size="small" select>
-            {LUBRICANT_UNITS.map((u) => <MenuItem key={u} value={u}>{LUBRICANT_UNIT_LABELS[u] ?? u}</MenuItem>)}
-          </TextField>
+          <TextField
+            label="Product name"
+            value={form.name}
+            onChange={(e) => set('name', e.target.value)}
+            fullWidth
+            required
+            size="small"
+            autoFocus
+            autoComplete="off"
+          />
+          <TextField
+            label="Unit"
+            value={form.unit}
+            onChange={(e) => set('unit', e.target.value)}
+            fullWidth
+            size="small"
+            autoComplete="off"
+          />
           <Stack direction="row" spacing={1}>
             <TextField
               label="Selling price"
@@ -202,7 +217,7 @@ function SaleDialog(props: {
   const { open, lubricants, defaultLubricantId, onClose, onSaved } = props;
   const { profile } = useAuth();
   const dateBounds = dateInputBoundsForRole(profile?.role);
-  const [lubId, setLubId] = useState(defaultLubricantId ?? '');
+  const [productName, setProductName] = useState('');
   const [qty, setQty] = useState('1');
   const [price, setPrice] = useState('');
   const [customer, setCustomer] = useState('');
@@ -213,30 +228,40 @@ function SaleDialog(props: {
 
   useEffect(() => {
     if (!open) return;
-    setLubId(defaultLubricantId ?? (lubricants[0]?.id ?? ''));
+    const name = lubricantNameForId(lubricants, defaultLubricantId);
+    setProductName(name);
     setQty('1');
     setErr('');
     setCustomer('');
     setVehicle('');
     setDate(todayIso());
+    const lub = findLubricantByName(lubricants, name);
+    setPrice(lub ? String(lub.sellingPrice) : '');
   }, [open, defaultLubricantId, lubricants]);
 
+  const selected = findLubricantByName(lubricants, productName);
+
   useEffect(() => {
-    const lub = lubricants.find((l) => l.id === lubId);
-    if (lub) setPrice(String(lub.sellingPrice));
-  }, [lubId, lubricants]);
+    if (!open) return;
+    if (selected) setPrice(String(selected.sellingPrice));
+  }, [open, selected]);
 
   async function handleSave() {
-    if (!lubId) { setErr('Select a product.'); return; }
+    if (!productName.trim()) { setErr('Type the product name.'); return; }
     const q = parseFloat(qty);
     if (!q || q <= 0) { setErr('Enter a valid quantity.'); return; }
+    const lub = findLubricantByName(lubricants, productName);
+    if (!lub) {
+      setErr(`No product named “${productName.trim()}”. Add it first with Add product.`);
+      return;
+    }
     setSaving(true);
     setErr('');
     try {
       const day = clampEntryDateForRole(profile?.role, date);
       assertEntryDateAllowed(profile?.role, day);
       await addLubricantSale({
-        lubricantId: lubId,
+        lubricantId: lub.id,
         pumpDayIso: day,
         quantity: q,
         sellingPricePerUnit: parseFloat(price) || 0,
@@ -252,7 +277,6 @@ function SaleDialog(props: {
     }
   }
 
-  const selected = lubricants.find((l) => l.id === lubId);
   const total = (parseFloat(qty) || 0) * (parseFloat(price) || 0);
 
   return (
@@ -270,13 +294,15 @@ function SaleDialog(props: {
             fullWidth
             slotProps={{ htmlInput: { min: dateBounds.min, max: dateBounds.max } }}
           />
-          <TextField label="Product" value={lubId} onChange={(e) => setLubId(e.target.value)} size="small" select fullWidth>
-            {lubricants.map((l) => (
-              <MenuItem key={l.id} value={l.id}>
-                {l.name} — {l.brand} ({l.grade})
-              </MenuItem>
-            ))}
-          </TextField>
+          <TextField
+            label="Product name"
+            value={productName}
+            onChange={(e) => setProductName(e.target.value)}
+            size="small"
+            fullWidth
+            required
+            autoComplete="off"
+          />
           <Stack direction="row" spacing={1}>
             <TextField
               label={`Quantity (${selected ? (LUBRICANT_UNIT_LABELS[selected.unit] ?? selected.unit) : 'unit'})`}
@@ -321,7 +347,7 @@ function StockInDialog(props: {
   const { open, lubricants, defaultLubricantId, onClose, onSaved } = props;
   const { profile } = useAuth();
   const dateBounds = dateInputBoundsForRole(profile?.role);
-  const [lubId, setLubId] = useState(defaultLubricantId ?? '');
+  const [productName, setProductName] = useState('');
   const [qty, setQty] = useState('');
   const [price, setPrice] = useState('');
   const [supplier, setSupplier] = useState('');
@@ -332,21 +358,27 @@ function StockInDialog(props: {
 
   useEffect(() => {
     if (!open) return;
-    setLubId(defaultLubricantId ?? (lubricants[0]?.id ?? ''));
+    const name = lubricantNameForId(lubricants, defaultLubricantId);
+    setProductName(name);
     setQty('');
     setErr('');
     setSupplier('');
     setInvoice('');
     setDate(todayIso());
+    const lub = findLubricantByName(lubricants, name);
+    setPrice(lub ? String(lub.purchasePrice) : '');
   }, [open, defaultLubricantId, lubricants]);
 
+  const selected = findLubricantByName(lubricants, productName);
+
   useEffect(() => {
-    const lub = lubricants.find((l) => l.id === lubId);
-    if (lub) setPrice(String(lub.purchasePrice));
-  }, [lubId, lubricants]);
+    if (!open) return;
+    if (selected) setPrice(String(selected.purchasePrice));
+  }, [open, selected]);
 
   async function handleSave() {
-    if (!lubId) { setErr('Select a product.'); return; }
+    const name = productName.trim();
+    if (!name) { setErr('Type the product name.'); return; }
     const q = parseFloat(qty);
     if (!q || q <= 0) { setErr('Enter a valid quantity.'); return; }
     setSaving(true);
@@ -354,8 +386,23 @@ function StockInDialog(props: {
     try {
       const day = clampEntryDateForRole(profile?.role, date);
       assertEntryDateAllowed(profile?.role, day);
+      let lub = findLubricantByName(lubricants, name);
+      if (!lub) {
+        const purchasePrice = parseFloat(price) || 0;
+        const id = await createLubricant({
+          name,
+          brand: '',
+          grade: '',
+          unit: 'litre',
+          sellingPrice: purchasePrice,
+          purchasePrice,
+          minStockAlert: 5,
+          isActive: true,
+        });
+        lub = { id, name, brand: '', grade: '', unit: 'litre', sellingPrice: purchasePrice, purchasePrice, minStockAlert: 5, isActive: true, currentStock: 0 };
+      }
       await addLubricantStock({
-        lubricantId: lubId,
+        lubricantId: lub.id,
         pumpDayIso: day,
         quantity: q,
         purchasePricePerUnit: parseFloat(price) || 0,
@@ -386,13 +433,16 @@ function StockInDialog(props: {
             fullWidth
             slotProps={{ htmlInput: { min: dateBounds.min, max: dateBounds.max } }}
           />
-          <TextField label="Product" value={lubId} onChange={(e) => setLubId(e.target.value)} size="small" select fullWidth>
-            {lubricants.map((l) => (
-              <MenuItem key={l.id} value={l.id}>
-                {l.name} — {l.brand}
-              </MenuItem>
-            ))}
-          </TextField>
+          <TextField
+            label="Product name"
+            value={productName}
+            onChange={(e) => setProductName(e.target.value)}
+            size="small"
+            fullWidth
+            required
+            autoComplete="off"
+            autoFocus={!defaultLubricantId}
+          />
           <Stack direction="row" spacing={1}>
             <TextField label="Quantity" value={qty} onChange={(e) => setQty(e.target.value)} size="small" type="number" fullWidth />
             <TextField
@@ -423,8 +473,9 @@ function StockCard(props: {
   onSell: () => void;
   onAddStock: () => void;
   onEdit: () => void;
+  onRemove: () => void;
 }) {
-  const { lub, onSell, onAddStock, onEdit } = props;
+  const { lub, onSell, onAddStock, onEdit, onRemove } = props;
   const isLow = lub.currentStock <= lub.minStockAlert;
   const accent = isLow ? '#ef5350' : '#43a047';
 
@@ -445,9 +496,6 @@ function StockCard(props: {
           <Box>
             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
               {lub.name}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {lub.brand} · {lub.grade}
             </Typography>
           </Box>
           <Tooltip title="Edit product">
@@ -490,24 +538,35 @@ function StockCard(props: {
           </Typography>
         </Stack>
 
-        <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
-          <Button
-            size="small"
-            variant="contained"
-            startIcon={<ShoppingCartOutlinedIcon />}
-            onClick={onSell}
-            sx={{ flex: 1 }}
-          >
-            Sell
-          </Button>
+        <Stack spacing={1} sx={{ mt: 1.5 }}>
+          <Stack direction="row" spacing={1}>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<ShoppingCartOutlinedIcon />}
+              onClick={onSell}
+              sx={{ flex: 1 }}
+            >
+              Sell
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<InventoryOutlinedIcon />}
+              onClick={onAddStock}
+              sx={{ flex: 1 }}
+            >
+              Add stock
+            </Button>
+          </Stack>
           <Button
             size="small"
             variant="outlined"
-            startIcon={<InventoryOutlinedIcon />}
-            onClick={onAddStock}
-            sx={{ flex: 1 }}
+            color="error"
+            startIcon={<DeleteOutlineOutlinedIcon />}
+            onClick={onRemove}
           >
-            Add stock
+            Remove
           </Button>
         </Stack>
       </Box>
@@ -569,7 +628,7 @@ function SalesHistoryTab(props: { lubricants: Lubricant[] }) {
                 return (
                   <TableRow key={s.id} hover>
                     <TableCell>{s.pumpDayIso}</TableCell>
-                    <TableCell>{lub ? `${lub.name} (${lub.grade})` : s.lubricantId}</TableCell>
+                    <TableCell>{lub ? lub.name : s.lubricantId}</TableCell>
                     <TableCell align="right">
                       {s.quantity} {lub ? (LUBRICANT_UNIT_LABELS[lub.unit] ?? lub.unit) : ''}
                     </TableCell>
@@ -662,6 +721,9 @@ export function LubricantPage() {
   const [saleTarget, setSaleTarget] = useState<string | undefined>();
   const [stockDialog, setStockDialog] = useState(false);
   const [stockTarget, setStockTarget] = useState<string | undefined>();
+  const [removeTarget, setRemoveTarget] = useState<Lubricant | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removeErr, setRemoveErr] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -677,7 +739,6 @@ export function LubricantPage() {
     <Box>
       <PageHeader
         title="Lubricants"
-        subtitle="Manage lubricant stock, record sales and inward receipts."
         action={
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
             <Button
@@ -746,6 +807,7 @@ export function LubricantPage() {
                 onSell={() => { setSaleTarget(lub.id); setSaleDialog(true); }}
                 onAddStock={() => { setStockTarget(lub.id); setStockDialog(true); }}
                 onEdit={() => { setEditingLub(lub); setLubDialog(true); }}
+                onRemove={() => { setRemoveErr(null); setRemoveTarget(lub); }}
               />
             ))}
           </Box>
@@ -776,6 +838,46 @@ export function LubricantPage() {
         onClose={() => setStockDialog(false)}
         onSaved={reload}
       />
+      <Dialog
+        open={removeTarget != null}
+        onClose={() => { if (!removing) setRemoveTarget(null); }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Remove lubricant</DialogTitle>
+        <DialogContent>
+          {removeErr ? <Alert severity="error" sx={{ mb: 1 }}>{removeErr}</Alert> : null}
+          <Typography>
+            Remove {removeTarget ? <strong>{removeTarget.name}</strong> : 'this product'}?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemoveTarget(null)} disabled={removing}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={removing}
+            onClick={async () => {
+              if (!removeTarget) return;
+              setRemoving(true);
+              setRemoveErr(null);
+              try {
+                await updateLubricant(removeTarget.id, { isActive: false });
+                setRemoveTarget(null);
+                reload();
+              } catch (e) {
+                setRemoveErr(e instanceof Error ? e.message : 'Remove failed');
+              } finally {
+                setRemoving(false);
+              }
+            }}
+          >
+            {removing ? <CircularProgress size={18} /> : 'Remove'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

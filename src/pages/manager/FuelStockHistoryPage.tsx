@@ -147,10 +147,7 @@ export function FuelStockHistoryPage() {
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
       {readOnlyOps ? <ReadOnlyBanner /> : null}
-      <PageHeader
-        title={displayMeta.displayName}
-        subtitle="Dip reading history and tank utilization for this fuel type."
-      />
+      <PageHeader title={displayMeta.displayName} />
       <FuelStockSubNav />
 
       {err ? <Alert severity="error">{err}</Alert> : null}
@@ -227,10 +224,6 @@ export function FuelStockHistoryPage() {
                 {formErr}
               </Alert>
             ) : null}
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720, lineHeight: 1.7 }}>
-              Enter the physical dip-stick reading in centimetres (e.g. 96.6). Stock in liters is calculated
-              automatically from your tank calibration chart.
-            </Typography>
             {previewLiters != null ? (
               <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
                 Dip {formatDipCm(Number(dipInput))} → calculated stock{' '}

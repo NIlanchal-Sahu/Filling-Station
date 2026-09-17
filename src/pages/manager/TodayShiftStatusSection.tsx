@@ -19,9 +19,11 @@ import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 
+import { usePermissions } from '@/hooks/usePermissions';
 import { getShiftStatusForPumpDay, type ShiftStatusRow, type ShiftStatusSummary } from '@/services/shiftStatusService';
 import {
   SHIFT_STATUS_UPDATED_EVENT,
+  attendantNameList,
   shiftStatusChipColor,
   shiftStatusEmoji,
   shiftStatusLabel,
@@ -53,6 +55,7 @@ function SummaryTile(props: { label: string; value: number; accent: string }) {
 function ShiftStatusCard(props: { row: ShiftStatusRow }) {
   const theme = useTheme();
   const { row } = props;
+  const attendantNames = attendantNameList(row.attendant === '—' ? '' : row.attendant);
   const chipColor = shiftStatusChipColor(row.status);
   const accent =
     chipColor === 'success'
@@ -88,13 +91,21 @@ function ShiftStatusCard(props: { row: ShiftStatusRow }) {
         </Stack>
 
         <Stack spacing={0.75} sx={{ mt: 1.75 }}>
-          <Stack direction="row" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary">
-              Attendant
+          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+            <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0, pt: 0.25 }}>
+              Attendant{attendantNames.length > 1 ? 's' : ''}
             </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>
-              {row.attendant}
-            </Typography>
+            {attendantNames.length === 0 ? (
+              <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>
+                {row.attendant}
+              </Typography>
+            ) : (
+              <Stack direction="row" flexWrap="wrap" useFlexGap justifyContent="flex-end" sx={{ gap: 0.5, maxWidth: '70%' }}>
+                {attendantNames.map((name) => (
+                  <Chip key={name} size="small" label={name} sx={{ fontWeight: 600 }} />
+                ))}
+              </Stack>
+            )}
           </Stack>
           <Stack direction="row" justifyContent="space-between">
             <Typography variant="body2" color="text.secondary">
@@ -129,12 +140,6 @@ function ShiftStatusCard(props: { row: ShiftStatusRow }) {
             </Typography>
           </Stack>
         </Stack>
-
-        {row.detailPath ? (
-          <Typography variant="caption" color="primary" sx={{ mt: 2, display: 'block', fontWeight: 600 }}>
-            Tap card for readings, sales & reconciliation →
-          </Typography>
-        ) : null}
       </CardContent>
     </>
   );
@@ -161,9 +166,10 @@ function ShiftStatusCard(props: { row: ShiftStatusRow }) {
   );
 }
 
-export function TodayShiftStatusSection(props: { pumpDayIso: string }) {
+export function TodayShiftStatusSection(props: { pumpDayIso: string; createShiftTo?: string }) {
   const theme = useTheme();
-  const { pumpDayIso } = props;
+  const { readOnlyOps } = usePermissions();
+  const { pumpDayIso, createShiftTo = '/shifts/new' } = props;
   const [summary, setSummary] = useState<ShiftStatusSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -249,16 +255,18 @@ export function TodayShiftStatusSection(props: { pumpDayIso: string }) {
               severity="info"
               sx={{ borderRadius: 2 }}
               action={
-                <Button
-                  component={RouterLink}
-                  to="/shifts/new"
-                  color="inherit"
-                  size="small"
-                  startIcon={<AddOutlinedIcon />}
-                  sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}
-                >
-                  Create shift
-                </Button>
+                readOnlyOps ? undefined : (
+                  <Button
+                    component={RouterLink}
+                    to={createShiftTo}
+                    color="inherit"
+                    size="small"
+                    startIcon={<AddOutlinedIcon />}
+                    sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}
+                  >
+                    Create shift
+                  </Button>
+                )
               }
             >
               No shifts have been scheduled for this day.
@@ -288,7 +296,10 @@ export function TodayShiftStatusSection(props: { pumpDayIso: string }) {
             }}
           >
             {summary.rows.map((row) => (
-              <ShiftStatusCard key={row.shiftLabel} row={row} />
+              <ShiftStatusCard
+                key={row.shiftLabel}
+                row={readOnlyOps ? { ...row, detailPath: null } : row}
+              />
             ))}
           </Box>
         </>

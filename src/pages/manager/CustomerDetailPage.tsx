@@ -27,6 +27,7 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { format } from 'date-fns';
 import { getCustomer, updateCustomer } from '@/services/creditCustomersService';
@@ -34,6 +35,7 @@ import { listSalesForCustomer } from '@/services/creditSalesService';
 import { listPaymentsForCustomer, recordPayment } from '@/services/creditPaymentsService';
 import { listFuelTypes } from '@/services/fuelTypesService';
 import { useAuth } from '@/context/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import { requireMin, requireNonEmpty } from '@/utils/validation';
 import {
   CREDIT_PAYMENT_MODE_ORDER,
@@ -47,7 +49,6 @@ import { trimNumberDisplay } from '@/pages/manager/creditRegisterFormatters';
 import { aggregateFuelCreditTotals, describeFuelCreditTotals } from '@/pages/manager/creditFuelTotals';
 import {
   assertEntryDateAllowed,
-  canBackdateEntries,
   clampEntryDateForRole,
   dateInputBoundsForRole,
   todayIso,
@@ -74,6 +75,7 @@ export function CustomerDetailPage() {
   const { id = '' } = useParams();
   const nav = useNavigate();
   const { profile } = useAuth();
+  const { readOnlyOps } = usePermissions();
   const dateBounds = dateInputBoundsForRole(profile?.role);
   const [c, setC] = useState<CreditCustomer | null | undefined>(undefined);
   const [err, setErr] = useState<string | null>(null);
@@ -141,9 +143,11 @@ export function CustomerDetailPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
+      {readOnlyOps ? (
+        <ReadOnlyBanner message="You can review this party's ledger. Staff record payments and credit sales." />
+      ) : null}
       <PageHeader
         title={c.name}
-        subtitle="Ledger, payments, and manual credit fuel — everything for this account in one place."
         action={
           <Button
             variant="contained"
@@ -166,53 +170,58 @@ export function CustomerDetailPage() {
             <Typography variant="h4" sx={{ fontWeight: 800, mt: 0.5, fontVariantNumeric: 'tabular-nums', color: balanceAccent }}>
               {fmtRs(c.currentBalance)}
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', lineHeight: 1.5 }}>
-              Debit entries add to this figure; posting a payment reduces it. Syncs with reconciliation credit lines.
-            </Typography>
           </Box>
           <Box sx={{ flex: 1, minWidth: 220 }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em', mb: 0.75, display: 'block' }}>
               Party label
             </Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
-              <TextField
-                size="small"
-                label="Displayed name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                sx={{ flex: 1, minWidth: 0, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-              />
-              <Button
-                size="medium"
-                variant="contained"
-                onClick={async () => {
-                  setFormError(null);
-                  const m = requireNonEmpty(name, 'Name');
-                  if (m) {
-                    setFormError(m);
-                    return;
-                  }
-                  setSaving(true);
-                  try {
-                    await updateCustomer(c.id, { name: name.trim() });
-                    setC((prev) => (prev ? { ...prev, name: name.trim() } : prev));
-                  } catch (e) {
-                    setFormError(e instanceof Error ? e.message : 'Update failed');
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-                disabled={saving || name.trim() === c.name}
-                sx={{ borderRadius: 1.5, minHeight: 44 }}
-              >
-                Save
-              </Button>
-            </Stack>
-            {formError ? (
-              <Alert severity="error" sx={{ mt: 1.5 }}>
-                {formError}
-              </Alert>
-            ) : null}
+            {readOnlyOps ? (
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                {c.name}
+              </Typography>
+            ) : (
+              <>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
+                  <TextField
+                    size="small"
+                    label="Displayed name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    sx={{ flex: 1, minWidth: 0, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                  />
+                  <Button
+                    size="medium"
+                    variant="contained"
+                    onClick={async () => {
+                      setFormError(null);
+                      const m = requireNonEmpty(name, 'Name');
+                      if (m) {
+                        setFormError(m);
+                        return;
+                      }
+                      setSaving(true);
+                      try {
+                        await updateCustomer(c.id, { name: name.trim() });
+                        setC((prev) => (prev ? { ...prev, name: name.trim() } : prev));
+                      } catch (e) {
+                        setFormError(e instanceof Error ? e.message : 'Update failed');
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    disabled={saving || name.trim() === c.name}
+                    sx={{ borderRadius: 1.5, minHeight: 44 }}
+                  >
+                    Save
+                  </Button>
+                </Stack>
+                {formError ? (
+                  <Alert severity="error" sx={{ mt: 1.5 }}>
+                    {formError}
+                  </Alert>
+                ) : null}
+              </>
+            )}
           </Box>
         </Stack>
       </Paper>
@@ -224,12 +233,14 @@ export function CustomerDetailPage() {
         partyName={c.name}
         currentBalanceOwed={c.currentBalance}
         reloadSignal={ledgerRev}
+        readOnly={readOnlyOps}
         onRecorded={async () => {
           await reloadCustomer();
           setLedgerRev((k) => k + 1);
         }}
       />
 
+      {!readOnlyOps ? (
       <Card elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
         <Box sx={{ height: 3, bgcolor: 'success.main' }} />
         <CardContent sx={{ pt: 2.5 }}>
@@ -239,9 +250,6 @@ export function CustomerDetailPage() {
               Receive payment
             </Typography>
           </Stack>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Record cash, UPI, cheque, or other receipts. This posts as a credit against the outstanding balance above.
-          </Typography>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
             <Stack spacing={2} sx={{ flex: 1, maxWidth: { md: 420 } }}>
               <TextField
@@ -261,11 +269,6 @@ export function CustomerDetailPage() {
                   inputLabel: { shrink: true },
                   htmlInput: { min: dateBounds.min, max: dateBounds.max },
                 }}
-                helperText={
-                  canBackdateEntries(profile?.role)
-                    ? 'Owner can post receipts for past days.'
-                    : 'Managers can post today only.'
-                }
                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
               />
               <TextField
@@ -351,6 +354,7 @@ export function CustomerDetailPage() {
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
     </Stack>
   );
 }
@@ -360,12 +364,14 @@ function CustomerCreditSection({
   partyName,
   currentBalanceOwed,
   reloadSignal,
+  readOnly,
   onRecorded,
 }: {
   customerId: string;
   partyName: string;
   currentBalanceOwed: number;
   reloadSignal: number;
+  readOnly: boolean;
   onRecorded: () => Promise<void>;
 }) {
   const theme = useTheme();
@@ -486,12 +492,14 @@ function CustomerCreditSection({
 
   return (
     <Stack spacing={2.5}>
-      <ManualCreditSaleFormCard
-        mode="fixed"
-        customerId={customerId}
-        partyDisplayName={partyName}
-        onSuccess={onRecorded}
-      />
+      {!readOnly ? (
+        <ManualCreditSaleFormCard
+          mode="fixed"
+          customerId={customerId}
+          partyDisplayName={partyName}
+          onSuccess={onRecorded}
+        />
+      ) : null}
 
       <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
         <Stack
@@ -555,17 +563,16 @@ function CustomerCreditSection({
               Fuel taken on credit (lifetime): <strong>{fuelCreditSummary}</strong>
             </Typography>
           ) : null}
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, lineHeight: 1.6 }}>
-            Debit = fuel booked on credit · Credit = payment received · Balance = outstanding for {partyName}
-          </Typography>
         </Box>
         <ResponsiveTableContainer stickyFirstColumn sx={{ px: 0, pb: 0 }}>
           <Table
             size="small"
             aria-label={`Credit ledger for ${partyName}`}
             sx={{
-              minWidth: 720,
-              tableLayout: 'fixed',
+              minWidth: 860,
+              tableLayout: 'auto',
+              borderCollapse: 'separate',
+              borderSpacing: 0,
               '& th': {
                 borderBottom: '1px solid',
                 borderColor: 'divider',
@@ -573,7 +580,7 @@ function CustomerCreditSection({
                 fontSize: '0.72rem',
                 fontWeight: 700,
                 letterSpacing: '0.05em',
-                bgcolor: 'action.hover',
+                bgcolor: (t) => (t.palette.mode === 'dark' ? t.palette.grey[800] : t.palette.grey[100]),
               },
               '& td': {
                 borderBottom: '1px solid',
@@ -585,22 +592,22 @@ function CustomerCreditSection({
           >
             <TableHead>
               <TableRow>
-                <TableCell sx={{ width: '11%' }}>Date</TableCell>
-                <TableCell sx={{ width: '22%' }}>Particulars</TableCell>
-                <TableCell sx={{ width: '12%' }}>Fuel</TableCell>
-                <TableCell align="right" sx={{ width: '10%' }}>
+                <TableCell sx={{ width: 136, minWidth: 136, maxWidth: 136, whiteSpace: 'nowrap' }}>Date</TableCell>
+                <TableCell sx={{ minWidth: 160 }}>Particulars</TableCell>
+                <TableCell sx={{ minWidth: 96 }}>Fuel</TableCell>
+                <TableCell align="right" sx={{ minWidth: 88 }}>
                   Litres
                 </TableCell>
-                <TableCell align="right" sx={{ width: '10%' }}>
+                <TableCell align="right" sx={{ minWidth: 80 }}>
                   ₹/L
                 </TableCell>
-                <TableCell align="right" sx={{ width: '11%' }}>
+                <TableCell align="right" sx={{ minWidth: 96 }}>
                   Debit ₹
                 </TableCell>
-                <TableCell align="right" sx={{ width: '11%' }}>
+                <TableCell align="right" sx={{ minWidth: 96 }}>
                   Credit ₹
                 </TableCell>
-                <TableCell align="right" sx={{ width: '13%', fontWeight: 700 }}>
+                <TableCell align="right" sx={{ minWidth: 108, fontWeight: 700 }}>
                   Balance ₹
                 </TableCell>
               </TableRow>
@@ -635,7 +642,7 @@ function CustomerCreditSection({
                           idx % 2 === 1 ? (t) => alpha(t.palette.primary.main, 0.035) : 'transparent',
                       }}
                     >
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{row.dateLabel}</TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap', width: 136, minWidth: 136 }}>{row.dateLabel}</TableCell>
                       <TableCell>
                         Payment · {creditPaymentModeLabel(row.mode)}
                       </TableCell>
@@ -661,7 +668,7 @@ function CustomerCreditSection({
                         idx % 2 === 1 ? (t) => alpha(t.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.035) : 'transparent',
                     }}
                   >
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{row.dateLabel}</TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap', width: 136, minWidth: 136 }}>{row.dateLabel}</TableCell>
                     <TableCell>{particulars}</TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{fuel}</TableCell>
                     <TableCell align="right">{ledgerFuelFmt.litresDisplay(s)}</TableCell>

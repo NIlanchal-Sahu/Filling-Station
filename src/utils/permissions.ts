@@ -4,6 +4,8 @@ export type Permission =
   | 'view:dashboard'
   | 'view:reports'
   | 'view:operations'
+  | 'view:credit'
+  | 'view:ledger'
   | 'edit:shifts'
   | 'edit:credit'
   | 'edit:ledger'
@@ -19,6 +21,8 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'view:dashboard',
     'view:reports',
     'view:operations',
+    'view:credit',
+    'view:ledger',
     'edit:shifts',
     'edit:credit',
     'edit:ledger',
@@ -33,6 +37,8 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'view:dashboard',
     'view:reports',
     'view:operations',
+    'view:credit',
+    'view:ledger',
     'approve:reconciliation',
     'backdate:entries',
   ]),
@@ -40,6 +46,8 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'view:dashboard',
     'view:reports',
     'view:operations',
+    'view:credit',
+    'view:ledger',
     'edit:shifts',
     'edit:credit',
     'edit:ledger',
@@ -57,6 +65,9 @@ const OWNER_READ_PATH_PREFIXES = [
   '/manager/reconciliations',
   '/manager/fuel-stock',
   '/manager/fuel',
+  '/manager/credit',
+  '/manager/ledger',
+  '/manager/daily-sheet',
 ] as const;
 
 export function hasPermission(
@@ -131,11 +142,17 @@ export function routeRequiresPermission(pathname: string): Permission | null {
   if (path.startsWith('/admin/settings')) {
     return 'manage:settings';
   }
-  if (path.startsWith('/manager/credit') || path.startsWith('/manager/ledger') || path.startsWith('/manager/daily-sheet')) {
-    return 'edit:credit';
+  if (path.startsWith('/manager/credit')) {
+    return 'view:credit';
   }
-  if (path.startsWith('/manager/lubricants') || path.startsWith('/manager/fuel-stock')) {
+  if (path.startsWith('/manager/ledger') || path.startsWith('/manager/daily-sheet')) {
+    return 'view:ledger';
+  }
+  if (path.startsWith('/manager/lubricants') || path.startsWith('/manager/fuel-stock/purchase')) {
     return 'edit:fuel';
+  }
+  if (path.startsWith('/manager/fuel-stock')) {
+    return 'view:operations';
   }
   if (path.startsWith('/manager/reports')) {
     return 'view:reports';

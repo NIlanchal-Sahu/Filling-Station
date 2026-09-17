@@ -39,7 +39,8 @@ const headSx = {
 };
 
 export function FuelPricesPage() {
-  const { readOnlyOps } = usePermissions();
+  const { role, readOnlyOps } = usePermissions();
+  const canAddFuel = role === 'manager' || role === 'admin';
   const [rows, setRows] = useState<FuelType[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -67,10 +68,7 @@ export function FuelPricesPage() {
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
       {readOnlyOps ? <ReadOnlyBanner /> : null}
-      <PageHeader
-        title="Fuel prices"
-        subtitle="Rates here drive meter ₹ amounts, reconciliation, and manual credit litre lines. Update before each price change at the pump."
-      />
+      <PageHeader title="Fuel prices" />
 
       {err && <Alert severity="error">{err}</Alert>}
 
@@ -92,9 +90,6 @@ export function FuelPricesPage() {
           >
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               Current rates (₹/L)
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Save per row. “Updated” reflects the server timestamp when the rate changed.
             </Typography>
           </Box>
           <ResponsiveTableContainer>
@@ -144,6 +139,11 @@ export function FuelPricesPage() {
         </Paper>
       )}
 
+      {formErr ? (
+        <Alert severity="error">{formErr}</Alert>
+      ) : null}
+
+      {canAddFuel ? (
       <Card
         elevation={0}
         sx={{
@@ -161,9 +161,6 @@ export function FuelPricesPage() {
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                 Add fuel type
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Use for new grades (e.g. XP) — appears on Start shift nozzle assignment and reconciliation.
               </Typography>
             </Box>
           </Stack>
@@ -214,13 +211,9 @@ export function FuelPricesPage() {
               Add fuel
             </Button>
           </Stack>
-          {formErr ? (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {formErr}
-            </Alert>
-          ) : null}
         </CardContent>
       </Card>
+      ) : null}
     </Stack>
   );
 }

@@ -10,6 +10,11 @@ export function parseUserRole(raw: unknown): UserRole {
   return 'operator';
 }
 
+/** Pump-floor staff shown on Start shift roster (Team operators who are active). */
+export function isPumpRosterUser(user: { role: UserRole; isActive: boolean }): boolean {
+  return user.isActive && user.role === 'operator';
+}
+
 /** Manager or admin with operational write access. */
 export function isManagerLike(role: UserRole | null | undefined): boolean {
   return isOpsWriter(role);

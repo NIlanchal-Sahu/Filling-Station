@@ -45,8 +45,8 @@ export function AppShell() {
 
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar showMenuButton={isMobile} onMenuClick={() => setDrawerOpen(true)} />
-        <Box component="main" sx={{ flex: 1, pb: { xs: 9, md: 3 }, pt: { xs: 2, sm: 3 } }}>
-          <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 } }}>
+        <Box component="main" sx={{ flex: 1, minWidth: 0, pb: { xs: 9, md: 3 }, pt: { xs: 2, sm: 3 } }}>
+          <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 }, minWidth: 0, width: '100%' }}>
             <Outlet />
           </Container>
         </Box>

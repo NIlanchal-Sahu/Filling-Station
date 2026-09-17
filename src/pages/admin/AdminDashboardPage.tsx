@@ -1,48 +1,76 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-import { Box, Button, Link, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Chip, Paper, Stack, TextField, Typography } from '@mui/material';
 import Grid from '@mui/material/Grid2';
+import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
-import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
-import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
-import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
-import RocketLaunchOutlinedIcon from '@mui/icons-material/RocketLaunchOutlined';
-import { format } from 'date-fns';
+import PlayCircleOutlineOutlinedIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
+import CreditCardOutlinedIcon from '@mui/icons-material/CreditCardOutlined';
+import OpacityOutlinedIcon from '@mui/icons-material/OpacityOutlined';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
+import { format, isSameDay } from 'date-fns';
 import { DashboardSection } from '@/components/ui/DashboardSection';
 import { KpiStat } from '@/components/ui/KpiStat';
 import { KpiStatSkeleton } from '@/components/ui/KpiStatSkeleton';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { LOCAL_DEMO, EXPLICIT_LOCAL_DEMO } from '@/config/appMode';
+import { QuickActionBar } from '@/components/ui/QuickActionBar';
 import { listUsersForManager } from '@/services/usersService';
 import { getShiftStatusForPumpDay } from '@/services/shiftStatusService';
+import { TodayShiftStatusSection } from '@/pages/manager/TodayShiftStatusSection';
+import { rememberAdminPumpDay, todayIso, withPumpDayQuery } from '@/utils/dateEntryPolicy';
+
+function parseLocalYmd(iso: string): Date {
+  return new Date(`${iso}T00:00:00`);
+}
 
 export function AdminDashboardPage() {
-  const todayIso = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
+  const liveTodayIso = todayIso();
+  const maxSelectableIso = liveTodayIso;
+  const [reportIso, setReportIso] = useState(liveTodayIso);
+
+  const reportDay = useMemo(() => parseLocalYmd(reportIso), [reportIso]);
+  const reportLabel = useMemo(
+    () => (Number.isFinite(reportDay.getTime()) ? format(reportDay, 'dd MMM yyyy') : reportIso),
+    [reportDay, reportIso],
+  );
+  const reportLabelShort = useMemo(
+    () => (Number.isFinite(reportDay.getTime()) ? format(reportDay, 'dd-MM-yyyy') : reportIso),
+    [reportDay, reportIso],
+  );
+  const isSelectedToday = Number.isFinite(reportDay.getTime()) && isSameDay(reportDay, new Date());
+
   const [kpisLoading, setKpisLoading] = useState(true);
   const [userCount, setUserCount] = useState(0);
-  const [pendingRecon, setPendingRecon] = useState(0);
+  const [pendingReconToday, setPendingReconToday] = useState(0);
+  const [openShiftsToday, setOpenShiftsToday] = useState(0);
+
+  useEffect(() => {
+    rememberAdminPumpDay(reportIso);
+  }, [reportIso]);
 
   useEffect(() => {
     let ok = true;
     setKpisLoading(true);
     void (async () => {
       try {
-        const [users, shiftStatus] = await Promise.all([
+        const [users, todayStatus] = await Promise.all([
           listUsersForManager(),
-          getShiftStatusForPumpDay(todayIso),
+          getShiftStatusForPumpDay(liveTodayIso),
         ]);
         if (!ok) {
           return;
         }
         setUserCount(users.filter((u) => u.isActive).length);
-        setPendingRecon(shiftStatus.totals.pendingReconciliation);
+        setPendingReconToday(todayStatus.totals.pendingReconciliation);
+        setOpenShiftsToday(todayStatus.totals.active);
       } catch {
         if (ok) {
           setUserCount(0);
-          setPendingRecon(0);
+          setPendingReconToday(0);
+          setOpenShiftsToday(0);
         }
       } finally {
         if (ok) {
@@ -53,16 +81,96 @@ export function AdminDashboardPage() {
     return () => {
       ok = false;
     };
-  }, [todayIso]);
+  }, [liveTodayIso]);
 
-  const modeLabel = LOCAL_DEMO ? (EXPLICIT_LOCAL_DEMO ? 'Local demo' : 'Demo (no Firebase)') : 'Firebase';
+  function setPumpDay(iso: string) {
+    const next = iso > maxSelectableIso ? maxSelectableIso : iso;
+    setReportIso(next);
+  }
+
+  const workThisDay = [
+    {
+      to: withPumpDayQuery('/shifts/new', reportIso),
+      label: 'Start shift',
+      icon: <PlayCircleOutlineOutlinedIcon fontSize="small" />,
+    },
+    {
+      to: withPumpDayQuery('/manager/credit', reportIso),
+      label: 'Credit',
+      icon: <CreditCardOutlinedIcon fontSize="small" />,
+    },
+    {
+      to: withPumpDayQuery('/manager/fuel-stock/daily', reportIso),
+      label: 'Daily dip',
+      icon: <OpacityOutlinedIcon fontSize="small" />,
+    },
+    {
+      to: withPumpDayQuery('/manager/daily-sheet', reportIso),
+      label: 'Daily sheet',
+      icon: <ReceiptLongOutlinedIcon fontSize="small" />,
+    },
+    {
+      to: withPumpDayQuery('/manager/ledger', reportIso),
+      label: 'Ledger',
+      icon: <AccountBalanceWalletOutlinedIcon fontSize="small" />,
+    },
+    {
+      to: '/manager/reconciliations',
+      label: 'Reconciliations',
+      icon: <FactCheckOutlinedIcon fontSize="small" />,
+    },
+    {
+      to: withPumpDayQuery('/manager/reports', reportIso),
+      label: 'Reports',
+      icon: <AssessmentOutlinedIcon fontSize="small" />,
+    },
+  ];
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
       <PageHeader
         title="Admin dashboard"
-        subtitle="System overview, team management, and deployment settings."
+        subtitle={`${reportLabel}${isSelectedToday ? ' · Today' : ''}`}
+        action={
+          isSelectedToday ? (
+            <Chip label="Live" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
+          ) : null
+        }
       />
+
+      <Paper
+        elevation={0}
+        sx={{
+          p: 1.75,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <CalendarMonthOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }} />
+            <TextField
+              type="date"
+              label="Pump day"
+              value={reportIso}
+              onChange={(e) => setPumpDay(e.target.value)}
+              size="small"
+              slotProps={{
+                htmlInput: { max: maxSelectableIso },
+                inputLabel: { shrink: true },
+              }}
+              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            />
+          </Stack>
+        </Stack>
+      </Paper>
+
+      {!isSelectedToday ? (
+        <Alert severity="warning" sx={{ borderRadius: 2 }}>
+          Editing {reportLabelShort} — this will change the books.
+        </Alert>
+      ) : null}
 
       <Grid container spacing={2}>
         {kpisLoading ? (
@@ -83,12 +191,12 @@ export function AdminDashboardPage() {
               <KpiStat label="Active users" value={userCount} icon={GroupsOutlinedIcon} />
             </Grid>
             <Grid size={{ xs: 6, sm: 4 }}>
-              <KpiStat label="Environment" value={modeLabel} icon={CloudOutlinedIcon} color="secondary" />
+              <KpiStat label="Open shifts (today)" value={openShiftsToday} icon={PlayCircleOutlineOutlinedIcon} color="success" />
             </Grid>
             <Grid size={{ xs: 12, sm: 4 }}>
               <KpiStat
-                label="Pending reconciliations"
-                value={pendingRecon}
+                label="Pending recon (today)"
+                value={pendingReconToday}
                 icon={FactCheckOutlinedIcon}
                 color="warning"
               />
@@ -97,96 +205,26 @@ export function AdminDashboardPage() {
         )}
       </Grid>
 
-      <Paper elevation={0} sx={{ p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>
-          Quick links
-        </Typography>
-        <Stack direction="row" flexWrap="wrap" gap={1}>
-          <Button component={RouterLink} to="/admin/team" variant="contained" startIcon={<GroupsOutlinedIcon />}>
-            Team
-          </Button>
-          <Button component={RouterLink} to="/admin/settings" variant="outlined" startIcon={<SettingsOutlinedIcon />}>
-            Settings
-          </Button>
-          <Button component={RouterLink} to="/manager/reports" variant="outlined" startIcon={<AssessmentOutlinedIcon />}>
-            Reports
-          </Button>
-        </Stack>
-      </Paper>
+      <QuickActionBar actions={workThisDay} label="WORK THIS DAY" />
 
-      <DashboardSection title="Activity log" subtitle="System audit trail for user and operational events.">
-        <Paper elevation={0} sx={{ p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-          <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ mb: 1.5 }}>
-            <HistoryOutlinedIcon color="action" sx={{ mt: 0.25 }} />
-            <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                Activity log
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 560 }}>
-                Coming soon — user actions, role changes, and reconciliation approvals will appear here.
-              </Typography>
-            </Box>
-          </Stack>
-          <Button variant="outlined" disabled startIcon={<HistoryOutlinedIcon />}>
-            View log
-          </Button>
+      <DashboardSection title="Shift status">
+        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+          <TodayShiftStatusSection
+            pumpDayIso={reportIso}
+            createShiftTo={withPumpDayQuery('/shifts/new', reportIso)}
+          />
         </Paper>
       </DashboardSection>
 
-      <DashboardSection title="Resources" subtitle="Documentation and deployment references.">
-        <Paper elevation={0} sx={{ p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <MenuBookOutlinedIcon fontSize="small" color="action" />
-              <Link component={RouterLink} to="/admin/settings" underline="hover" sx={{ fontWeight: 600 }}>
-                Admin settings
-              </Link>
-              <Typography variant="body2" color="text.secondary">
-                — environment and Firebase configuration
-              </Typography>
-            </Stack>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <MenuBookOutlinedIcon fontSize="small" color="action" />
-              <Link
-                href="https://github.com/NIlanchal-Sahu/Filling-Station/blob/main/docs/ROLES.md"
-                target="_blank"
-                rel="noopener noreferrer"
-                underline="hover"
-                sx={{ fontWeight: 600 }}
-              >
-                Roles & permissions
-              </Link>
-              <Typography variant="body2" color="text.secondary">
-                — role matrix and route access
-              </Typography>
-            </Stack>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <RocketLaunchOutlinedIcon fontSize="small" color="action" />
-              <Link
-                href="https://github.com/NIlanchal-Sahu/Filling-Station/blob/main/docs/DEPLOYMENT.md"
-                target="_blank"
-                rel="noopener noreferrer"
-                underline="hover"
-                sx={{ fontWeight: 600 }}
-              >
-                Deployment guide
-              </Link>
-              <Typography variant="body2" color="text.secondary">
-                — Vercel, Firebase, and bootstrap script
-              </Typography>
-            </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ pt: 0.5 }}>
-              Bootstrap: run <code>node scripts/bootstrap-firebase.mjs</code> after setting SEED_* credentials in .env.
-            </Typography>
-          </Stack>
-        </Paper>
+      <DashboardSection title="Team & settings">
+        <QuickActionBar
+          label="ADMINISTRATION"
+          actions={[
+            { to: '/admin/team', label: 'Team', icon: <GroupsOutlinedIcon fontSize="small" /> },
+            { to: '/admin/settings', label: 'Settings', icon: <SettingsOutlinedIcon fontSize="small" /> },
+          ]}
+        />
       </DashboardSection>
-
-      <Box>
-        <Typography variant="body2" color="text.secondary">
-          Admin accounts manage users, roles, and environment configuration. Day-to-day pump operations are handled by managers and workers.
-        </Typography>
-      </Box>
     </Stack>
   );
 }

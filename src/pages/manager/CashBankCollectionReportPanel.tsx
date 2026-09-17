@@ -124,7 +124,7 @@ export function CashBankCollectionReportPanel(props: {
   if (!summary) {
     return (
       <Typography variant="body2" color="text.secondary">
-        Run the report to load cash &amp; bank collection data.
+        Run report to load this tab.
       </Typography>
     );
   }
@@ -232,11 +232,6 @@ export function CashBankCollectionReportPanel(props: {
       <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
         Cash &amp; Bank Collection Summary
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 900, lineHeight: 1.7 }}>
-        Collections from reconciled shifts grouped by pump business day ({fromIso}
-        {fromIso !== toIso ? ` – ${toIso}` : ''}). Total collection = Cash + Phone Pe + ICICI + Fleet Card. Total sales =
-        Total collection + Credit sales.
-      </Typography>
 
       {summary.alerts.length ? (
         <Stack spacing={1}>
@@ -250,7 +245,7 @@ export function CashBankCollectionReportPanel(props: {
 
       {!hasData ? (
         <Alert severity="info" sx={{ borderRadius: 2 }}>
-          No reconciled collections in this period. Complete shift reconciliation to populate the report.
+          No collections in this period.
         </Alert>
       ) : (
         <>

@@ -33,8 +33,10 @@ import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { useAuth } from '@/context/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useSearchParams } from 'react-router-dom';
 import { createLedgerEntry, deleteLedgerEntry, listLedgerInRange, updateLedgerEntry } from '@/services/ledgerService';
 import { getCashInHandAfterReconciliations } from '@/services/aggregatesService';
@@ -44,9 +46,10 @@ import type { LedgerEntry, LedgerPaymentChannel, LedgerType } from '@/types/enti
 import { format } from 'date-fns';
 import {
   assertEntryDateAllowed,
-  canBackdateEntries,
   clampEntryDateForRole,
   dateInputBoundsForRole,
+  parsePumpDayParam,
+  recalledAdminPumpDay,
   todayIso,
 } from '@/utils/dateEntryPolicy';
 
@@ -120,6 +123,7 @@ const sheetCellSx = {
 
 export function LedgerPage() {
   const { profile } = useAuth();
+  const { readOnlyOps } = usePermissions();
   const dateBounds = dateInputBoundsForRole(profile?.role);
   const [searchParams] = useSearchParams();
   const [typeFilter, setTypeFilter] = useState<'all' | LedgerType>('all');
@@ -179,15 +183,25 @@ export function LedgerPage() {
   }, [typeFilter, from, to]);
 
   useEffect(() => {
+    const day = parsePumpDayParam(searchParams.get('day'));
+    const recalled = profile?.role === 'admin' ? recalledAdminPumpDay() : null;
+    const pumpDay = day ?? recalled;
     const f = searchParams.get('from');
     const t = searchParams.get('to');
+    if (pumpDay) {
+      const clamped = clampEntryDateForRole(profile?.role, pumpDay);
+      setFrom(clamped);
+      setTo(clamped);
+      setEntryDate(clamped);
+      return;
+    }
     if (f && /^\d{4}-\d{2}-\d{2}$/.test(f)) {
       setFrom(f);
     }
     if (t && /^\d{4}-\d{2}-\d{2}$/.test(t)) {
       setTo(t);
     }
-  }, [searchParams]);
+  }, [searchParams, profile?.role]);
 
   const running = useMemo(() => {
     return rows.reduce<(LedgerEntry & { run: number })[]>((acc, r) => {
@@ -233,7 +247,7 @@ export function LedgerPage() {
       setEntryAmount('');
       setEntryNames('');
       setEntryParticular('');
-      setEntryDate(todayIso());
+      setEntryDate(day);
       await load();
     } catch (e) {
       setFormErr(e instanceof Error ? e.message : 'Failed');
@@ -325,10 +339,10 @@ export function LedgerPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      <PageHeader
-        title="Cash & expense ledger"
-        subtitle="Mirror your written ledger: PAID is money leaving the drawer or bank; RECEIVED is money in. Shift cash and credit receipts tie into the same running picture as Daily sheet and Reconciliation."
-      />
+      {readOnlyOps ? (
+        <ReadOnlyBanner message="You can review the cash book. Staff post paid/received lines." />
+      ) : null}
+      <PageHeader title="Cash & expense ledger" />
 
       <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ maxWidth: 720 }}>
@@ -350,16 +364,13 @@ export function LedgerPage() {
             <Typography variant="h5" sx={{ fontWeight: 800, mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
               {fmtRs(bal)}
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', lineHeight: 1.55 }}>
-              Shifts: for each reconciliation (pending or approved), meter sales − PhonePe − ICICI − Fleet − credit − short.
-              Ledger: only rows with transaction type CASH. Totals cover all time, not the table date range below.
-            </Typography>
           </Box>
         </Stack>
       </Paper>
 
       {err && <Alert severity="error">{err}</Alert>}
 
+      {!readOnlyOps ? (
       <Card
         elevation={0}
         sx={{
@@ -378,11 +389,6 @@ export function LedgerPage() {
             <Box sx={{ flex: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                 New entry (cash book row)
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                <strong>PAID</strong> = money out · <strong>RECEIVED</strong> = money in · Type ={' '}
-                <strong>CASH</strong> (drawer), <strong>BANK</strong>, or <strong>PHONE PE</strong> (UPI). Credit receipts
-                from the Credit page appear as RECEIVED.
               </Typography>
             </Box>
           </Stack>
@@ -439,7 +445,6 @@ export function LedgerPage() {
                       }}
                       size="small"
                       fullWidth
-                      helperText={canBackdateEntries(profile?.role) ? 'Admin: past dates OK' : undefined}
                       sx={{ minWidth: 120, '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
                     />
                   </TableCell>
@@ -450,11 +455,6 @@ export function LedgerPage() {
                       onChange={(e) => setEntryNames(e.target.value)}
                       size="small"
                       fullWidth
-                      helperText={
-                        entryPaidOut
-                          ? 'Use category TRANSFER (or OTHER) — name appears on Daily sheet'
-                          : undefined
-                      }
                       sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
                     />
                   </TableCell>
@@ -553,6 +553,7 @@ export function LedgerPage() {
           )}
         </CardContent>
       </Card>
+      ) : null}
 
       <Paper variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
         <FilterToolbar>
@@ -667,9 +668,6 @@ export function LedgerPage() {
                 sx={{ fontWeight: 600 }}
               />
             </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-              Running balance is cumulative across the filtered list (oldest → newest within range).
-            </Typography>
           </Stack>
           <ResponsiveTableContainer stickyFirstColumn>
             <Table
@@ -697,9 +695,11 @@ export function LedgerPage() {
                   <TableCell sx={headerCellSx} align="right">
                     Running
                   </TableCell>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 108 }} align="center">
-                    Actions
-                  </TableCell>
+                  {!readOnlyOps ? (
+                    <TableCell sx={{ ...headerCellSx, minWidth: 108 }} align="center">
+                      Actions
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -732,26 +732,28 @@ export function LedgerPage() {
                     >
                       {r.run.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>
-                    <TableCell sx={sheetCellSx} align="center">
-                      <Stack direction="row" spacing={0} sx={{ justifyContent: 'center' }}>
-                        <IconButton size="small" color="primary" aria-label="Edit ledger line" onClick={() => openEditDialog(r)}>
-                          <EditOutlinedIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          aria-label="Delete ledger line"
-                          onClick={() => void handleDeleteEntry(r)}
-                        >
-                          <DeleteOutlineIcon fontSize="small" />
-                        </IconButton>
-                      </Stack>
-                    </TableCell>
+                    {!readOnlyOps ? (
+                      <TableCell sx={sheetCellSx} align="center">
+                        <Stack direction="row" spacing={0} sx={{ justifyContent: 'center' }}>
+                          <IconButton size="small" color="primary" aria-label="Edit ledger line" onClick={() => openEditDialog(r)}>
+                            <EditOutlinedIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            aria-label="Delete ledger line"
+                            onClick={() => void handleDeleteEntry(r)}
+                          >
+                            <DeleteOutlineIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))}
                 {running.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9}>
+                    <TableCell colSpan={readOnlyOps ? 8 : 9}>
                       <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
                         No rows in this range — widen dates or remove the type filter.
                       </Typography>
