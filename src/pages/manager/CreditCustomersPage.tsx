@@ -426,14 +426,32 @@ export function CreditCustomersPage() {
                 Export register CSV
               </Button>
             </Stack>
-            <ResponsiveTableContainer sx={{ maxHeight: 420, minWidth: 0 }} stickyFirstColumn>
+            <ResponsiveTableContainer
+              sx={{
+                maxHeight: 420,
+                minWidth: 0,
+                overflowX: { xs: 'auto', md: 'hidden' },
+                '& thead th:first-of-type': {
+                  left: { xs: 0, md: 'auto' },
+                  boxShadow: { xs: '2px 0 4px -2px rgba(0,0,0,0.18)', md: 'none' },
+                },
+                '& tbody td:first-of-type': {
+                  position: { xs: 'sticky', md: 'static' },
+                  left: { xs: 0, md: 'auto' },
+                  zIndex: { xs: 2, md: 'auto' },
+                  bgcolor: { xs: 'background.paper', md: 'transparent' },
+                  boxShadow: { xs: '2px 0 4px -2px rgba(0,0,0,0.18)', md: 'none' },
+                },
+              }}
+            >
               <Table
                 size="small"
                 stickyHeader
                 aria-label="Credit register"
                 sx={{
-                  minWidth: 780,
-                  tableLayout: 'auto',
+                  width: '100%',
+                  minWidth: { xs: 640, md: 0 },
+                  tableLayout: { xs: 'auto', md: 'fixed' },
                   borderCollapse: 'separate',
                   borderSpacing: 0,
                   '& th': {
@@ -452,26 +470,16 @@ export function CreditCustomersPage() {
               >
                 <TableHead>
                   <TableRow>
-                    <TableCell
-                      sx={{
-                        width: 136,
-                        minWidth: 136,
-                        maxWidth: 136,
-                        whiteSpace: 'nowrap',
-                        zIndex: 4,
-                      }}
-                    >
-                      Date
-                    </TableCell>
-                    <TableCell sx={{ minWidth: 168 }}>Party</TableCell>
-                    <TableCell sx={{ minWidth: 108, whiteSpace: 'nowrap' }}>Fuel</TableCell>
-                    <TableCell align="right" sx={{ minWidth: 88, whiteSpace: 'nowrap' }}>
+                    <TableCell sx={{ width: { md: '16%' }, whiteSpace: 'nowrap' }}>Date</TableCell>
+                    <TableCell sx={{ width: { md: '28%' } }}>Party</TableCell>
+                    <TableCell sx={{ width: { md: '14%' }, whiteSpace: 'nowrap' }}>Fuel</TableCell>
+                    <TableCell align="right" sx={{ width: { md: '14%' }, whiteSpace: 'nowrap' }}>
                       Litres
                     </TableCell>
-                    <TableCell align="right" sx={{ minWidth: 88, whiteSpace: 'nowrap' }}>
+                    <TableCell align="right" sx={{ width: { md: '14%' }, whiteSpace: 'nowrap' }}>
                       ₹/L
                     </TableCell>
-                    <TableCell align="right" sx={{ minWidth: 104, whiteSpace: 'nowrap' }}>
+                    <TableCell align="right" sx={{ width: { md: '14%' }, whiteSpace: 'nowrap' }}>
                       Amount
                     </TableCell>
                   </TableRow>
@@ -487,9 +495,6 @@ export function CreditCustomersPage() {
                     >
                       <TableCell
                         sx={{
-                          width: 136,
-                          minWidth: 136,
-                          maxWidth: 136,
                           whiteSpace: 'nowrap',
                           fontVariantNumeric: 'tabular-nums',
                         }}

@@ -16,6 +16,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   TextField,
@@ -28,7 +29,6 @@ import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
-import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { format } from 'date-fns';
 import { getCustomer, updateCustomer } from '@/services/creditCustomersService';
 import { listSalesForCustomer } from '@/services/creditSalesService';
@@ -65,6 +65,12 @@ import {
   type PartyLedgerFuelFormatters,
 } from '@/pages/manager/partyLedgerExport';
 import { downloadCsv } from '@/utils/csvExport';
+import {
+  creditSheetBodyCellSx,
+  creditSheetHeaderCellSx,
+  creditSheetTableSx,
+  creditSheetWrapSx,
+} from '@/pages/manager/manualCreditSaleFormStyles';
 
 function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -557,142 +563,156 @@ function CustomerCreditSection({
             </Button>
           </Stack>
         </Stack>
-        <Box sx={{ px: 2, pt: 1.5, pb: 0 }}>
+        <Box sx={{ px: 2, pt: 1.5, pb: 2 }}>
           {fuelCreditSummary ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
               Fuel taken on credit (lifetime): <strong>{fuelCreditSummary}</strong>
             </Typography>
           ) : null}
-        </Box>
-        <ResponsiveTableContainer stickyFirstColumn sx={{ px: 0, pb: 0 }}>
-          <Table
-            size="small"
-            aria-label={`Credit ledger for ${partyName}`}
-            sx={{
-              minWidth: 860,
-              tableLayout: 'auto',
-              borderCollapse: 'separate',
-              borderSpacing: 0,
-              '& th': {
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-                py: 1.25,
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                bgcolor: (t) => (t.palette.mode === 'dark' ? t.palette.grey[800] : t.palette.grey[100]),
-              },
-              '& td': {
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-                py: 1,
-                fontSize: '0.875rem',
-              },
-            }}
-          >
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ width: 136, minWidth: 136, maxWidth: 136, whiteSpace: 'nowrap' }}>Date</TableCell>
-                <TableCell sx={{ minWidth: 160 }}>Particulars</TableCell>
-                <TableCell sx={{ minWidth: 96 }}>Fuel</TableCell>
-                <TableCell align="right" sx={{ minWidth: 88 }}>
-                  Litres
-                </TableCell>
-                <TableCell align="right" sx={{ minWidth: 80 }}>
-                  ₹/L
-                </TableCell>
-                <TableCell align="right" sx={{ minWidth: 96 }}>
-                  Debit ₹
-                </TableCell>
-                <TableCell align="right" sx={{ minWidth: 96 }}>
-                  Credit ₹
-                </TableCell>
-                <TableCell align="right" sx={{ minWidth: 108, fontWeight: 700 }}>
-                  Balance ₹
-                </TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {ledgerRows.map((row, idx) => {
-                if (row.kind === 'broughtForward') {
-                  return (
-                    <TableRow
-                      key="bf"
-                      sx={{
-                        bgcolor:
-                          idx % 2 === 1 ? (t) => alpha(t.palette.primary.main, 0.035) : 'transparent',
-                      }}
-                    >
-                      <TableCell>—</TableCell>
-                      <TableCell colSpan={4}>Brought forward (before entries below)</TableCell>
-                      <TableCell align="right">—</TableCell>
-                      <TableCell align="right">—</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>
-                        {row.balanceAfter.toFixed(2)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                }
-                if (row.kind === 'payment') {
-                  return (
-                    <TableRow
-                      key={`pay-${row.id}`}
-                      sx={{
-                        bgcolor:
-                          idx % 2 === 1 ? (t) => alpha(t.palette.primary.main, 0.035) : 'transparent',
-                      }}
-                    >
-                    <TableCell sx={{ whiteSpace: 'nowrap', width: 136, minWidth: 136 }}>{row.dateLabel}</TableCell>
-                      <TableCell>
-                        Payment · {creditPaymentModeLabel(row.mode)}
-                      </TableCell>
-                      <TableCell>—</TableCell>
-                      <TableCell align="right">—</TableCell>
-                      <TableCell align="right">—</TableCell>
-                      <TableCell align="right">—</TableCell>
-                      <TableCell align="right">{row.creditRupees.toFixed(2)}</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>
-                        {row.balanceAfter.toFixed(2)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                }
-                const s = row.sale;
-                const fuel = ledgerFuelFmt.fuelUpper(s);
-                const particulars = particularsForLedgerCreditSale(s);
-                return (
-                  <TableRow
-                    key={`sale-${row.id}`}
-                    sx={{
-                      bgcolor:
-                        idx % 2 === 1 ? (t) => alpha(t.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.035) : 'transparent',
-                    }}
-                  >
-                    <TableCell sx={{ whiteSpace: 'nowrap', width: 136, minWidth: 136 }}>{row.dateLabel}</TableCell>
-                    <TableCell>{particulars}</TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{fuel}</TableCell>
-                    <TableCell align="right">{ledgerFuelFmt.litresDisplay(s)}</TableCell>
-                    <TableCell align="right">{ledgerFuelFmt.rateDisplay(s)}</TableCell>
-                    <TableCell align="right">{row.debitRupees.toFixed(2)}</TableCell>
-                    <TableCell align="right">—</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>
-                      {row.balanceAfter.toFixed(2)}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {ledgerRows.length === 0 && (
+          <TableContainer component={Paper} variant="outlined" sx={creditSheetWrapSx}>
+            <Table size="small" aria-label={`Credit ledger for ${partyName}`} sx={creditSheetTableSx}>
+              <colgroup>
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+              </colgroup>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={8}>
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                      No ledger movements yet — add a fuel credit sale above to start this account.
-                    </Typography>
+                  <TableCell sx={creditSheetHeaderCellSx}>Date</TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx}>Particulars</TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx}>Fuel</TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx} align="right">
+                    Litres
+                  </TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx} align="right">
+                    ₹ / L
+                  </TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx} align="right">
+                    Debit ₹
+                  </TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx} align="right">
+                    Credit ₹
+                  </TableCell>
+                  <TableCell sx={{ ...creditSheetHeaderCellSx, fontWeight: 700 }} align="right">
+                    Balance ₹
                   </TableCell>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </ResponsiveTableContainer>
+              </TableHead>
+              <TableBody>
+                {ledgerRows.map((row, idx) => {
+                  const stripe =
+                    idx % 2 === 1
+                      ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.035)
+                      : 'transparent';
+                  if (row.kind === 'broughtForward') {
+                    return (
+                      <TableRow key="bf" sx={{ bgcolor: stripe }}>
+                        <TableCell sx={creditSheetBodyCellSx}>—</TableCell>
+                        <TableCell sx={creditSheetBodyCellSx} colSpan={4}>
+                          Brought forward (before entries below)
+                        </TableCell>
+                        <TableCell sx={creditSheetBodyCellSx} align="right">
+                          —
+                        </TableCell>
+                        <TableCell sx={creditSheetBodyCellSx} align="right">
+                          —
+                        </TableCell>
+                        <TableCell sx={{ ...creditSheetBodyCellSx, fontWeight: 700 }} align="right">
+                          {row.balanceAfter.toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  if (row.kind === 'payment') {
+                    return (
+                      <TableRow key={`pay-${row.id}`} sx={{ bgcolor: stripe }}>
+                        <TableCell sx={{ ...creditSheetBodyCellSx, whiteSpace: 'nowrap' }}>{row.dateLabel}</TableCell>
+                        <TableCell sx={{ ...creditSheetBodyCellSx, overflowWrap: 'anywhere' }}>
+                          Payment · {creditPaymentModeLabel(row.mode)}
+                        </TableCell>
+                        <TableCell sx={creditSheetBodyCellSx}>—</TableCell>
+                        <TableCell sx={creditSheetBodyCellSx} align="right">
+                          —
+                        </TableCell>
+                        <TableCell sx={creditSheetBodyCellSx} align="right">
+                          —
+                        </TableCell>
+                        <TableCell sx={creditSheetBodyCellSx} align="right">
+                          —
+                        </TableCell>
+                        <TableCell
+                          sx={{ ...creditSheetBodyCellSx, fontVariantNumeric: 'tabular-nums' }}
+                          align="right"
+                        >
+                          {row.creditRupees.toFixed(2)}
+                        </TableCell>
+                        <TableCell
+                          sx={{ ...creditSheetBodyCellSx, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
+                          align="right"
+                        >
+                          {row.balanceAfter.toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  const s = row.sale;
+                  return (
+                    <TableRow key={`sale-${row.id}`} sx={{ bgcolor: stripe }}>
+                      <TableCell sx={{ ...creditSheetBodyCellSx, whiteSpace: 'nowrap' }}>{row.dateLabel}</TableCell>
+                      <TableCell sx={{ ...creditSheetBodyCellSx, overflowWrap: 'anywhere' }}>
+                        {particularsForLedgerCreditSale(s)}
+                      </TableCell>
+                      <TableCell sx={{ ...creditSheetBodyCellSx, whiteSpace: 'nowrap' }}>
+                        {ledgerFuelFmt.fuelUpper(s)}
+                      </TableCell>
+                      <TableCell
+                        sx={{ ...creditSheetBodyCellSx, fontVariantNumeric: 'tabular-nums' }}
+                        align="right"
+                      >
+                        {ledgerFuelFmt.litresDisplay(s)}
+                      </TableCell>
+                      <TableCell
+                        sx={{ ...creditSheetBodyCellSx, fontVariantNumeric: 'tabular-nums' }}
+                        align="right"
+                      >
+                        {ledgerFuelFmt.rateDisplay(s)}
+                      </TableCell>
+                      <TableCell
+                        sx={{ ...creditSheetBodyCellSx, fontVariantNumeric: 'tabular-nums' }}
+                        align="right"
+                      >
+                        {row.debitRupees.toFixed(2)}
+                      </TableCell>
+                      <TableCell sx={creditSheetBodyCellSx} align="right">
+                        —
+                      </TableCell>
+                      <TableCell
+                        sx={{ ...creditSheetBodyCellSx, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
+                        align="right"
+                      >
+                        {row.balanceAfter.toFixed(2)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {ledgerRows.length === 0 && (
+                  <TableRow>
+                    <TableCell sx={creditSheetBodyCellSx} colSpan={8}>
+                      <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+                        No ledger movements yet — add a fuel credit sale above to start this account.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
       </Paper>
     </Stack>
   );

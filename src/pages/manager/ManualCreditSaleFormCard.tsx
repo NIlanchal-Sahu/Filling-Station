@@ -24,7 +24,7 @@ import { useSearchParams } from 'react-router-dom';
 import { createManualCreditSale } from '@/services/creditSalesService';
 import { listFuelTypes } from '@/services/fuelTypesService';
 import { requireMin } from '@/utils/validation';
-import { creditSheetBodyCellSx, creditSheetHeaderCellSx } from '@/pages/manager/manualCreditSaleFormStyles';
+import { creditSheetBodyCellSx, creditSheetHeaderCellSx, creditSheetTableSx, creditSheetWrapSx } from '@/pages/manager/manualCreditSaleFormStyles';
 import {
   assertEntryDateAllowed,
   clampEntryDateForRole,
@@ -215,27 +215,32 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
             {fuelsErr}
           </Alert>
         )}
-        <TableContainer
-          component={Paper}
-          variant="outlined"
-          sx={{ maxWidth: '100%', overflowX: 'auto', borderRadius: 1.5 }}
-        >
-          <Table size="small" sx={{ minWidth: 720, borderCollapse: 'collapse' }}>
+        <TableContainer component={Paper} variant="outlined" sx={creditSheetWrapSx}>
+          <Table size="small" sx={creditSheetTableSx}>
+            <colgroup>
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '16%' }} />
+            </colgroup>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 148 }}>Date</TableCell>
-                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 140 }}>Party</TableCell>
-                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 140 }}>Fuel</TableCell>
-                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 72 }} align="right">
+                <TableCell sx={creditSheetHeaderCellSx}>Date</TableCell>
+                <TableCell sx={creditSheetHeaderCellSx}>Party</TableCell>
+                <TableCell sx={creditSheetHeaderCellSx}>Fuel</TableCell>
+                <TableCell sx={creditSheetHeaderCellSx} align="right">
                   Litres
                 </TableCell>
-                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 88 }} align="right">
+                <TableCell sx={creditSheetHeaderCellSx} align="right">
                   ₹ / L
                 </TableCell>
-                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 96 }} align="right">
+                <TableCell sx={creditSheetHeaderCellSx} align="right">
                   Amount
                 </TableCell>
-                <TableCell sx={{ ...creditSheetHeaderCellSx, minWidth: 88 }} />
+                <TableCell sx={creditSheetHeaderCellSx} />
               </TableRow>
             </TableHead>
             <TableBody>
@@ -265,9 +270,7 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
                       onChange={(ev) => props.onCustomerIdChange(ev.target.value)}
                       size="small"
                       fullWidth
-                      label="Party"
                       disabled={partyDisabled}
-                      slotProps={{ inputLabel: { shrink: true } }}
                     >
                       {props.customers.map((cust) => (
                         <MenuItem key={cust.id} value={cust.id}>
@@ -285,8 +288,6 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
                     size="small"
                     fullWidth
                     disabled={!fuels.length}
-                    label="Fuel"
-                    slotProps={{ inputLabel: { shrink: !!fuelTypeId } }}
                   >
                     {fuels.map((f) => (
                       <MenuItem key={f.id} value={f.id}>

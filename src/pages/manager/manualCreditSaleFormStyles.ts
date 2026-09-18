@@ -13,5 +13,19 @@ export const creditSheetHeaderCellSx = {
 export const creditSheetBodyCellSx = {
   border: '1px solid',
   borderColor: 'divider',
-  verticalAlign: 'top' as const,
+  verticalAlign: 'middle' as const,
+};
+
+export const creditSheetTableSx = {
+  width: '100%',
+  tableLayout: 'fixed' as const,
+  borderCollapse: 'collapse' as const,
+};
+
+export const creditSheetWrapSx = {
+  width: '100%',
+  maxWidth: '100%',
+  minWidth: 0,
+  overflow: 'hidden',
+  borderRadius: 1.5,
 };
