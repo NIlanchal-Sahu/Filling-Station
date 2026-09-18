@@ -1184,6 +1184,53 @@ export async function demoCreateManualCreditSale(input: {
   return id;
 }
 
+export async function demoDeleteCreditSale(id: string): Promise<void> {
+  ensureLoaded();
+  const s = row.creditSales[id];
+  if (!s) {
+    throw new Error('Credit sale not found.');
+  }
+  await bumpCustomerBalance(s.customerId, -s.amount);
+  delete row.creditSales[id];
+  persist();
+}
+
+export async function demoUpdateCreditSale(
+  id: string,
+  input: {
+    customerId: string;
+    date: Date;
+    fuelTypeId: string;
+    liters: number;
+    rateAtSale: number;
+    amount: number;
+  },
+): Promise<void> {
+  ensureLoaded();
+  const s = row.creditSales[id];
+  if (!s) {
+    throw new Error('Credit sale not found.');
+  }
+  const prevCustomer = s.customerId;
+  const prevAmount = s.amount;
+  const shiftLockedDate = Boolean(s.shiftId && s.shiftId !== '__mgr_credit__');
+  s.customerId = input.customerId;
+  s.amount = input.amount;
+  s.fuelTypeId = input.fuelTypeId;
+  s.liters = input.liters;
+  s.rateAtSale = input.rateAtSale;
+  if (!shiftLockedDate) {
+    s.dateMs = input.date.getTime();
+  }
+  if (prevCustomer === input.customerId) {
+    await bumpCustomerBalance(prevCustomer, input.amount - prevAmount);
+  } else {
+    await bumpCustomerBalance(prevCustomer, -prevAmount);
+    await bumpCustomerBalance(input.customerId, input.amount);
+  }
+  persist();
+}
+
 export async function demoCreateReconciliationWithClose(input: {
   shiftId: string;
   operatorId: string;

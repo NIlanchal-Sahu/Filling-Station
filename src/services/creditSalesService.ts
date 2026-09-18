@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -17,9 +18,11 @@ import { COLLECTIONS, getDb } from '@/lib/firebase';
 import {
   demoCreateCreditSalesForReconciliation,
   demoCreateManualCreditSale,
+  demoDeleteCreditSale,
   demoListAllCreditSales,
   demoListSalesForCustomer,
   demoReplaceCreditSalesForShift,
+  demoUpdateCreditSale,
 } from '@/localDemo/demoBackend';
 import { getShift, shiftPumpDayIso } from '@/services/shiftsService';
 
@@ -195,6 +198,72 @@ export async function createManualCreditSale(input: {
   });
   await bumpCustomerBalance(input.customerId, amount);
   return r.id;
+}
+
+export async function deleteCreditSale(id: string): Promise<void> {
+  if (LOCAL_DEMO) {
+    return demoDeleteCreditSale(id);
+  }
+  const ref = doc(getDb(), COLLECTIONS.creditSales, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    throw new Error('Credit sale not found.');
+  }
+  const data = snap.data();
+  const customerId = String(data.customerId ?? '');
+  const amount = Number(data.amount ?? 0);
+  await deleteDoc(ref);
+  if (customerId && amount) {
+    await bumpCustomerBalance(customerId, -amount);
+  }
+}
+
+export async function updateCreditSale(
+  id: string,
+  input: {
+    customerId: string;
+    date: Date;
+    fuelTypeId: string;
+    liters: number;
+    rateAtSale: number;
+  },
+): Promise<void> {
+  const amount = roundMoney2(input.liters * input.rateAtSale);
+  if (amount <= 0 || input.liters <= 0 || input.rateAtSale < 0) {
+    throw new Error('Liters and rate must produce a positive amount.');
+  }
+  if (LOCAL_DEMO) {
+    return demoUpdateCreditSale(id, { ...input, amount });
+  }
+  const ref = doc(getDb(), COLLECTIONS.creditSales, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    throw new Error('Credit sale not found.');
+  }
+  const prev = snap.data();
+  const prevCustomer = String(prev.customerId ?? '');
+  const prevAmount = Number(prev.amount ?? 0);
+  const shiftId = String(prev.shiftId ?? '');
+  const shiftLockedDate = Boolean(shiftId && shiftId !== MANAGER_CREDIT_SHIFT_ID);
+  await updateDoc(ref, {
+    customerId: input.customerId,
+    amount,
+    fuelTypeId: input.fuelTypeId,
+    liters: input.liters,
+    rateAtSale: roundMoney2(input.rateAtSale),
+    ...(shiftLockedDate ? {} : { date: Timestamp.fromDate(input.date) }),
+  });
+  if (prevCustomer === input.customerId) {
+    const delta = amount - prevAmount;
+    if (delta !== 0 && prevCustomer) {
+      await bumpCustomerBalance(prevCustomer, delta);
+    }
+  } else {
+    if (prevCustomer && prevAmount) {
+      await bumpCustomerBalance(prevCustomer, -prevAmount);
+    }
+    await bumpCustomerBalance(input.customerId, amount);
+  }
 }
 
 export async function listSalesForCustomer(customerId: string): Promise<CreditSale[]> {

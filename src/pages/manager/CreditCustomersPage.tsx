@@ -9,9 +9,15 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControlLabel,
+  IconButton,
   InputAdornment,
+  MenuItem,
   Paper,
   Stack,
   Switch,
@@ -23,6 +29,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import GroupOutlinedIcon from '@mui/icons-material/GroupOutlined';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
@@ -31,12 +39,17 @@ import TrendingFlatOutlinedIcon from '@mui/icons-material/TrendingFlatOutlined';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { listCreditCustomers, createCustomer, updateCustomer } from '@/services/creditCustomersService';
-import { listAllCreditSales } from '@/services/creditSalesService';
+import {
+  deleteCreditSale,
+  listAllCreditSales,
+  MANAGER_CREDIT_SHIFT_ID,
+  updateCreditSale,
+} from '@/services/creditSalesService';
 import { listFuelTypes } from '@/services/fuelTypesService';
-import type { CreditCustomer } from '@/types/entities';
+import type { CreditCustomer, CreditSale } from '@/types/entities';
 import type { CustomerFuelCreditTotals } from '@/pages/manager/creditFuelTotals';
 import { fuelCreditTotalsByCustomerId, describeFuelCreditTotals } from '@/pages/manager/creditFuelTotals';
-import { requireNonEmpty } from '@/utils/validation';
+import { requireMin, requireNonEmpty } from '@/utils/validation';
 import { downloadCsv } from '@/utils/csvExport';
 import { ManualCreditSaleFormCard } from '@/pages/manager/ManualCreditSaleFormCard';
 import { trimNumberDisplay } from '@/pages/manager/creditRegisterFormatters';
@@ -44,7 +57,13 @@ import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
+import { useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import {
+  assertEntryDateAllowed,
+  clampEntryDateForRole,
+  dateInputBoundsForRole,
+} from '@/utils/dateEntryPolicy';
 
 function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -52,8 +71,13 @@ function fmtRs(n: number): string {
 
 export function CreditCustomersPage() {
   const nav = useNavigate();
-  const { readOnlyOps } = usePermissions();
+  const { profile } = useAuth();
+  const { readOnlyOps, role } = usePermissions();
+  const isAdmin = role === 'admin';
+  const dateBounds = dateInputBoundsForRole(profile?.role);
   const [list, setList] = useState<CreditCustomer[]>([]);
+  const [parties, setParties] = useState<CreditCustomer[]>([]);
+  const [fuels, setFuels] = useState<Array<{ id: string; name: string }>>([]);
   const [q, setQ] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -63,6 +87,14 @@ export function CreditCustomersPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [creditSaleCustomerId, setCreditSaleCustomerId] = useState('');
+  const [editSale, setEditSale] = useState<CreditSale | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editCustomerId, setEditCustomerId] = useState('');
+  const [editFuelTypeId, setEditFuelTypeId] = useState('');
+  const [editLiters, setEditLiters] = useState('');
+  const [editRate, setEditRate] = useState('');
+  const [editErr, setEditErr] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   type CreditRegisterRow = {
     id: string;
@@ -73,6 +105,7 @@ export function CreditCustomersPage() {
     qty: string;
     rate: string;
     amount: string;
+    sale: CreditSale;
   };
   const [registerRows, setRegisterRows] = useState<CreditRegisterRow[]>([]);
   const [fuelTotalsByCustomerId, setFuelTotalsByCustomerId] = useState<
@@ -90,6 +123,8 @@ export function CreditCustomersPage() {
         listFuelTypes(),
       ]);
       setList(rows);
+      setParties(allCustomers);
+      setFuels(fuelTypes.map((f) => ({ id: f.id, name: f.name })));
 
       const nameById = new Map(allCustomers.map((c) => [c.id, c.name]));
       const fuelNameById = new Map(fuelTypes.map((f) => [f.id, f.name.trim().toUpperCase()]));
@@ -122,6 +157,7 @@ export function CreditCustomersPage() {
             qty,
             rate,
             amount,
+            sale: s,
           };
         }),
       );
@@ -199,6 +235,92 @@ export function CreditCustomersPage() {
       setFormError(e instanceof Error ? e.message : 'Create failed');
     } finally {
       setSaving(false);
+    }
+  }
+
+  const editAmount = useMemo(() => {
+    const lt = Number(editLiters);
+    const rt = Number(editRate);
+    if (!Number.isFinite(lt) || !Number.isFinite(rt)) {
+      return 0;
+    }
+    return Math.round((lt * rt + Number.EPSILON) * 100) / 100;
+  }, [editLiters, editRate]);
+
+  const editShiftLocked = Boolean(
+    editSale?.shiftId && editSale.shiftId !== MANAGER_CREDIT_SHIFT_ID,
+  );
+
+  function openEdit(sale: CreditSale) {
+    setEditSale(sale);
+    setEditDate(clampEntryDateForRole(profile?.role, format(sale.date.toDate(), 'yyyy-MM-dd')));
+    setEditCustomerId(sale.customerId);
+    setEditFuelTypeId(sale.fuelTypeId ?? fuels[0]?.id ?? '');
+    setEditLiters(sale.liters != null ? String(sale.liters) : '');
+    setEditRate(sale.rateAtSale != null ? String(sale.rateAtSale) : '');
+    setEditErr(null);
+  }
+
+  function closeEdit() {
+    setEditSale(null);
+    setEditErr(null);
+  }
+
+  async function submitEdit() {
+    if (!editSale || !profile) {
+      return;
+    }
+    setEditErr(null);
+    const partyErr = requireNonEmpty(editCustomerId, 'Party');
+    const ltErr = requireMin(editLiters, 0, 'Litres');
+    const rtErr = requireMin(editRate, 0, 'Rate');
+    if (partyErr || ltErr || rtErr || !editFuelTypeId) {
+      setEditErr(partyErr || ltErr || rtErr || 'Choose a fuel type.');
+      return;
+    }
+    const ltVal = Number(editLiters);
+    const rtVal = Number(editRate);
+    if (!(ltVal > 0) || !(rtVal > 0) || editAmount <= 0) {
+      setEditErr('Litres and rate must produce a positive amount.');
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const day = clampEntryDateForRole(profile.role, editDate);
+      assertEntryDateAllowed(profile.role, day);
+      await updateCreditSale(editSale.id, {
+        customerId: editCustomerId,
+        date: new Date(`${day}T12:00:00`),
+        fuelTypeId: editFuelTypeId,
+        liters: ltVal,
+        rateAtSale: rtVal,
+      });
+      closeEdit();
+      await load();
+    } catch (e) {
+      setEditErr(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function handleDeleteSale(row: CreditRegisterRow) {
+    const shiftLine = row.sale.shiftId && row.sale.shiftId !== MANAGER_CREDIT_SHIFT_ID;
+    const extra = shiftLine
+      ? '\n\nThis line was posted from a shift. Deleting it does not change that shift recon.'
+      : '';
+    if (
+      !window.confirm(
+        `Delete this credit sale?\n${row.dateLabel} · ${row.party} · ${row.fuel} · ₹${row.amount}${extra}`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteCreditSale(row.id);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Delete failed');
     }
   }
 
@@ -479,9 +601,14 @@ export function CreditCustomersPage() {
                     <TableCell align="right" sx={{ width: { md: '14%' }, whiteSpace: 'nowrap' }}>
                       ₹/L
                     </TableCell>
-                    <TableCell align="right" sx={{ width: { md: '14%' }, whiteSpace: 'nowrap' }}>
+                    <TableCell align="right" sx={{ width: { md: isAdmin ? '12%' : '14%' }, whiteSpace: 'nowrap' }}>
                       Amount
                     </TableCell>
+                    {isAdmin ? (
+                      <TableCell align="right" sx={{ width: { md: '10%' }, whiteSpace: 'nowrap' }}>
+                        Admin
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -512,11 +639,30 @@ export function CreditCustomersPage() {
                       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                         {r.amount}
                       </TableCell>
+                      {isAdmin ? (
+                        <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                          <IconButton
+                            size="small"
+                            aria-label={`Edit credit sale for ${r.party}`}
+                            onClick={() => openEdit(r.sale)}
+                          >
+                            <EditOutlinedIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            aria-label={`Delete credit sale for ${r.party}`}
+                            onClick={() => void handleDeleteSale(r)}
+                          >
+                            <DeleteOutlineOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      ) : null}
                     </TableRow>
                   ))}
                   {registerFiltered.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6}>
+                      <TableCell colSpan={isAdmin ? 7 : 6}>
                         <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                           No credit sales match this view — post a sale above or widen your search.
                         </Typography>
@@ -627,6 +773,87 @@ export function CreditCustomersPage() {
           </Box>
         </Stack>
       )}
+
+      <Dialog open={Boolean(editSale)} onClose={closeEdit} fullWidth maxWidth="sm">
+        <DialogTitle>Edit credit sale</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {editShiftLocked ? (
+              <Alert severity="info">
+                Date follows the shift pump day. Party, fuel, litres, and rate can still be corrected.
+              </Alert>
+            ) : null}
+            <TextField
+              type="date"
+              label="Date"
+              value={editDate}
+              onChange={(e) => setEditDate(clampEntryDateForRole(profile?.role, e.target.value))}
+              size="small"
+              disabled={editShiftLocked}
+              slotProps={{
+                inputLabel: { shrink: true },
+                htmlInput: { min: dateBounds.min, max: dateBounds.max },
+              }}
+            />
+            <TextField
+              select
+              label="Party"
+              value={editCustomerId}
+              onChange={(e) => setEditCustomerId(e.target.value)}
+              size="small"
+              fullWidth
+            >
+              {parties.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Fuel"
+              value={editFuelTypeId}
+              onChange={(e) => setEditFuelTypeId(e.target.value)}
+              size="small"
+              fullWidth
+            >
+              {fuels.map((f) => (
+                <MenuItem key={f.id} value={f.id}>
+                  {f.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Litres"
+              type="number"
+              value={editLiters}
+              onChange={(e) => setEditLiters(e.target.value)}
+              size="small"
+              inputProps={{ min: 0, step: '0.001' }}
+            />
+            <TextField
+              label="₹ / L"
+              type="number"
+              value={editRate}
+              onChange={(e) => setEditRate(e.target.value)}
+              size="small"
+              inputProps={{ min: 0, step: '0.01' }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+              Amount ₹{editAmount.toFixed(2)}
+            </Typography>
+            {editErr ? <Alert severity="error">{editErr}</Alert> : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeEdit} disabled={editSaving}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => void submitEdit()} disabled={editSaving}>
+            {editSaving ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
