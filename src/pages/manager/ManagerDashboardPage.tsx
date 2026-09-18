@@ -110,6 +110,7 @@ export function ManagerDashboardPage() {
       </DashboardSection>
 
       <DashboardSection
+        id="shift-performance"
         title="Shift performance"
         subtitle="Compare Shift 1 vs Shift 2 meter sales for the selected day."
         contentReady={!kpisLoading}

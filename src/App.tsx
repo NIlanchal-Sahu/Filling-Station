@@ -17,6 +17,12 @@ const AdminSettingsPage = lazy(() =>
 const OwnerDashboardPage = lazy(() =>
   import('@/pages/owner/OwnerDashboardPage').then((m) => ({ default: m.OwnerDashboardPage })),
 );
+const OwnerShiftSalesPage = lazy(() =>
+  import('@/pages/owner/OwnerShiftSalesPage').then((m) => ({ default: m.OwnerShiftSalesPage })),
+);
+const ShiftActivityPage = lazy(() =>
+  import('@/pages/manager/ShiftActivityPage').then((m) => ({ default: m.ShiftActivityPage })),
+);
 const OperatorDashboardPage = lazy(() =>
   import('@/pages/operator/OperatorDashboardPage').then((m) => ({ default: m.OperatorDashboardPage })),
 );
@@ -87,6 +93,8 @@ export default function App() {
 
           <Route element={<ProtectedRoute requireRole="owner" />}>
             <Route path="owner" element={<OwnerDashboardPage />} />
+            <Route path="owner/shift-sales" element={<OwnerShiftSalesPage />} />
+            <Route path="owner/shift-activity" element={<ShiftActivityPage />} />
           </Route>
 
           <Route element={<ProtectedRoute requireRole="admin" />}>
@@ -111,6 +119,7 @@ export default function App() {
               <Route path="fuel-stock/purchase" element={<FuelPurchasePage />} />
               <Route path="fuel-stock/:fuelTypeId" element={<FuelStockHistoryPage />} />
               <Route path="reports" element={<ReportsPage />} />
+              <Route path="shift-activity" element={<ShiftActivityPage />} />
               <Route path="reconciliations" element={<ReconciliationReviewPage />} />
               <Route path="lubricants" element={<LubricantPage />} />
             </Route>

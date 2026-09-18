@@ -1,4 +1,8 @@
 import { SHIFT_LABELS, type ShiftLabel } from '@/types/entities';
+import { withPumpDayQuery } from '@/utils/dateEntryPolicy';
+
+export const SHIFT_ACTIVITY_SLOTS = ['morning', 'evening', 'night'] as const;
+export type ShiftActivitySlot = (typeof SHIFT_ACTIVITY_SLOTS)[number];
 
 export type ShiftActivityStatus =
   | 'not_started'
@@ -57,6 +61,35 @@ export const SHIFT_SCHEDULE: ShiftScheduleMeta[] = [
 
 /** Primary day shifts shown in summary (morning + evening). */
 export const PRIMARY_SHIFT_LABELS: ShiftLabel[] = [SHIFT_LABELS[0], SHIFT_LABELS[1]];
+
+export function shiftActivitySlotForLabel(label: string): ShiftActivitySlot | null {
+  const trimmed = label.trim();
+  if (trimmed === SHIFT_LABELS[0]) return 'morning';
+  if (trimmed === SHIFT_LABELS[1]) return 'evening';
+  if (trimmed === SHIFT_LABELS[2]) return 'night';
+  return null;
+}
+
+export function shiftLabelForActivitySlot(slot: ShiftActivitySlot): ShiftLabel {
+  if (slot === 'evening') return SHIFT_LABELS[1];
+  if (slot === 'night') return SHIFT_LABELS[2];
+  return SHIFT_LABELS[0];
+}
+
+export function parseShiftActivitySlot(raw: string | null | undefined): ShiftActivitySlot {
+  const s = raw?.trim().toLowerCase();
+  if (s === 'evening' || s === 'night' || s === 'morning') return s;
+  return 'morning';
+}
+
+export function shiftActivityPath(opts: {
+  owner: boolean;
+  pumpDayIso: string;
+  slot: ShiftActivitySlot;
+}): string {
+  const base = opts.owner ? '/owner/shift-activity' : '/manager/shift-activity';
+  return withPumpDayQuery(`${base}?slot=${opts.slot}`, opts.pumpDayIso);
+}
 
 export function shiftScheduleForLabel(label: string): ShiftScheduleMeta | undefined {
   return SHIFT_SCHEDULE.find((s) => s.label === label.trim());

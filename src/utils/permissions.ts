@@ -63,6 +63,7 @@ const OWNER_READ_PATH_PREFIXES = [
   '/owner',
   '/manager/reports',
   '/manager/reconciliations',
+  '/manager/shift-activity',
   '/manager/fuel-stock',
   '/manager/fuel',
   '/manager/credit',

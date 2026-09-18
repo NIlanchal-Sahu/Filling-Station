@@ -7,28 +7,55 @@ import { listShiftsForCashSheetMerge, shiftPumpDayIso } from '@/services/shiftsS
 import type { Shift, ShiftLabel } from '@/types/entities';
 import { SHIFT_LABELS } from '@/types/entities';
 import {
+  machineTag,
+  parseAttendantPosts,
+  postsFromNamesAndMachineLabel,
+} from '@/utils/attendantPosts';
+import { formatMachineNumbers } from '@/utils/machineDisplay';
+import {
+  attendantNameList,
   formatAttendantNames,
   formatClock12,
   formatDurationMinutes,
   PRIMARY_SHIFT_LABELS,
+  shiftActivitySlotForLabel,
+  shiftLabelForActivitySlot,
   shiftScheduleForLabel,
+  type ShiftActivitySlot,
   type ShiftActivityStatus,
   type ShiftScheduleMeta,
 } from '@/utils/shiftStatusDisplay';
 
-export type ShiftStatusRow = {
-  shiftLabel: ShiftLabel;
-  displayName: string;
-  shiftId: string | null;
-  attendant: string;
-  attendantMissing: boolean;
-  /** e.g. "M1" or "M1, M2" from nozzles assigned to this shift; "—" when none. */
+export type ShiftMachineHolder = {
+  name: string;
+  machineNumber: string;
   machineLabel: string;
   startTimeLabel: string;
   endTimeLabel: string;
   durationLabel: string;
+};
+
+export type ShiftStatusRow = {
+  slot: ShiftActivitySlot;
+  shiftLabel: ShiftLabel;
+  displayName: string;
+  shiftId: string | null;
+  /** Who started the shift; "—" when it has not been started. */
+  operatorName: string;
+  /** Pump staff recorded on this shift only (never the starter fallback). */
+  presentNames: string[];
+  attendant: string;
+  attendantMissing: boolean;
+  /** e.g. "M1" or "M1, M2" from nozzles assigned to this shift; "—" when none. */
+  machineLabel: string;
+  machineHolders: ShiftMachineHolder[];
+  startTimeLabel: string;
+  endTimeLabel: string;
+  durationLabel: string;
+  scheduledStartLabel: string;
+  scheduledEndLabel: string;
+  scheduledDurationLabel: string;
   status: ShiftActivityStatus;
-  detailPath: string | null;
   minutesSinceEnd: number | null;
 };
 
@@ -70,11 +97,26 @@ function scheduledEndOnPumpDay(pumpDayIso: string, meta: ShiftScheduleMeta): Dat
   );
 }
 
+function shiftsForLabel(shifts: Shift[], label: ShiftLabel): Shift[] {
+  return shifts
+    .filter((s) => s.shiftLabel.trim() === label)
+    .sort((a, b) => a.startTime.toMillis() - b.startTime.toMillis());
+}
+
 function pickShiftForLabel(shifts: Shift[], label: ShiftLabel): Shift | undefined {
-  const matches = shifts.filter((s) => s.shiftLabel.trim() === label);
+  const matches = shiftsForLabel(shifts, label);
   if (matches.length === 0) return undefined;
   const byNewest = [...matches].sort((a, b) => b.startTime.toMillis() - a.startTime.toMillis());
   return byNewest.find((s) => s.status === 'open') ?? byNewest[0];
+}
+
+function pushUniqueName(out: string[], seen: Set<string>, raw: string): void {
+  const name = raw.trim().replace(/\s+/g, ' ');
+  if (!name) return;
+  const key = name.toLowerCase();
+  if (seen.has(key)) return;
+  seen.add(key);
+  out.push(name);
 }
 
 function formatShiftTime(ts: Date): string {
@@ -118,13 +160,142 @@ async function resolveActivityStatus(
   return { status: 'reconciliation_pending', minutesSinceEnd };
 }
 
-function detailPathFor(shift: Shift | undefined, status: ShiftActivityStatus): string | null {
-  if (!shift) return null;
-  if (status === 'active') {
-    if (!shift.readingsCompleteAt) return `/shifts/${shift.id}/meters`;
-    return `/shifts/${shift.id}/reconcile`;
+function namesRecordedOnShift(shift: Shift): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const n of attendantNameList(shift.pumpAttendants)) {
+    pushUniqueName(out, seen, n);
   }
-  return `/shifts/${shift.id}/reconcile?edit=1`;
+  for (const post of parseAttendantPosts(shift.attendantPosts)) {
+    pushUniqueName(out, seen, post.name);
+  }
+  return out;
+}
+
+async function presentNamesFromShifts(shifts: Shift[]): Promise<string[]> {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const shift of shifts) {
+    const recorded = namesRecordedOnShift(shift);
+    if (recorded.length > 0) {
+      for (const n of recorded) pushUniqueName(out, seen, n);
+      continue;
+    }
+    const op = await getUser(shift.operatorId);
+    pushUniqueName(out, seen, op?.name?.trim() || shift.operatorId);
+  }
+  return out;
+}
+
+function clockTimesForShift(shift: Shift, now: Date): Pick<ShiftMachineHolder, 'startTimeLabel' | 'endTimeLabel' | 'durationLabel'> {
+  const startAt = shift.startTime.toDate();
+  const endAt = shift.endTime?.toDate() ?? (shift.status === 'open' ? now : startAt);
+  return {
+    startTimeLabel: formatShiftTime(startAt),
+    endTimeLabel: shift.endTime ? formatShiftTime(shift.endTime.toDate()) : '—',
+    durationLabel: formatDurationMinutes(differenceInMinutes(endAt, startAt)),
+  };
+}
+
+function withShiftTimes(holders: ShiftMachineHolder[], shift: Shift, now: Date): ShiftMachineHolder[] {
+  const times = clockTimesForShift(shift, now);
+  return holders.map((h) => ({ ...h, ...times }));
+}
+
+function machineHoldersForShift(shift: Shift | undefined, machineLabel: string): ShiftMachineHolder[] {
+  if (!shift) return [];
+  const posts = parseAttendantPosts(shift.attendantPosts);
+  const names = namesRecordedOnShift(shift);
+  const resolved =
+    posts.length > 0 ? posts : postsFromNamesAndMachineLabel(names, machineLabel);
+  return resolved.map((post) => ({
+    name: post.name,
+    machineNumber: post.machineNumber,
+    machineLabel: machineTag(post.machineNumber),
+    startTimeLabel: '—',
+    endTimeLabel: '—',
+    durationLabel: '—',
+  }));
+}
+
+function uniqueHolders(holders: ShiftMachineHolder[]): ShiftMachineHolder[] {
+  const seen = new Set<string>();
+  const out: ShiftMachineHolder[] = [];
+  for (const h of holders) {
+    const key = `${h.name.toLowerCase()}|${h.machineNumber}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(h);
+  }
+  return out;
+}
+
+async function mergedMachinesForShifts(
+  shifts: Shift[],
+  now: Date,
+): Promise<{ machineLabel: string; machineHolders: ShiftMachineHolder[] }> {
+  const holders: ShiftMachineHolder[] = [];
+  const machineNums: string[] = [];
+  for (const shift of shifts) {
+    const label = await getMachineLabelForShift(shift.id);
+    if (label !== '—') {
+      machineNums.push(
+        ...label
+          .split(/[,;]+/)
+          .map((x) => x.trim().replace(/^M/i, ''))
+          .filter(Boolean),
+      );
+    }
+    let list = machineHoldersForShift(shift, label);
+    if (list.length === 0 && label !== '—') {
+      const recorded = namesRecordedOnShift(shift);
+      let who = recorded;
+      if (who.length === 0) {
+        const op = await getUser(shift.operatorId);
+        const opName = op?.name?.trim() || shift.operatorId;
+        if (opName) who = [opName];
+      }
+      list = machineHoldersForShift({ ...shift, pumpAttendants: who.join(', ') }, label);
+    }
+    holders.push(...withShiftTimes(list, shift, now));
+  }
+  return {
+    machineLabel: formatMachineNumbers(machineNums),
+    machineHolders: uniqueHolders(holders),
+  };
+}
+
+async function resolveSlotStatus(
+  slotShifts: Shift[],
+  label: ShiftLabel,
+  meta: ShiftScheduleMeta,
+  pumpDayIso: string,
+  now: Date,
+  isToday: boolean,
+): Promise<{ status: ShiftActivityStatus; minutesSinceEnd: number | null; primary: Shift | undefined }> {
+  const primary = pickShiftForLabel(slotShifts, label);
+  if (slotShifts.length === 0) {
+    return { ...(await resolveActivityStatus(undefined, meta, pumpDayIso, now, isToday)), primary: undefined };
+  }
+  if (slotShifts.some((s) => s.status === 'open')) {
+    return { status: 'active', minutesSinceEnd: null, primary };
+  }
+  let pending = false;
+  let minutesSinceEnd: number | null = null;
+  for (const shift of slotShifts) {
+    const next = await resolveActivityStatus(shift, meta, pumpDayIso, now, isToday);
+    if (next.status === 'reconciliation_pending') {
+      pending = true;
+      if (next.minutesSinceEnd != null) {
+        minutesSinceEnd =
+          minutesSinceEnd == null ? next.minutesSinceEnd : Math.min(minutesSinceEnd, next.minutesSinceEnd);
+      }
+    }
+  }
+  if (pending) {
+    return { status: 'reconciliation_pending', minutesSinceEnd, primary };
+  }
+  return { status: 'completed', minutesSinceEnd: null, primary };
 }
 
 async function buildRow(
@@ -135,49 +306,80 @@ async function buildRow(
   isToday: boolean,
 ): Promise<ShiftStatusRow> {
   const meta = shiftScheduleForLabel(label)!;
-  const shift = pickShiftForLabel(shifts, label);
-  const { status, minutesSinceEnd } = await resolveActivityStatus(shift, meta, pumpDayIso, now, isToday);
+  const slotShifts = shiftsForLabel(shifts, label);
+  const liveShifts = slotShifts.filter((s) => s.status === 'open');
+  const { status, minutesSinceEnd, primary: shift } = await resolveSlotStatus(
+    slotShifts,
+    label,
+    meta,
+    pumpDayIso,
+    now,
+    isToday,
+  );
 
-  let attendant = '—';
-  if (shift?.pumpAttendants?.trim()) {
-    attendant = formatAttendantNames(shift.pumpAttendants);
-  } else if (shift) {
+  const presentNames = await presentNamesFromShifts(liveShifts);
+  const attendant = presentNames.length > 0 ? formatAttendantNames(presentNames.join(', ')) : '—';
+
+  let operatorName = '—';
+  if (shift) {
     const op = await getUser(shift.operatorId);
-    attendant = op?.name ?? shift.operatorId;
+    operatorName = op?.name?.trim() || shift.operatorId;
   }
 
   const schedStart = scheduledStartOnPumpDay(pumpDayIso, meta);
   const schedEnd = scheduledEndOnPumpDay(pumpDayIso, meta);
 
-  const startTimeLabel = shift
-    ? formatShiftTime(shift.startTime.toDate())
+  const earliest = slotShifts[0];
+  const startTimeLabel = earliest
+    ? formatShiftTime(earliest.startTime.toDate())
     : formatClock12(meta.startHour, meta.startMinute);
-  const endTimeLabel = shift?.endTime
-    ? formatShiftTime(shift.endTime.toDate())
+  const ended = [...slotShifts].reverse().find((s) => s.endTime);
+  const endTimeLabel = ended?.endTime
+    ? formatShiftTime(ended.endTime.toDate())
     : formatClock12(meta.endHour, meta.endMinute);
 
   let durationLabel = formatDurationMinutes(differenceInMinutes(schedEnd, schedStart));
-  if (shift) {
-    const end = shift.endTime?.toDate() ?? (status === 'active' ? now : schedEnd);
-    durationLabel = formatDurationMinutes(differenceInMinutes(end, shift.startTime.toDate()));
+  if (earliest) {
+    const end = ended?.endTime?.toDate() ?? (status === 'active' ? now : schedEnd);
+    durationLabel = formatDurationMinutes(differenceInMinutes(end, earliest.startTime.toDate()));
   }
 
-  const machineLabel = shift ? await getMachineLabelForShift(shift.id) : '—';
+  const { machineLabel, machineHolders } = await mergedMachinesForShifts(liveShifts, now);
+  const slot = shiftActivitySlotForLabel(label) ?? 'morning';
+  const scheduledStartLabel = formatClock12(meta.startHour, meta.startMinute);
+  const scheduledEndLabel = formatClock12(meta.endHour, meta.endMinute);
+  const scheduledDurationLabel = formatDurationMinutes(differenceInMinutes(schedEnd, schedStart));
 
   return {
+    slot,
     shiftLabel: label,
     displayName: meta.displayName,
     shiftId: shift?.id ?? null,
+    operatorName,
+    presentNames,
     attendant,
-    attendantMissing: Boolean(shift && !shift.pumpAttendants?.trim()),
+    attendantMissing: liveShifts.length > 0 && presentNames.length === 0,
     machineLabel,
+    machineHolders,
     startTimeLabel,
     endTimeLabel,
     durationLabel,
+    scheduledStartLabel,
+    scheduledEndLabel,
+    scheduledDurationLabel,
     status,
-    detailPath: detailPathFor(shift, status),
     minutesSinceEnd,
   };
+}
+
+export async function getShiftActivityForSlot(
+  pumpDayIso: string,
+  slot: ShiftActivitySlot,
+  now = new Date(),
+): Promise<ShiftStatusRow> {
+  const summary = await getShiftStatusForPumpDay(pumpDayIso, now);
+  const label = shiftLabelForActivitySlot(slot);
+  return summary.rows.find((row) => row.shiftLabel === label) ?? summary.rows[0];
 }
 
 function buildAlerts(rows: ShiftStatusRow[], isToday: boolean): string[] {

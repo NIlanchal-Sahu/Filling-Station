@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   alpha,
   Alert,
@@ -41,6 +41,17 @@ import { listAllCreditPayments } from '@/services/creditPaymentsService';
 import { listExpensesInRange, listLedgerInRange } from '@/services/ledgerService';
 import { downloadCsv } from '@/utils/csvExport';
 import { parsePumpDayParam } from '@/utils/dateEntryPolicy';
+import {
+  buildExpenseReportRows,
+  expenseCategoryTotals,
+  expenseGrandTotal,
+  expenseRangeLabel,
+  EXPENSE_REPORT_FILTERS,
+  filterExpenseReportRows,
+  type ExpenseReportFilter,
+  type ExpenseReportRow,
+} from '@/utils/expenseReport';
+import { downloadExpenseReportCsv, downloadExpenseReportPdf } from '@/utils/expenseReportExport';
 import { getDailyFuelStockReport } from '@/services/fuelStockReconciliationService';
 import { getReconciliationForShift } from '@/services/reconciliationService';
 import {
@@ -87,13 +98,9 @@ export function ReportsPage() {
   const [creditRows, setCreditRows] = useState<
     { name: string; bal: number; sales: number; pay: number }[]
   >([]);
-  const [expRows, setExpRows] = useState<{
-    id: string;
-    date: string;
-    cat: string;
-    amt: number;
-  }[]>([]);
-  const [expTot, setExpTot] = useState<Record<string, number>>({});
+  const [expRows, setExpRows] = useState<ExpenseReportRow[]>([]);
+  const [expRan, setExpRan] = useState(false);
+  const [expFilter, setExpFilter] = useState<ExpenseReportFilter>('all');
   const [custFilter, setCustFilter] = useState('');
   const [attendanceRows, setAttendanceRows] = useState<PumpAttendantAttendanceRow[]>([]);
   const [stockRows, setStockRows] = useState<DailyFuelStockRow[]>([]);
@@ -102,9 +109,16 @@ export function ReportsPage() {
   const [collectionDailyRows, setCollectionDailyRows] = useState<CashBankCollectionDailyRow[]>([]);
   const [collectionShiftDetails, setCollectionShiftDetails] = useState<CashBankCollectionShiftDetailRow[]>([]);
 
+  const reportDeepLinkKey = useRef<string | null>(null);
+
   useEffect(() => {
-    if (searchParams.get('report') === 'collections') {
+    const report = searchParams.get('report');
+    if (report === 'collections') {
       setTab(7);
+    } else if (report === 'expenses') {
+      setTab(5);
+    } else if (report === 'meters') {
+      setTab(1);
     }
     const day = parsePumpDayParam(searchParams.get('day'));
     if (day) {
@@ -118,6 +132,14 @@ export function ReportsPage() {
       dailyPivot.some((r) => Math.abs(r.otherLiters) > 0.005 || Math.abs(r.otherAmount) > 0.005),
     [dailyPivot],
   );
+
+  const expVisible = useMemo(
+    () => filterExpenseReportRows(expRows, expFilter),
+    [expRows, expFilter],
+  );
+  const expChips = useMemo(() => expenseCategoryTotals(expVisible), [expVisible]);
+  const expTotal = useMemo(() => expenseGrandTotal(expVisible), [expVisible]);
+  const expRange = useMemo(() => expenseRangeLabel(from, to), [from, to]);
 
   async function run() {
     setErr(null);
@@ -194,18 +216,8 @@ export function ReportsPage() {
         setCreditRows(out);
       } else if (tab === 5) {
         const ex = await listExpensesInRange(a, b);
-        const t: Record<string, number> = {};
-        const r = ex.map((e) => {
-          t[e.category] = (t[e.category] ?? 0) + e.amount;
-          return {
-            id: e.id,
-            date: format(e.date.toDate(), 'yyyy-MM-dd'),
-            cat: e.category,
-            amt: e.amount,
-          };
-        });
-        setExpRows(r);
-        setExpTot(t);
+        setExpRows(buildExpenseReportRows(ex));
+        setExpRan(true);
       } else if (tab === 6) {
         setStockRows(await getDailyFuelStockReport(from, to));
       } else if (tab === 7) {
@@ -224,6 +236,44 @@ export function ReportsPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const report = searchParams.get('report');
+    const expectedTab = report === 'expenses' ? 5 : report === 'meters' ? 1 : null;
+    if (expectedTab == null || tab !== expectedTab) return;
+    const day = parsePumpDayParam(searchParams.get('day'));
+    if (day && (from !== day || to !== day)) return;
+    const key = searchParams.toString();
+    if (reportDeepLinkKey.current === key) return;
+    reportDeepLinkKey.current = key;
+
+    let cancelled = false;
+    void (async () => {
+      setErr(null);
+      setLoading(true);
+      try {
+        const a = new Date(`${from}T00:00:00`);
+        const b = new Date(`${to}T23:59:59.999`);
+        if (report === 'expenses') {
+          const ex = await listExpensesInRange(a, b);
+          if (cancelled) return;
+          setExpRows(buildExpenseReportRows(ex));
+          setExpRan(true);
+        } else if (report === 'meters') {
+          const rows = await getMeterRegisterRowsInRange(a, b);
+          if (cancelled) return;
+          setMeterRows(rows);
+        }
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : 'Report failed');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, tab, from, to]);
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
@@ -281,6 +331,23 @@ export function ReportsPage() {
               onChange={(e) => setCustFilter(e.target.value)}
               sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             />
+          )}
+          {tab === 5 && (
+            <TextField
+              select
+              size="small"
+              label="Category"
+              value={expFilter}
+              onChange={(e) => setExpFilter(e.target.value as ExpenseReportFilter)}
+              slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            >
+              {EXPENSE_REPORT_FILTERS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </TextField>
           )}
           {tab === 6 && (
             <TextField
@@ -768,44 +835,106 @@ export function ReportsPage() {
 
       {tab === 5 && (
         <Box>
-          <Typography variant="body2" gutterBottom>
-            Totals by category:
+          <Typography variant="subtitle1" gutterBottom>
+            Expenses
           </Typography>
-          {Object.keys(expTot).map((k) => (
-            <Typography key={k} variant="body2">
-              {k}: ₹{expTot[k]!.toFixed(2)}
+          {expRan && expVisible.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              No station expenses in this range.
             </Typography>
-          ))}
-          <Table size="small" sx={{ mt: 1 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Date</TableCell>
-                <TableCell>Category</TableCell>
-                <TableCell align="right">Amount</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {expRows.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>{r.date}</TableCell>
-                  <TableCell>{r.cat}</TableCell>
-                  <TableCell align="right">{r.amt.toFixed(2)}</TableCell>
-                </TableRow>
+          ) : null}
+          {expVisible.length > 0 ? (
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 1.5 }}>
+              {expChips.map((c) => (
+                <Chip
+                  key={c.key}
+                  size="small"
+                  variant="outlined"
+                  label={`${c.key}: ${fmtRupeesCell(c.amount)}`}
+                  sx={{ fontWeight: 600 }}
+                />
               ))}
-            </TableBody>
-          </Table>
-          <Button
-            size="small"
-            onClick={() =>
-              downloadCsv(
-                'expense_report.csv',
-                ['Date', 'Category', 'Amount'],
-                expRows.map((r) => [r.date, r.cat, r.amt]),
-              )
-            }
-          >
-            Export
-          </Button>
+              <Chip
+                size="small"
+                color="primary"
+                label={`Grand total: ${fmtRupeesCell(expTotal)}`}
+                sx={{ fontWeight: 700 }}
+              />
+            </Stack>
+          ) : null}
+          <Paper variant="outlined">
+            <ResponsiveTableContainer>
+              <Table
+                size="small"
+                sx={{
+                  borderCollapse: 'collapse',
+                  minWidth: 720,
+                  '& th, & td': { border: '1px solid', borderColor: 'divider' },
+                }}
+              >
+                <TableHead>
+                  <TableRow sx={{ bgcolor: (t) => alpha(t.palette.grey[300], 0.45) }}>
+                    <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Particular</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
+                      Amount
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {expVisible.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.dateLabel}</TableCell>
+                      <TableCell>{r.name}</TableCell>
+                      <TableCell>{r.particular}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.category}</TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
+                      >
+                        {fmtRupeesCell(r.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {expVisible.length > 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} sx={{ fontWeight: 700 }}>
+                        Grand total
+                      </TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
+                      >
+                        {fmtRupeesCell(expTotal)}
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </ResponsiveTableContainer>
+          </Paper>
+          <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={!expRan || expVisible.length === 0}
+              onClick={() => downloadExpenseReportCsv(expRange, expVisible, expTotal)}
+              sx={{ borderRadius: 1.5 }}
+            >
+              CSV
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={!expRan || expVisible.length === 0}
+              onClick={() => downloadExpenseReportPdf(expRange, expVisible, expTotal)}
+              sx={{ borderRadius: 1.5 }}
+            >
+              PDF
+            </Button>
+          </Stack>
         </Box>
       )}
 

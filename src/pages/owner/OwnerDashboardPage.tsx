@@ -20,7 +20,6 @@ import { FloatingActionPanel } from '@/components/ui/FloatingActionPanel';
 import { CashBankCollectionSummary } from '@/pages/manager/CashBankCollectionSummary';
 import { SalesByFuelChart } from '@/pages/manager/SalesByFuelChart';
 import { TankStockDipSummary } from '@/pages/manager/TankStockDipSummary';
-import { TodaySalesByShiftSection } from '@/pages/manager/TodaySalesByShiftSection';
 import { TodayShiftStatusSection } from '@/pages/manager/TodayShiftStatusSection';
 import {
   CREDIT_OVERDUE_DAYS,
@@ -30,6 +29,7 @@ import {
 import { getTankStockDaySummary } from '@/services/fuelStockReconciliationService';
 import { listLedgerInRange } from '@/services/ledgerService';
 import { bucketDayOutflows } from '@/utils/dailyCashSheet';
+import { withPumpDayQuery } from '@/utils/dateEntryPolicy';
 
 function parseLocalYmd(iso: string): Date {
   return new Date(`${iso}T00:00:00`);
@@ -234,6 +234,8 @@ export function OwnerDashboardPage() {
                   value={fmtInr(meterSales)}
                   subtitle={`${fmtInr(reconciledSales)} in the books`}
                   icon={PaymentsOutlinedIcon}
+                  to={withPumpDayQuery('/owner/shift-sales', reportIso)}
+                  hint="View shift sales"
                   animateOnMount
                   staggerIndex={1}
                 />
@@ -264,7 +266,8 @@ export function OwnerDashboardPage() {
                   value={fmtInr(expenses)}
                   icon={ReceiptLongOutlinedIcon}
                   color={expenses > 0.005 ? 'warning' : 'success'}
-                  to="/manager/daily-sheet"
+                  to={withPumpDayQuery('/manager/reports?report=expenses', reportIso)}
+                  hint="Open expenses report"
                   animateOnMount
                   staggerIndex={4}
                 />
@@ -291,6 +294,8 @@ export function OwnerDashboardPage() {
                   }
                   icon={CreditCardOutlinedIcon}
                   color={overdueCount > 0 ? 'secondary' : 'success'}
+                  to="/manager/credit"
+                  hint="Open credit"
                   animateOnMount
                   staggerIndex={6}
                 />
@@ -298,10 +303,6 @@ export function OwnerDashboardPage() {
             </>
           )}
         </Grid>
-
-        <DashboardSection title="Shift performance">
-          <TodaySalesByShiftSection pumpDayIso={reportIso} reportLabel={reportLabel} />
-        </DashboardSection>
 
         <DashboardSection title="Cash & bank collections">
           <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>

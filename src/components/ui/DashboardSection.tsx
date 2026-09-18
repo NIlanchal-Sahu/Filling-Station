@@ -7,11 +7,12 @@ type Props = {
   subtitle?: string;
   children: ReactNode;
   contentReady?: boolean;
+  id?: string;
 };
 
-export function DashboardSection({ title, subtitle, children, contentReady = true }: Props) {
+export function DashboardSection({ title, subtitle, children, contentReady = true, id }: Props) {
   return (
-    <Box component="section">
+    <Box component="section" id={id} sx={id ? { scrollMarginTop: { xs: 72, sm: 88 } } : undefined}>
       <Stack spacing={0.5} sx={{ mb: 2 }}>
         <Typography
           variant="overline"

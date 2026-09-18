@@ -23,7 +23,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { getShiftStatusForPumpDay, type ShiftStatusRow, type ShiftStatusSummary } from '@/services/shiftStatusService';
 import {
   SHIFT_STATUS_UPDATED_EVENT,
-  attendantNameList,
+  shiftActivityPath,
   shiftStatusChipColor,
   shiftStatusEmoji,
   shiftStatusLabel,
@@ -52,10 +52,9 @@ function SummaryTile(props: { label: string; value: number; accent: string }) {
   );
 }
 
-function ShiftStatusCard(props: { row: ShiftStatusRow }) {
+function ShiftStatusCard(props: { row: ShiftStatusRow; to: string }) {
   const theme = useTheme();
-  const { row } = props;
-  const attendantNames = attendantNameList(row.attendant === '—' ? '' : row.attendant);
+  const { row, to } = props;
   const chipColor = shiftStatusChipColor(row.status);
   const accent =
     chipColor === 'success'
@@ -68,82 +67,6 @@ function ShiftStatusCard(props: { row: ShiftStatusRow }) {
             ? theme.palette.warning.main
             : theme.palette.grey[500];
 
-  const body = (
-    <>
-      <Box sx={{ height: 3, bgcolor: accent }} />
-      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-          <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-              {row.displayName}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {row.shiftLabel}
-            </Typography>
-          </Box>
-          <Chip
-            size="small"
-            label={`${shiftStatusEmoji(row.status)} ${shiftStatusLabel(row.status)}`}
-            color={chipColor === 'default' ? 'default' : chipColor}
-            variant={chipColor === 'default' ? 'outlined' : 'filled'}
-            sx={{ height: 24, fontWeight: 600 }}
-          />
-        </Stack>
-
-        <Stack spacing={0.75} sx={{ mt: 1.75 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-            <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0, pt: 0.25 }}>
-              Attendant{attendantNames.length > 1 ? 's' : ''}
-            </Typography>
-            {attendantNames.length === 0 ? (
-              <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>
-                {row.attendant}
-              </Typography>
-            ) : (
-              <Stack direction="row" flexWrap="wrap" useFlexGap justifyContent="flex-end" sx={{ gap: 0.5, maxWidth: '70%' }}>
-                {attendantNames.map((name) => (
-                  <Chip key={name} size="small" label={name} sx={{ fontWeight: 600 }} />
-                ))}
-              </Stack>
-            )}
-          </Stack>
-          <Stack direction="row" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary">
-              Machine
-            </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>
-              {row.machineLabel}
-            </Typography>
-          </Stack>
-          <Stack direction="row" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary">
-              Start
-            </Typography>
-            <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              {row.startTimeLabel}
-            </Typography>
-          </Stack>
-          <Stack direction="row" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary">
-              End
-            </Typography>
-            <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              {row.endTimeLabel}
-            </Typography>
-          </Stack>
-          <Stack direction="row" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary">
-              Duration
-            </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {row.durationLabel}
-            </Typography>
-          </Stack>
-        </Stack>
-      </CardContent>
-    </>
-  );
-
   return (
     <Card
       elevation={0}
@@ -155,20 +78,49 @@ function ShiftStatusCard(props: { row: ShiftStatusRow }) {
         overflow: 'hidden',
       }}
     >
-      {row.detailPath ? (
-        <CardActionArea component={RouterLink} to={row.detailPath} sx={{ height: '100%', alignItems: 'stretch' }}>
-          {body}
-        </CardActionArea>
-      ) : (
-        body
-      )}
+      <CardActionArea component={RouterLink} to={to} sx={{ height: '100%', alignItems: 'stretch' }}>
+        <Box sx={{ height: 3, bgcolor: accent }} />
+        <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                {row.displayName}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {row.shiftLabel}
+              </Typography>
+            </Box>
+            <Chip
+              size="small"
+              label={`${shiftStatusEmoji(row.status)} ${shiftStatusLabel(row.status)}`}
+              color={chipColor === 'default' ? 'default' : chipColor}
+              variant={chipColor === 'default' ? 'outlined' : 'filled'}
+              sx={{ height: 24, fontWeight: 600 }}
+            />
+          </Stack>
+
+          <Box sx={{ mt: 1.75 }}>
+            {row.presentNames.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                —
+              </Typography>
+            ) : (
+              <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ gap: 0.5 }}>
+                {row.presentNames.map((name) => (
+                  <Chip key={name} size="small" label={name} sx={{ fontWeight: 600 }} />
+                ))}
+              </Stack>
+            )}
+          </Box>
+        </CardContent>
+      </CardActionArea>
     </Card>
   );
 }
 
 export function TodayShiftStatusSection(props: { pumpDayIso: string; createShiftTo?: string }) {
   const theme = useTheme();
-  const { readOnlyOps } = usePermissions();
+  const { role, readOnlyOps } = usePermissions();
   const { pumpDayIso, createShiftTo = '/shifts/new' } = props;
   const [summary, setSummary] = useState<ShiftStatusSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -220,7 +172,7 @@ export function TodayShiftStatusSection(props: { pumpDayIso: string; createShift
             👨‍💼 Today&apos;s Shift Status
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Monitor shift activity and staff attendance for the selected day.
+            Who is present on each shift. Tap a card for machine holders.
           </Typography>
         </Box>
       </Stack>
@@ -298,7 +250,8 @@ export function TodayShiftStatusSection(props: { pumpDayIso: string; createShift
             {summary.rows.map((row) => (
               <ShiftStatusCard
                 key={row.shiftLabel}
-                row={readOnlyOps ? { ...row, detailPath: null } : row}
+                row={row}
+                to={shiftActivityPath({ owner: role === 'owner', pumpDayIso, slot: row.slot })}
               />
             ))}
           </Box>

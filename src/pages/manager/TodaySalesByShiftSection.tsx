@@ -102,11 +102,12 @@ function ShiftSalesCard(props: {
   sharePct: string;
   isTop: boolean;
   accent: string;
+  reportTo?: string;
 }) {
-  const { bucket, fuelRows, sharePct, isTop, accent } = props;
+  const { bucket, fuelRows, sharePct, isTop, accent, reportTo } = props;
   const { readOnlyOps } = usePermissions();
   const detailTo =
-    !readOnlyOps && bucket.shiftId ? `/shifts/${bucket.shiftId}/reconcile?edit=1` : undefined;
+    reportTo ?? (!readOnlyOps && bucket.shiftId ? `/shifts/${bucket.shiftId}/reconcile?edit=1` : undefined);
 
   const body = (
     <>
@@ -184,21 +185,11 @@ function TotalSalesCard(props: {
   transactionCount: number;
   fuelRows: FuelShiftSalesRow[];
   accent: string;
+  reportTo?: string;
 }) {
-  const { totalAmount, totalLiters, transactionCount, fuelRows, accent } = props;
-  return (
-    <Card
-      elevation={0}
-      sx={{
-        height: '100%',
-        borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider',
-        overflow: 'hidden',
-        background: (t) =>
-          `linear-gradient(135deg, ${alpha(t.palette.primary.main, 0.06)} 0%, ${alpha(accent, 0.08)} 100%)`,
-      }}
-    >
+  const { totalAmount, totalLiters, transactionCount, fuelRows, accent, reportTo } = props;
+  const body = (
+    <>
       <Box sx={{ height: 3, bgcolor: accent }} />
       <CardContent sx={{ pt: 2, pb: 2, px: 2.25 }}>
         <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: '0.06em' }}>
@@ -215,13 +206,39 @@ function TotalSalesCard(props: {
           </Box>
         </Typography>
       </CardContent>
+    </>
+  );
+  return (
+    <Card
+      elevation={0}
+      sx={{
+        height: '100%',
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider',
+        overflow: 'hidden',
+        background: (t) =>
+          `linear-gradient(135deg, ${alpha(t.palette.primary.main, 0.06)} 0%, ${alpha(accent, 0.08)} 100%)`,
+      }}
+    >
+      {reportTo ? (
+        <CardActionArea component={RouterLink} to={reportTo} sx={{ height: '100%', alignItems: 'stretch' }}>
+          {body}
+        </CardActionArea>
+      ) : (
+        body
+      )}
     </Card>
   );
 }
 
-export function TodaySalesByShiftSection(props: { pumpDayIso: string; reportLabel?: string }) {
+export function TodaySalesByShiftSection(props: {
+  pumpDayIso: string;
+  reportLabel?: string;
+  reportTo?: string;
+}) {
   const theme = useTheme();
-  const { pumpDayIso } = props;
+  const { pumpDayIso, reportTo } = props;
   const [summary, setSummary] = useState<TodaySalesByShiftSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -293,6 +310,7 @@ export function TodaySalesByShiftSection(props: { pumpDayIso: string; reportLabe
             sharePct={shift1Pct}
             isTop={topShift === 'shift1'}
             accent={theme.palette.success.main}
+            reportTo={reportTo}
           />
           <ShiftSalesCard
             bucket={summary.shift2}
@@ -300,6 +318,7 @@ export function TodaySalesByShiftSection(props: { pumpDayIso: string; reportLabe
             sharePct={shift2Pct}
             isTop={topShift === 'shift2'}
             accent={theme.palette.info.main}
+            reportTo={reportTo}
           />
           <TotalSalesCard
             totalAmount={summary.todayTotal.totalAmount}
@@ -307,6 +326,7 @@ export function TodaySalesByShiftSection(props: { pumpDayIso: string; reportLabe
             transactionCount={summary.todayTotal.transactionCount}
             fuelRows={summary.fuelRows}
             accent={theme.palette.primary.main}
+            reportTo={reportTo}
           />
         </Box>
       ) : null}

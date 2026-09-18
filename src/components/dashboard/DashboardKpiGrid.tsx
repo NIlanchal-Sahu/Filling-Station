@@ -41,7 +41,9 @@ export function DashboardKpiGrid({ loading, data, showStartShift = false }: Prop
       value: fmtInr(data.salesTotal),
       icon: PaymentsOutlinedIcon,
       color: 'primary' as const,
-      to: '/manager/reports',
+      onClick: () => {
+        document.getElementById('shift-performance')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
       staggerIndex: 1,
     },
     {
@@ -49,7 +51,6 @@ export function DashboardKpiGrid({ loading, data, showStartShift = false }: Prop
       value: fmtInr(data.cashInHand),
       icon: AccountBalanceWalletOutlinedIcon,
       color: 'success' as const,
-      to: '/manager/ledger',
       staggerIndex: 2,
     },
     {
@@ -95,7 +96,8 @@ export function DashboardKpiGrid({ loading, data, showStartShift = false }: Prop
             value={kpi.value}
             icon={kpi.icon}
             color={kpi.color}
-            to={kpi.to}
+            to={'to' in kpi ? kpi.to : undefined}
+            onClick={'onClick' in kpi ? kpi.onClick : undefined}
             animateOnMount
             staggerIndex={kpi.staggerIndex}
           />
