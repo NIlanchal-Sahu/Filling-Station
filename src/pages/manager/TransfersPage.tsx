@@ -102,6 +102,7 @@ export function TransfersPage() {
   const [rows, setRows] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [rangeErr, setRangeErr] = useState<string | null>(null);
   const [exportEl, setExportEl] = useState<null | HTMLElement>(null);
 
   const dayParam = searchParams.get('day');
@@ -114,12 +115,41 @@ export function TransfersPage() {
     [rows, selectedKey],
   );
 
-  async function load() {
+  function validateRange(fromIso: string, toIso: string): string | null {
+    if (!fromIso.trim()) {
+      return 'From date is required.';
+    }
+    if (!toIso.trim()) {
+      return 'To date is required.';
+    }
+    const a = new Date(`${fromIso}T00:00:00`).getTime();
+    const b = new Date(`${toIso}T00:00:00`).getTime();
+    if (!Number.isFinite(a)) {
+      return 'From date is not valid.';
+    }
+    if (!Number.isFinite(b)) {
+      return 'To date is not valid.';
+    }
+    if (a > b) {
+      return 'From date must be on or before To date.';
+    }
+    return null;
+  }
+
+  async function load(fromIso = from, toIso = to) {
+    const invalid = validateRange(fromIso, toIso);
+    if (invalid) {
+      setRangeErr(invalid);
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    setRangeErr(null);
     setLoading(true);
     setErr(null);
     try {
-      const a = new Date(from + 'T00:00:00');
-      const b = new Date(to + 'T23:59:59.999');
+      const a = new Date(`${fromIso}T00:00:00`);
+      const b = new Date(`${toIso}T23:59:59.999`);
       setRows(await listLedgerInRange(a, b));
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load');
@@ -128,12 +158,17 @@ export function TransfersPage() {
     }
   }
 
+  function submitRange(e?: { preventDefault: () => void }) {
+    e?.preventDefault();
+    void load(from, to);
+  }
+
   useEffect(() => {
     queueMicrotask(() => {
       void load();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when range changes
-  }, [from, to]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- first load for today's range
+  }, []);
 
   useEffect(() => {
     const day = parsePumpDayParam(dayParam);
@@ -143,6 +178,7 @@ export function TransfersPage() {
       const clamped = clampEntryDateForRole(profile?.role, pumpDay);
       setFrom(clamped);
       setTo(clamped);
+      void load(clamped, clamped);
     }
   }, [dayParam, profile?.role]);
 
@@ -228,14 +264,19 @@ export function TransfersPage() {
 
       {err ? <Alert severity="error">{err}</Alert> : null}
 
-      <Paper variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+      <Paper variant="outlined" component="form" onSubmit={submitRange} sx={{ borderRadius: 2, p: 2 }}>
         <FilterToolbar>
           <TextField
             type="date"
             label="From"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setRangeErr(null);
+            }}
             size="small"
+            required
+            error={Boolean(rangeErr)}
             slotProps={{ inputLabel: { shrink: true } }}
             sx={fieldSx}
           />
@@ -243,12 +284,30 @@ export function TransfersPage() {
             type="date"
             label="To"
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setRangeErr(null);
+            }}
             size="small"
+            required
+            error={Boolean(rangeErr)}
             slotProps={{ inputLabel: { shrink: true } }}
             sx={fieldSx}
           />
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={loading}
+            sx={{ borderRadius: 1.5, minHeight: 44, px: 3 }}
+          >
+            Submit
+          </Button>
         </FilterToolbar>
+        {rangeErr ? (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            {rangeErr}
+          </Alert>
+        ) : null}
       </Paper>
 
       {selectedKey ? (
