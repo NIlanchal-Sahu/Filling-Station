@@ -20,6 +20,7 @@ import { latestReconciliationsPerShift } from '@/utils/dailyCashBookVertical';
 import { totalCashFromMeterAndChannels, roundMoney2 } from '@/utils/meterSalesByFuel';
 import { machineTag, parseAttendantPosts } from '@/utils/attendantPosts';
 import { compareNozzleOrder } from '@/utils/nozzleSort';
+import { shiftScheduleForLabel } from '@/utils/shiftStatusDisplay';
 import { eachDayOfInterval, format, parseISO } from 'date-fns';
 
 function startOfDay(d: Date): Date {
@@ -375,7 +376,7 @@ export type DailySalesPivotRow = {
 
 /**
  * Rows for **each calendar day** in `[from, to]` (inclusive local dates).
- * Meter sales come from readings on shifts **closed with endTime** on that day.
+ * Meter sales sit on the shift **pump day** (Start shift date), not the clock day the shift was closed.
  */
 export async function getDailySalesFuelPivot(from: Date, to: Date): Promise<DailySalesPivotRow[]> {
   const intervalStart = startOfDay(from);
@@ -384,55 +385,73 @@ export async function getDailySalesFuelPivot(from: Date, to: Date): Promise<Dail
     return [];
   }
   const days = eachDayOfInterval({ start: intervalStart, end: intervalEnd });
-  const out: DailySalesPivotRow[] = [];
+  const closed = await listClosedShiftsByPumpDayRange(intervalStart, endOfDay(to));
 
-  for (const day of days) {
-    const s = startOfDay(day);
-    const e = endOfDay(day);
-    const closed = await listClosedShiftsInEndTimeWindow(s, e);
-    let petrolL = 0;
-    let petrolAmt = 0;
-    let dieselL = 0;
-    let dieselAmt = 0;
-    let xpL = 0;
-    let xpAmt = 0;
-    let otherL = 0;
-    let otherAmt = 0;
+  type DayAcc = {
+    petrolL: number;
+    petrolAmt: number;
+    dieselL: number;
+    dieselAmt: number;
+    xpL: number;
+    xpAmt: number;
+    otherL: number;
+    otherAmt: number;
+  };
+  const emptyAcc = (): DayAcc => ({
+    petrolL: 0,
+    petrolAmt: 0,
+    dieselL: 0,
+    dieselAmt: 0,
+    xpL: 0,
+    xpAmt: 0,
+    otherL: 0,
+    otherAmt: 0,
+  });
+  const byDay = new Map<string, DayAcc>();
 
-    for (const sh of closed) {
-      const readings = await listReadingsForShift(sh.id);
-      for (const r of readings) {
-        const n = await getNozzle(r.nozzleId);
-        if (!n) continue;
-        const ft = await getFuelType(n.fuelTypeId);
-        const nm = ft?.name ?? 'Unknown';
-        const b = fuelSalesBucket(nm);
-        const liters = Number(r.finalSalesLiters ?? 0);
-        const amt = Number(r.totalAmount ?? 0);
-        if (b === 'petrol') {
-          petrolL += liters;
-          petrolAmt += amt;
-        } else if (b === 'diesel') {
-          dieselL += liters;
-          dieselAmt += amt;
-        } else if (b === 'xp') {
-          xpL += liters;
-          xpAmt += amt;
-        } else {
-          otherL += liters;
-          otherAmt += amt;
-        }
+  for (const sh of closed) {
+    const dayIso = shiftPumpDayIso(sh);
+    let acc = byDay.get(dayIso);
+    if (!acc) {
+      acc = emptyAcc();
+      byDay.set(dayIso, acc);
+    }
+    const readings = await listReadingsForShift(sh.id);
+    for (const r of readings) {
+      const n = await getNozzle(r.nozzleId);
+      if (!n) continue;
+      const ft = await getFuelType(n.fuelTypeId);
+      const nm = ft?.name ?? 'Unknown';
+      const b = fuelSalesBucket(nm);
+      const liters = Number(r.finalSalesLiters ?? 0);
+      const amt = Number(r.totalAmount ?? 0);
+      if (b === 'petrol') {
+        acc.petrolL += liters;
+        acc.petrolAmt += amt;
+      } else if (b === 'diesel') {
+        acc.dieselL += liters;
+        acc.dieselAmt += amt;
+      } else if (b === 'xp') {
+        acc.xpL += liters;
+        acc.xpAmt += amt;
+      } else {
+        acc.otherL += liters;
+        acc.otherAmt += amt;
       }
     }
+  }
 
-    const petrolLiters = pivotRound(petrolL);
-    const petrolAmount = pivotRound(petrolAmt);
-    const dieselLiters = pivotRound(dieselL);
-    const dieselAmount = pivotRound(dieselAmt);
-    const xpLiters = pivotRound(xpL);
-    const xpAmount = pivotRound(xpAmt);
-    const otherLiters = pivotRound(otherL);
-    const otherAmount = pivotRound(otherAmt);
+  const out: DailySalesPivotRow[] = [];
+  for (const day of days) {
+    const acc = byDay.get(format(day, 'yyyy-MM-dd')) ?? emptyAcc();
+    const petrolLiters = pivotRound(acc.petrolL);
+    const petrolAmount = pivotRound(acc.petrolAmt);
+    const dieselLiters = pivotRound(acc.dieselL);
+    const dieselAmount = pivotRound(acc.dieselAmt);
+    const xpLiters = pivotRound(acc.xpL);
+    const xpAmount = pivotRound(acc.xpAmt);
+    const otherLiters = pivotRound(acc.otherL);
+    const otherAmount = pivotRound(acc.otherAmt);
     const totalAmount = pivotRound(petrolAmount + dieselAmount + xpAmount + otherAmount);
 
     out.push({
@@ -468,7 +487,7 @@ export async function getOperatorPerformanceInRange(
 ): Promise<OperatorPerf[]> {
   const fromD = startOfDay(from);
   const toD = endOfDay(to);
-  const closed = await listClosedShiftsInEndTimeWindow(fromD, toD);
+  const closed = await listClosedShiftsByPumpDayRange(fromD, toD);
   const byOp = new Map<string, OperatorPerf>();
 
   for (const sh of closed) {
@@ -777,7 +796,10 @@ export type MeterRegisterRow = {
   machine: string;
   nozzle: string;
   pumpBoyGirls: string;
+  /** Stored shift slot, e.g. `6 AM – 2 PM`. */
   timeInOut: string;
+  /** Morning Shift / Evening Shift / Night Shift. */
+  shiftName: string;
   fuelType: string;
   opening: number;
   closing: number;
@@ -837,6 +859,7 @@ export async function getMeterRegisterRowsInRange(from: Date, to: Date): Promise
     const dateLabel = formatDateDdMmYyyy(new Date(`${dateIso}T12:00:00`));
     const pumpBoyGirls = meterRegisterAttendantLabel(sh);
     const timeInOut = sh.shiftLabel?.trim() || '—';
+    const shiftName = shiftScheduleForLabel(timeInOut)?.displayName ?? timeInOut;
 
     for (const r of readings) {
       const n = nozzleById.get(r.nozzleId);
@@ -850,6 +873,7 @@ export async function getMeterRegisterRowsInRange(from: Date, to: Date): Promise
         nozzle: n?.nozzleNumber ?? '—',
         pumpBoyGirls,
         timeInOut,
+        shiftName,
         fuelType: fuelName.trim() ? fuelName.trim().toUpperCase() : '—',
         opening,
         closing,
@@ -865,12 +889,12 @@ export async function getMeterRegisterRowsInRange(from: Date, to: Date): Promise
   rows.sort((a, b) => {
     const byDay = a.dateIso.localeCompare(b.dateIso);
     if (byDay !== 0) return byDay;
-    const byNozzle = compareNozzleOrder(
+    const byShift = shiftSlotSortIndex(a.timeInOut) - shiftSlotSortIndex(b.timeInOut);
+    if (byShift !== 0) return byShift;
+    return compareNozzleOrder(
       { machineNumber: a.machine, nozzleNumber: a.nozzle },
       { machineNumber: b.machine, nozzleNumber: b.nozzle },
     );
-    if (byNozzle !== 0) return byNozzle;
-    return shiftSlotSortIndex(a.timeInOut) - shiftSlotSortIndex(b.timeInOut);
   });
 
   return rows;

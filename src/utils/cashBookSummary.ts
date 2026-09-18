@@ -1,4 +1,4 @@
-import type { LedgerEntry } from '@/types/entities';
+import type { LedgerEntry, LedgerPaymentChannel } from '@/types/entities';
 import {
   roundMoney2,
   shortageFromReconciliationDifferences,
@@ -8,18 +8,20 @@ import {
 const EPS = 0.01;
 
 /** Align with ledger sheet: missing channel → expense = cash, income = bank. */
-export function effectiveLedgerChannel(entry: LedgerEntry): 'cash' | 'bank' | 'upi' {
+export function effectiveLedgerChannel(entry: LedgerEntry): LedgerPaymentChannel {
   const ch = entry.paymentChannel;
-  if (ch === 'cash' || ch === 'bank' || ch === 'upi') return ch;
+  if (ch) return ch;
   return entry.type === 'expense' ? 'cash' : 'bank';
 }
 
-/** Cash coming into the drawer (ledger RECEIVED + CASH, or unspecified channel). */
+function isLegacyDrawerPaidChannel(ch: LedgerPaymentChannel): boolean {
+  return ch === 'cash' || ch === 'bank';
+}
+
+/** Cash coming into the drawer — RECEIVED + CASH only. */
 export function isDrawerCashIncome(entry: LedgerEntry): boolean {
   if (entry.type !== 'income') return false;
-  const ch = entry.paymentChannel;
-  if (ch === 'bank' || ch === 'upi') return false;
-  return true;
+  return effectiveLedgerChannel(entry) === 'cash';
 }
 
 function openingBalanceMatch(entry: LedgerEntry): boolean {
@@ -36,11 +38,10 @@ export function isCreditCashReceived(entry: LedgerEntry): boolean {
   return blob.includes('due received');
 }
 
-/** Money leaving the physical drawer — cash paid out or deposited via bank from drawer. */
+/** Money leaving the physical drawer — cash paid out, or legacy BANK (cash deposited). */
 function isDrawerOutflow(entry: LedgerEntry): boolean {
   if (entry.type !== 'expense') return false;
-  const ch = effectiveLedgerChannel(entry);
-  return ch === 'cash' || ch === 'bank';
+  return isLegacyDrawerPaidChannel(effectiveLedgerChannel(entry));
 }
 
 export type CashBookSummaryRow = {
@@ -118,7 +119,7 @@ function excelOutflowBuckets(ledgerSameDay: LedgerEntry[]) {
       continue;
     }
     const name = e.paidToOrReceivedFrom.trim().toUpperCase().replace(/\s+/g, ' ');
-    if (name && cat === 'TRANSFER') {
+    if (name && (cat === 'TRANSFER' || cat === 'RECEIVED')) {
       extras[name] = (extras[name] ?? 0) + e.amount;
       continue;
     }

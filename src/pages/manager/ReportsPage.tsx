@@ -24,7 +24,7 @@ import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContain
 import { usePermissions } from '@/hooks/usePermissions';
 import { format } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
-import { listClosedShiftsInEndTimeWindow } from '@/services/shiftsService';
+import { listClosedShiftsByPumpDayRange } from '@/services/shiftsService';
 import {
   getDailySalesFuelPivot,
   getMeterRegisterRowsInRange,
@@ -127,7 +127,7 @@ export function ReportsPage() {
       const b = new Date(to + 'T23:59:59.999');
       if (tab === 0) {
         setDailyPivot(await getDailySalesFuelPivot(a, b));
-        const closed = await listClosedShiftsInEndTimeWindow(a, b);
+        const closed = await listClosedShiftsByPumpDayRange(a, b);
         let cr = 0;
         for (const sh of closed) {
           const recon = await getReconciliationForShift(sh.id);

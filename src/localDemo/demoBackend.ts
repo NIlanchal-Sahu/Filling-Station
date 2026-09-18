@@ -33,6 +33,7 @@ import {
   creditPaymentModeLabel,
   creditPaymentModeLedgerChannel,
   normalizeCreditPaymentMode,
+  parseLedgerPaymentChannel,
 } from '@/types/entities';
 import { parseUserRole } from '@/utils/roles';
 import { parseAttendantPosts } from '@/utils/attendantPosts';
@@ -1491,15 +1492,11 @@ export async function demoListAllCreditSales(): Promise<CreditSale[]> {
 }
 
 function mapLed(id: string, e: StoredLedger): LedgerEntry {
-  const ch =
-    e.paymentChannel === 'bank' || e.paymentChannel === 'cash' || e.paymentChannel === 'upi'
-      ? (e.paymentChannel as LedgerEntry['paymentChannel'])
-      : undefined;
   return {
     id,
     date: Timestamp.fromMillis(e.dateMs),
     type: (e.type as LedgerType) ?? 'expense',
-    paymentChannel: ch,
+    paymentChannel: parseLedgerPaymentChannel(e.paymentChannel),
     paidToOrReceivedFrom: e.paidToOrReceivedFrom,
     particulars: e.particulars,
     category: e.category,

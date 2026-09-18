@@ -30,6 +30,9 @@ const CustomerDetailPage = lazy(() =>
   import('@/pages/manager/CustomerDetailPage').then((m) => ({ default: m.CustomerDetailPage })),
 );
 const LedgerPage = lazy(() => import('@/pages/manager/LedgerPage').then((m) => ({ default: m.LedgerPage })));
+const TransfersPage = lazy(() =>
+  import('@/pages/manager/TransfersPage').then((m) => ({ default: m.TransfersPage })),
+);
 const DailyCashSheetPage = lazy(() =>
   import('@/pages/manager/DailyCashSheetPage').then((m) => ({ default: m.DailyCashSheetPage })),
 );
@@ -101,6 +104,7 @@ export default function App() {
               <Route path="credit" element={<CreditCustomersPage />} />
               <Route path="credit/:id" element={<CustomerDetailPage />} />
               <Route path="ledger" element={<LedgerPage />} />
+              <Route path="transfers" element={<TransfersPage />} />
               <Route path="daily-sheet" element={<DailyCashSheetPage />} />
               <Route path="fuel" element={<FuelPricesPage />} />
               <Route path="fuel-stock/daily" element={<DailyDipEntryPage />} />

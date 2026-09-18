@@ -298,19 +298,93 @@ export interface CreditPayment {
 
 export type LedgerType = 'expense' | 'income';
 
-/** How settlement was routed (shown as TRANSACTION TYPE: Cash vs Bank). */
-export type LedgerPaymentChannel = 'cash' | 'bank' | 'upi';
+/**
+ * Ledger TRANSACTION TYPE. `bank` is legacy only (old rows still display BANK).
+ * New entries use the ordered list below — not a locked Names list.
+ */
+export type LedgerPaymentChannel =
+  | 'cash'
+  | 'upi'
+  | 'fleet_card'
+  | 'sbi_bank'
+  | 'union_bank'
+  | 'cheque'
+  | 'other'
+  | 'bank';
 
-/** Map receipt mode → ledger txn type (cash drawer vs Phone Pe vs bank). */
+/** New-entry / edit choices (BANK omitted; shown only when an old row already has it). */
+export const LEDGER_TXN_TYPE_ORDER: readonly LedgerPaymentChannel[] = [
+  'cash',
+  'upi',
+  'fleet_card',
+  'sbi_bank',
+  'union_bank',
+  'cheque',
+  'other',
+] as const;
+
+const LEDGER_TXN_TYPE_LABELS: Record<LedgerPaymentChannel, string> = {
+  cash: 'CASH',
+  upi: 'PHONE PE',
+  fleet_card: 'FLEET CARD',
+  sbi_bank: 'SBI BANK',
+  union_bank: 'UNION BANK',
+  cheque: 'CHEQUE',
+  other: 'OTHER',
+  bank: 'BANK',
+};
+
+const LEDGER_CHANNEL_ALIASES: Record<string, LedgerPaymentChannel> = {
+  cash: 'cash',
+  upi: 'upi',
+  phone: 'upi',
+  phone_pe: 'upi',
+  phonepe: 'upi',
+  fleet_card: 'fleet_card',
+  fleetcard: 'fleet_card',
+  sbi_bank: 'sbi_bank',
+  sbibank: 'sbi_bank',
+  sbi: 'sbi_bank',
+  union_bank: 'union_bank',
+  unionbank: 'union_bank',
+  cheque: 'cheque',
+  check: 'cheque',
+  other: 'other',
+  bank: 'bank',
+};
+
+export function parseLedgerPaymentChannel(raw: unknown): LedgerPaymentChannel | undefined {
+  const s = typeof raw === 'string' ? raw.trim().toLowerCase().replace(/\s+/g, '_') : '';
+  return LEDGER_CHANNEL_ALIASES[s];
+}
+
+export function ledgerTxnTypeLabel(
+  channel: LedgerPaymentChannel | undefined,
+  type: LedgerType,
+): string {
+  if (channel && LEDGER_TXN_TYPE_LABELS[channel]) {
+    return LEDGER_TXN_TYPE_LABELS[channel];
+  }
+  return type === 'income' ? 'BANK' : 'CASH';
+}
+
+export function ledgerTxnTypeChoices(current?: LedgerPaymentChannel): LedgerPaymentChannel[] {
+  if (current === 'bank') {
+    return [...LEDGER_TXN_TYPE_ORDER, 'bank'];
+  }
+  return [...LEDGER_TXN_TYPE_ORDER];
+}
+
+/** Map credit receive mode → stored ledger txn type (not collapsed to BANK). */
 export function creditPaymentModeLedgerChannel(mode: CreditPaymentMode): LedgerPaymentChannel {
   const m = normalizeCreditPaymentMode(mode);
-  if (m === 'cash') {
-    return 'cash';
-  }
-  if (m === 'phone') {
-    return 'upi';
-  }
-  return 'bank';
+  if (m === 'cash') return 'cash';
+  if (m === 'phone') return 'upi';
+  if (m === 'fleet_card') return 'fleet_card';
+  if (m === 'sbi_bank') return 'sbi_bank';
+  if (m === 'union_bank') return 'union_bank';
+  if (m === 'cheque') return 'cheque';
+  return 'other';
 }
 
 export interface LedgerEntry {

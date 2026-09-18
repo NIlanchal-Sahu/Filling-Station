@@ -28,7 +28,8 @@ import {
   getPumpDaySalesOverview,
 } from '@/services/aggregatesService';
 import { getTankStockDaySummary } from '@/services/fuelStockReconciliationService';
-import { getShiftStatusForPumpDay } from '@/services/shiftStatusService';
+import { listLedgerInRange } from '@/services/ledgerService';
+import { bucketDayOutflows } from '@/utils/dailyCashSheet';
 
 function parseLocalYmd(iso: string): Date {
   return new Date(`${iso}T00:00:00`);
@@ -67,7 +68,7 @@ export function OwnerDashboardPage() {
   const [reconciledSales, setReconciledSales] = useState(0);
   const [cashCollected, setCashCollected] = useState(0);
   const [shortage, setShortage] = useState(0);
-  const [pendingRecon, setPendingRecon] = useState(0);
+  const [expenses, setExpenses] = useState(0);
   const [variationLiters, setVariationLiters] = useState(0);
   const [variationCount, setVariationCount] = useState(0);
   const [overdueCredit, setOverdueCredit] = useState(0);
@@ -78,11 +79,13 @@ export function OwnerDashboardPage() {
     setKpisLoading(true);
     void (async () => {
       try {
-        const [sales, shiftStatus, stock, credit] = await Promise.all([
+        const dayStart = new Date(`${reportIso}T00:00:00`);
+        const dayEnd = new Date(`${reportIso}T23:59:59.999`);
+        const [sales, credit, ledger, stock] = await Promise.all([
           getPumpDaySalesOverview(reportIso),
-          getShiftStatusForPumpDay(reportIso),
-          getTankStockDaySummary(reportIso),
           getOverdueCreditSummary(),
+          listLedgerInRange(dayStart, dayEnd),
+          getTankStockDaySummary(reportIso),
         ]);
         if (!ok) {
           return;
@@ -91,7 +94,7 @@ export function OwnerDashboardPage() {
         setReconciledSales(sales.reconciledSalesAmount);
         setCashCollected(sales.cashCollected);
         setShortage(sales.shortageAmount);
-        setPendingRecon(shiftStatus.totals.pendingReconciliation);
+        setExpenses(bucketDayOutflows(ledger).expenses);
         const varied = stock.rows.filter((r) => r.variationAlert && r.variationLiters != null);
         setVariationCount(varied.length);
         setVariationLiters(varied.reduce((sum, r) => sum + Math.abs(r.variationLiters ?? 0), 0));
@@ -103,7 +106,7 @@ export function OwnerDashboardPage() {
           setReconciledSales(0);
           setCashCollected(0);
           setShortage(0);
-          setPendingRecon(0);
+          setExpenses(0);
           setVariationLiters(0);
           setVariationCount(0);
           setOverdueCredit(0);
@@ -122,13 +125,6 @@ export function OwnerDashboardPage() {
 
   const attention = useMemo<AttentionItem[]>(() => {
     const items: AttentionItem[] = [];
-    if (pendingRecon > 0) {
-      items.push({
-        severity: 'warning',
-        message: `${pendingRecon} shift${pendingRecon === 1 ? '' : 's'} waiting for reconciliation.`,
-        to: '/manager/reconciliations',
-      });
-    }
     if (shortage > 0.005) {
       items.push({
         severity: 'error',
@@ -151,7 +147,7 @@ export function OwnerDashboardPage() {
       });
     }
     return items;
-  }, [pendingRecon, shortage, variationCount, variationLiters, overdueCount, overdueCredit]);
+  }, [shortage, variationCount, variationLiters, overdueCount, overdueCredit]);
 
   return (
     <>
@@ -196,7 +192,7 @@ export function OwnerDashboardPage() {
 
         {kpisLoading ? null : attention.length === 0 ? (
           <Alert severity="success" sx={{ borderRadius: 2 }}>
-            Day looks clean — no pending recon, shortage, tank variation, or overdue credit.
+            Day looks clean — no shortage, tank variation, or overdue credit.
           </Alert>
         ) : (
           <Stack spacing={1}>
@@ -226,13 +222,13 @@ export function OwnerDashboardPage() {
         <Grid container spacing={2}>
           {kpisLoading ? (
             Array.from({ length: 6 }, (_, i) => (
-              <Grid key={i} size={{ xs: 6, sm: 4, md: 2 }}>
+              <Grid key={i} size={{ xs: 6, sm: 4, md: 4 }}>
                 <KpiStatSkeleton />
               </Grid>
             ))
           ) : (
             <>
-              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
                 <KpiStat
                   label="Meter sales"
                   value={fmtInr(meterSales)}
@@ -242,7 +238,7 @@ export function OwnerDashboardPage() {
                   staggerIndex={1}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
                 <KpiStat
                   label="Cash collected"
                   value={fmtInr(cashCollected)}
@@ -252,7 +248,7 @@ export function OwnerDashboardPage() {
                   staggerIndex={2}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
                 <KpiStat
                   label="Shortage"
                   value={fmtInr(shortage)}
@@ -262,17 +258,18 @@ export function OwnerDashboardPage() {
                   staggerIndex={3}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
                 <KpiStat
-                  label="Pending recon"
-                  value={pendingRecon}
-                  icon={FactCheckOutlinedIcon}
-                  color={pendingRecon > 0 ? 'warning' : 'success'}
+                  label="Expenses"
+                  value={fmtInr(expenses)}
+                  icon={ReceiptLongOutlinedIcon}
+                  color={expenses > 0.005 ? 'warning' : 'success'}
+                  to="/manager/daily-sheet"
                   animateOnMount
                   staggerIndex={4}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
                 <KpiStat
                   label="Tank variation"
                   value={`${variationLiters.toLocaleString('en-IN')} L`}
@@ -283,7 +280,7 @@ export function OwnerDashboardPage() {
                   staggerIndex={5}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
                 <KpiStat
                   label="Overdue credit"
                   value={fmtInr(overdueCredit)}

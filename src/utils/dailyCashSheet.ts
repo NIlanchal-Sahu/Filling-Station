@@ -80,7 +80,7 @@ function isCreditCashReceived(entry: LedgerEntry): boolean {
   return blob.includes('due received');
 }
 
-/** Cash / bank postings that physically move drawer cash. */
+/** Cash / bank postings that physically move drawer cash (CASH, or legacy BANK deposits). */
 function isDrawerExpense(entry: LedgerEntry): boolean {
   if (entry.type !== 'expense') return false;
   const ch = effectiveLedgerChannel(entry);
@@ -138,7 +138,7 @@ function allocateExpenseBucket(
   if (rawName && !isSystemGeneratedPayee(rawName)) {
     const legacy = matchPartyKey(rawName, legacyPartyKeys);
     if (legacy) return { kind: 'party', key: normalizeKey(legacy), displayName: legacy };
-    if (!EXPENSE_ONLY_CATEGORIES.has(c) && c === 'TRANSFER') {
+    if (!EXPENSE_ONLY_CATEGORIES.has(c) && (c === 'TRANSFER' || c === 'RECEIVED')) {
       return { kind: 'party', key: normalizeKey(rawName), displayName: rawName };
     }
   }

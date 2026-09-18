@@ -29,19 +29,31 @@ export function withPumpDayQuery(path: string, iso: string): string {
 }
 
 export function rememberAdminPumpDay(iso: string): void {
-  if (typeof sessionStorage === 'undefined') {
+  if (typeof window === 'undefined') {
     return;
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-    sessionStorage.setItem(ADMIN_PUMP_DAY_STORAGE, iso);
+    try {
+      sessionStorage.setItem(ADMIN_PUMP_DAY_STORAGE, iso);
+      localStorage.setItem(ADMIN_PUMP_DAY_STORAGE, iso);
+    } catch {
+      /* ignore quota / private mode */
+    }
   }
 }
 
 export function recalledAdminPumpDay(): string | null {
-  if (typeof sessionStorage === 'undefined') {
+  if (typeof window === 'undefined') {
     return null;
   }
-  return parsePumpDayParam(sessionStorage.getItem(ADMIN_PUMP_DAY_STORAGE));
+  try {
+    return (
+      parsePumpDayParam(sessionStorage.getItem(ADMIN_PUMP_DAY_STORAGE)) ??
+      parsePumpDayParam(localStorage.getItem(ADMIN_PUMP_DAY_STORAGE))
+    );
+  } catch {
+    return null;
+  }
 }
 
 /**

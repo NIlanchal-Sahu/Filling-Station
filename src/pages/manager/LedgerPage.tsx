@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   alpha,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -22,7 +23,11 @@ import {
   TableHead,
   TableRow,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -43,6 +48,7 @@ import { getCashInHandAfterReconciliations } from '@/services/aggregatesService'
 import { requireNonEmpty, requirePositiveNumber } from '@/utils/validation';
 import { downloadCsv } from '@/utils/csvExport';
 import type { LedgerEntry, LedgerPaymentChannel, LedgerType } from '@/types/entities';
+import { ledgerTxnTypeChoices, ledgerTxnTypeLabel } from '@/types/entities';
 import { format } from 'date-fns';
 import {
   assertEntryDateAllowed,
@@ -58,6 +64,7 @@ const LEDGER_SHEET_CATEGORIES = [
   'EXPENSES',
   'SALES',
   'TRANSFER',
+  'RECEIVED',
   'LOCKER',
   'ODD BALANCE',
   'SALARY',
@@ -68,16 +75,31 @@ const LEDGER_SHEET_CATEGORIES = [
   'OTHER',
 ] as const;
 
+const CATEGORY_NAME_HINT_BLOCKLIST = new Set(
+  LEDGER_SHEET_CATEGORIES.map((c) => c.toUpperCase()),
+);
+
+function isPartyNameHint(name: string): boolean {
+  const key = name.trim().toUpperCase().replace(/\s+/g, ' ');
+  return Boolean(key) && !CATEGORY_NAME_HINT_BLOCKLIST.has(key);
+}
+
+/** Paid/Received pairs: EXPENSES↔SALES, TRANSFER↔RECEIVED. Leave LOCKER and others. */
+function pairCategoryForPaidOut(paid: boolean, category: string): string {
+  if (paid && category === 'SALES') return 'EXPENSES';
+  if (!paid && category === 'EXPENSES') return 'SALES';
+  if (paid && category === 'RECEIVED') return 'TRANSFER';
+  if (!paid && category === 'TRANSFER') return 'RECEIVED';
+  return category;
+}
+
 function fmtDateSheet(d: Date): string {
   return format(d, 'dd-MM-yyyy');
 }
 
-/** TRANSACTION TYPE column: cash drawer, bank, or UPI (shown as PHONE PE like your sheet). */
+/** TRANSACTION TYPE column. Missing channel infers CASH for Paid, BANK for Received. */
 function txnTypeSheetLabel(row: LedgerEntry): string {
-  if (row.paymentChannel === 'upi') return 'PHONE PE';
-  if (row.paymentChannel === 'bank') return 'BANK';
-  if (row.paymentChannel === 'cash') return 'CASH';
-  return row.type === 'income' ? 'BANK' : 'CASH';
+  return ledgerTxnTypeLabel(row.paymentChannel, row.type);
 }
 
 function fmtPaidCell(row: LedgerEntry): string {
@@ -89,10 +111,7 @@ function fmtReceivedCell(row: LedgerEntry): string {
 }
 
 function defaultEditChannel(row: LedgerEntry): LedgerPaymentChannel {
-  if (row.paymentChannel === 'cash' || row.paymentChannel === 'bank' || row.paymentChannel === 'upi') {
-    return row.paymentChannel;
-  }
-  return row.type === 'expense' ? 'cash' : 'bank';
+  return row.paymentChannel ?? (row.type === 'expense' ? 'cash' : 'bank');
 }
 
 function coerceLedgerCategory(c: string): string {
@@ -121,9 +140,36 @@ const sheetCellSx = {
   verticalAlign: 'top' as const,
 };
 
+const txnTypeMenuPaperSx = {
+  bgcolor: 'background.paper',
+  backgroundImage: 'none',
+  opacity: 1,
+} as const;
+
+function txnTypeSelectSlotProps(openUpward?: boolean) {
+  return {
+    select: {
+      MenuProps: {
+        PaperProps: {
+          elevation: 8,
+          sx: txnTypeMenuPaperSx,
+        },
+        ...(openUpward
+          ? {
+              anchorOrigin: { vertical: 'top' as const, horizontal: 'left' as const },
+              transformOrigin: { vertical: 'bottom' as const, horizontal: 'left' as const },
+            }
+          : {}),
+      },
+    },
+  };
+}
+
 export function LedgerPage() {
   const { profile } = useAuth();
   const { readOnlyOps } = usePermissions();
+  const theme = useTheme();
+  const stackedEntry = useMediaQuery(theme.breakpoints.down('md'));
   const dateBounds = dateInputBoundsForRole(profile?.role);
   const [searchParams] = useSearchParams();
   const [typeFilter, setTypeFilter] = useState<'all' | LedgerType>('all');
@@ -210,6 +256,33 @@ export function LedgerPage() {
       return [...acc, { ...r, run: prevRun + delta }];
     }, []);
   }, [rows]);
+
+  const [nameHints, setNameHints] = useState<string[]>([]);
+  useEffect(() => {
+    if (rows.length === 0) {
+      return;
+    }
+    setNameHints((prev) => {
+      const next = new Set<string>();
+      for (const n of prev) {
+        if (isPartyNameHint(n)) next.add(n);
+      }
+      for (const r of rows) {
+        const n = (r.paidToOrReceivedFrom ?? '').trim();
+        if (n && isPartyNameHint(n)) next.add(n);
+      }
+      const list = [...next].sort((a, b) => a.localeCompare(b));
+      if (list.length === prev.length && list.every((v, i) => v === prev[i])) {
+        return prev;
+      }
+      return list;
+    });
+  }, [rows]);
+
+  function applyEntryPaidOut(paid: boolean) {
+    setEntryPaidOut(paid);
+    setEntryCategory((c) => pairCategoryForPaidOut(paid, c));
+  }
 
   async function submitEntry() {
     if (!profile) {
@@ -392,160 +465,266 @@ export function LedgerPage() {
               </Typography>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          {stackedEntry ? (
+          <Stack spacing={1.75}>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              value={entryPaidOut ? 'paid' : 'received'}
+              onChange={(_, v) => {
+                if (v) applyEntryPaidOut(v === 'paid');
+              }}
+              sx={{ '& .MuiToggleButton-root': { textTransform: 'none', fontWeight: 600, minHeight: 44 } }}
+            >
+              <ToggleButton value="paid">Paid</ToggleButton>
+              <ToggleButton value="received">Received</ToggleButton>
+            </ToggleButtonGroup>
+            <TextField
+              type="date"
+              label="Date"
+              value={entryDate}
+              onChange={(e) => setEntryDate(clampEntryDateForRole(profile?.role, e.target.value))}
+              slotProps={{
+                inputLabel: { shrink: true },
+                htmlInput: { min: dateBounds.min, max: dateBounds.max },
+              }}
+              size="small"
+              fullWidth
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            />
+            <Autocomplete
+              freeSolo
+              options={nameHints}
+              inputValue={entryNames}
+              onInputChange={(_, v) => setEntryNames(v)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Names"
+                  placeholder="Person or bank"
+                  size="small"
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                />
+              )}
+            />
+            <TextField
+              label="Particular"
+              placeholder="e.g. HSD, WATER"
+              value={entryParticular}
+              onChange={(e) => setEntryParticular(e.target.value)}
+              size="small"
+              fullWidth
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            />
             <TextField
               select
-              label="This line is"
+              label="Category"
+              value={entryCategory}
+              onChange={(e) => setEntryCategory(e.target.value)}
               size="small"
-              sx={{ minWidth: 280, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-              value={entryPaidOut ? 'paid' : 'received'}
-              onChange={(e) => {
-                const paid = e.target.value === 'paid';
-                setEntryPaidOut(paid);
-                setEntryCategory((c) => {
-                  if (paid && c === 'SALES') return 'EXPENSES';
-                  if (!paid && c === 'EXPENSES') return 'SALES';
-                  return c;
-                });
-              }}
+              fullWidth
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             >
-              <MenuItem value="paid">Money paid out (PAID column)</MenuItem>
-              <MenuItem value="received">Money received (RECEIVED column)</MenuItem>
+              {LEDGER_SHEET_CATEGORIES.map((c) => (
+                <MenuItem key={c} value={c}>
+                  {c}
+                </MenuItem>
+              ))}
             </TextField>
+            <TextField
+              select
+              label="Txn type"
+              value={entryChannel}
+              onChange={(e) => setEntryChannel(e.target.value as LedgerPaymentChannel)}
+              size="small"
+              fullWidth
+              slotProps={txnTypeSelectSlotProps(true)}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            >
+              {ledgerTxnTypeChoices(entryChannel).map((c) => (
+                <MenuItem key={c} value={c}>
+                  {ledgerTxnTypeLabel(c, 'expense')}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Amount"
+              value={entryAmount}
+              onChange={(e) => setEntryAmount(e.target.value)}
+              type="number"
+              size="small"
+              fullWidth
+              slotProps={{ htmlInput: { min: 0, step: '0.01' } }}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            />
+            <Button
+              variant="contained"
+              onClick={() => void submitEntry()}
+              disabled={saving}
+              sx={{ borderRadius: 1.25, minHeight: 44 }}
+            >
+              {saving ? '…' : 'Save'}
+            </Button>
           </Stack>
-          <Paper variant="outlined" sx={{ borderRadius: 1.5 }}>
-            <ResponsiveTableContainer stickyFirstColumn>
-            <Table size="small" sx={{ minWidth: 980, borderCollapse: 'collapse' }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 120 }}>Date</TableCell>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 140 }}>Names</TableCell>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 140 }}>Particular</TableCell>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 120 }}>Category</TableCell>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 128 }}>Txn type</TableCell>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 100 }} align="right">
-                    Paid ₹
-                  </TableCell>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 100 }} align="right">
-                    Received ₹
-                  </TableCell>
-                  <TableCell sx={{ ...headerCellSx, minWidth: 88 }} />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                <TableRow>
-                  <TableCell sx={sheetCellSx}>
-                    <TextField
-                      type="date"
-                      value={entryDate}
-                      onChange={(e) => setEntryDate(clampEntryDateForRole(profile?.role, e.target.value))}
-                      slotProps={{
-                        inputLabel: { shrink: true },
-                        htmlInput: { min: dateBounds.min, max: dateBounds.max },
-                      }}
-                      size="small"
-                      fullWidth
-                      sx={{ minWidth: 120, '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
-                    />
-                  </TableCell>
-                  <TableCell sx={sheetCellSx}>
-                    <TextField
-                      placeholder="Person or bank"
-                      value={entryNames}
-                      onChange={(e) => setEntryNames(e.target.value)}
-                      size="small"
-                      fullWidth
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
-                    />
-                  </TableCell>
-                  <TableCell sx={sheetCellSx}>
-                    <TextField
-                      placeholder="e.g. HSD, WATER"
-                      value={entryParticular}
-                      onChange={(e) => setEntryParticular(e.target.value)}
-                      size="small"
-                      fullWidth
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
-                    />
-                  </TableCell>
-                  <TableCell sx={sheetCellSx}>
-                    <TextField
-                      select
-                      value={entryCategory}
-                      onChange={(e) => setEntryCategory(e.target.value)}
-                      size="small"
-                      fullWidth
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
-                    >
-                      {LEDGER_SHEET_CATEGORIES.map((c) => (
-                        <MenuItem key={c} value={c}>
-                          {c}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  </TableCell>
-                  <TableCell sx={sheetCellSx}>
-                    <TextField
-                      select
-                      value={entryChannel}
-                      onChange={(e) => setEntryChannel(e.target.value as LedgerPaymentChannel)}
-                      size="small"
-                      fullWidth
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
-                    >
-                      <MenuItem value="cash">CASH</MenuItem>
-                      <MenuItem value="bank">BANK</MenuItem>
-                      <MenuItem value="upi">PHONE PE</MenuItem>
-                    </TextField>
-                  </TableCell>
-                  <TableCell sx={sheetCellSx} align="right">
-                    <TextField
-                      placeholder="—"
-                      value={entryPaidOut ? entryAmount : ''}
-                      disabled={!entryPaidOut}
-                      onChange={(e) => {
-                        setEntryPaidOut(true);
-                        setEntryAmount(e.target.value);
-                      }}
-                      type="number"
-                      size="small"
-                      fullWidth
-                      slotProps={{ htmlInput: { min: 0, step: '0.01' } }}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
-                    />
-                  </TableCell>
-                  <TableCell sx={sheetCellSx} align="right">
-                    <TextField
-                      placeholder="—"
-                      value={entryPaidOut ? '' : entryAmount}
-                      disabled={entryPaidOut}
-                      onChange={(e) => {
-                        setEntryPaidOut(false);
-                        setEntryAmount(e.target.value);
-                      }}
-                      type="number"
-                      size="small"
-                      fullWidth
-                      slotProps={{ htmlInput: { min: 0, step: '0.01' } }}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
-                    />
-                  </TableCell>
-                  <TableCell sx={sheetCellSx}>
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={() => void submitEntry()}
-                      disabled={saving}
-                      sx={{ borderRadius: 1.25 }}
-                    >
-                      {saving ? '…' : 'Post'}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-            </ResponsiveTableContainer>
-          </Paper>
+          ) : (
+          <Box>
+            <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+              <TextField
+                select
+                label="This line is"
+                size="small"
+                sx={{ minWidth: 280, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                value={entryPaidOut ? 'paid' : 'received'}
+                onChange={(e) => applyEntryPaidOut(e.target.value === 'paid')}
+              >
+                <MenuItem value="paid">Money paid out (PAID column)</MenuItem>
+                <MenuItem value="received">Money received (RECEIVED column)</MenuItem>
+              </TextField>
+            </Stack>
+            <Paper variant="outlined" sx={{ borderRadius: 1.5 }}>
+              <ResponsiveTableContainer stickyFirstColumn>
+              <Table size="small" sx={{ minWidth: 980, borderCollapse: 'collapse' }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ ...headerCellSx, minWidth: 120 }}>Date</TableCell>
+                    <TableCell sx={{ ...headerCellSx, minWidth: 140 }}>Names</TableCell>
+                    <TableCell sx={{ ...headerCellSx, minWidth: 140 }}>Particular</TableCell>
+                    <TableCell sx={{ ...headerCellSx, minWidth: 120 }}>Category</TableCell>
+                    <TableCell sx={{ ...headerCellSx, minWidth: 128 }}>Txn type</TableCell>
+                    <TableCell sx={{ ...headerCellSx, minWidth: 100 }} align="right">
+                      Paid ₹
+                    </TableCell>
+                    <TableCell sx={{ ...headerCellSx, minWidth: 100 }} align="right">
+                      Received ₹
+                    </TableCell>
+                    <TableCell sx={{ ...headerCellSx, minWidth: 88 }} />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell sx={sheetCellSx}>
+                      <TextField
+                        type="date"
+                        value={entryDate}
+                        onChange={(e) => setEntryDate(clampEntryDateForRole(profile?.role, e.target.value))}
+                        slotProps={{
+                          inputLabel: { shrink: true },
+                          htmlInput: { min: dateBounds.min, max: dateBounds.max },
+                        }}
+                        size="small"
+                        fullWidth
+                        sx={{ minWidth: 120, '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={sheetCellSx}>
+                      <Autocomplete
+                        freeSolo
+                        options={nameHints}
+                        inputValue={entryNames}
+                        onInputChange={(_, v) => setEntryNames(v)}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            placeholder="Person or bank"
+                            size="small"
+                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                          />
+                        )}
+                      />
+                    </TableCell>
+                    <TableCell sx={sheetCellSx}>
+                      <TextField
+                        placeholder="e.g. HSD, WATER"
+                        value={entryParticular}
+                        onChange={(e) => setEntryParticular(e.target.value)}
+                        size="small"
+                        fullWidth
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={sheetCellSx}>
+                      <TextField
+                        select
+                        value={entryCategory}
+                        onChange={(e) => setEntryCategory(e.target.value)}
+                        size="small"
+                        fullWidth
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                      >
+                        {LEDGER_SHEET_CATEGORIES.map((c) => (
+                          <MenuItem key={c} value={c}>
+                            {c}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    </TableCell>
+                    <TableCell sx={sheetCellSx}>
+                      <TextField
+                        select
+                        value={entryChannel}
+                        onChange={(e) => setEntryChannel(e.target.value as LedgerPaymentChannel)}
+                        size="small"
+                        fullWidth
+                        slotProps={txnTypeSelectSlotProps()}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                      >
+                        {ledgerTxnTypeChoices(entryChannel).map((c) => (
+                <MenuItem key={c} value={c}>
+                  {ledgerTxnTypeLabel(c, 'expense')}
+                </MenuItem>
+              ))}
+                      </TextField>
+                    </TableCell>
+                    <TableCell sx={sheetCellSx} align="right">
+                      <TextField
+                        placeholder="—"
+                        value={entryPaidOut ? entryAmount : ''}
+                        disabled={!entryPaidOut}
+                        onChange={(e) => {
+                          applyEntryPaidOut(true);
+                          setEntryAmount(e.target.value);
+                        }}
+                        type="number"
+                        size="small"
+                        fullWidth
+                        slotProps={{ htmlInput: { min: 0, step: '0.01' } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={sheetCellSx} align="right">
+                      <TextField
+                        placeholder="—"
+                        value={entryPaidOut ? '' : entryAmount}
+                        disabled={entryPaidOut}
+                        onChange={(e) => {
+                          applyEntryPaidOut(false);
+                          setEntryAmount(e.target.value);
+                        }}
+                        type="number"
+                        size="small"
+                        fullWidth
+                        slotProps={{ htmlInput: { min: 0, step: '0.01' } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={sheetCellSx}>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={() => void submitEntry()}
+                        disabled={saving}
+                        sx={{ borderRadius: 1.25 }}
+                      >
+                        {saving ? '…' : 'Post'}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+              </ResponsiveTableContainer>
+            </Paper>
+          </Box>
+          )}
           {formErr && (
             <Alert severity="error" sx={{ mt: 2 }}>
               {formErr}
@@ -847,11 +1026,7 @@ export function LedgerPage() {
               onChange={(e) => {
                 const paid = e.target.value === 'paid';
                 setDlgPaidOut(paid);
-                setDlgCategory((c) => {
-                  if (paid && c === 'SALES') return 'EXPENSES';
-                  if (!paid && c === 'EXPENSES') return 'SALES';
-                  return c;
-                });
+                setDlgCategory((c) => pairCategoryForPaidOut(paid, c));
               }}
               size="small"
               fullWidth
@@ -867,11 +1042,14 @@ export function LedgerPage() {
               onChange={(e) => setDlgChannel(e.target.value as LedgerPaymentChannel)}
               size="small"
               fullWidth
+              slotProps={txnTypeSelectSlotProps()}
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             >
-              <MenuItem value="cash">CASH</MenuItem>
-              <MenuItem value="bank">BANK</MenuItem>
-              <MenuItem value="upi">PHONE PE</MenuItem>
+              {ledgerTxnTypeChoices(dlgChannel).map((c) => (
+                <MenuItem key={c} value={c}>
+                  {ledgerTxnTypeLabel(c, 'expense')}
+                </MenuItem>
+              ))}
             </TextField>
             <TextField
               label={dlgPaidOut ? 'Amount paid (₹)' : 'Amount received (₹)'}

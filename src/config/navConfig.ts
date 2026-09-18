@@ -8,6 +8,7 @@ import ShoppingCartOutlinedIcon from '@mui/icons-material/ShoppingCartOutlined';
 import CreditCardOutlinedIcon from '@mui/icons-material/CreditCardOutlined';
 import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
@@ -95,6 +96,12 @@ const NAV_GROUPS: NavGroup[] = [
         to: '/manager/ledger',
         label: 'Ledger',
         icon: AccountBalanceWalletOutlinedIcon,
+        permission: 'view:ledger',
+      },
+      {
+        to: '/manager/transfers',
+        label: 'Transfers',
+        icon: SwapHorizOutlinedIcon,
         permission: 'view:ledger',
       },
       {

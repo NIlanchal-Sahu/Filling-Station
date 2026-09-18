@@ -67,6 +67,7 @@ const OWNER_READ_PATH_PREFIXES = [
   '/manager/fuel',
   '/manager/credit',
   '/manager/ledger',
+  '/manager/transfers',
   '/manager/daily-sheet',
 ] as const;
 
@@ -145,7 +146,7 @@ export function routeRequiresPermission(pathname: string): Permission | null {
   if (path.startsWith('/manager/credit')) {
     return 'view:credit';
   }
-  if (path.startsWith('/manager/ledger') || path.startsWith('/manager/daily-sheet')) {
+  if (path.startsWith('/manager/ledger') || path.startsWith('/manager/transfers') || path.startsWith('/manager/daily-sheet')) {
     return 'view:ledger';
   }
   if (path.startsWith('/manager/lubricants') || path.startsWith('/manager/fuel-stock/purchase')) {
