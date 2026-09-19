@@ -390,7 +390,7 @@ export function ReportsPage() {
               size="small"
               sx={{
                 borderCollapse: 'collapse',
-                minWidth: showOtherFuelCol ? 920 : 800,
+                minWidth: showOtherFuelCol ? 1240 : 1080,
                 '& th, & td': { border: '1px solid', borderColor: 'divider' },
               }}
             >
@@ -401,10 +401,16 @@ export function ReportsPage() {
                     PETROL
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>
+                    RATE
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>
                     AMOUNTS
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>
                     DIESEL
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>
+                    RATE2
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>
                     AMOUNTS2
@@ -413,12 +419,18 @@ export function ReportsPage() {
                     XP
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>
+                    RATE3
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>
                     AMOUNTS3
                   </TableCell>
                   {showOtherFuelCol ? (
                     <>
                       <TableCell align="right" sx={{ fontWeight: 700 }}>
                         OTHER
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>
+                        RATE4
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: 700 }}>
                         AMOUNTS4
@@ -444,10 +456,16 @@ export function ReportsPage() {
                       {r.petrolLiters.toFixed(2)}
                     </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {r.petrolRate.toFixed(2)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {fmtRupeesCell(r.petrolAmount)}
                     </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {r.dieselLiters.toFixed(2)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {r.dieselRate.toFixed(2)}
                     </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {fmtRupeesCell(r.dieselAmount)}
@@ -456,12 +474,18 @@ export function ReportsPage() {
                       {r.xpLiters.toFixed(2)}
                     </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {r.xpRate.toFixed(2)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {fmtRupeesCell(r.xpAmount)}
                     </TableCell>
                     {showOtherFuelCol ? (
                       <>
                         <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                           {r.otherLiters.toFixed(2)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {r.otherRate.toFixed(2)}
                         </TableCell>
                         <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                           {fmtRupeesCell(r.otherAmount)}
@@ -487,26 +511,32 @@ export function ReportsPage() {
               const baseCols = [
                 'DATE',
                 'PETROL_L',
+                'RATE_PETROL',
                 'AMOUNTS_PETROL_RS',
                 'DIESEL_L',
+                'RATE2_DIESEL',
                 'AMOUNTS2_DIESEL_RS',
                 'XP_L',
+                'RATE3_XP',
                 'AMOUNTS3_XP_RS',
               ];
-              const extraCols = showOtherFuelCol ? ['OTHER_L', 'AMOUNTS4_OTHER_RS'] : [];
+              const extraCols = showOtherFuelCol ? ['OTHER_L', 'RATE4_OTHER', 'AMOUNTS4_OTHER_RS'] : [];
               const tail = ['TOTAL_AMOUNTS_RS'];
               const hdr = [...baseCols, ...extraCols, ...tail];
               const rows = dailyPivot.map((r) => {
                 const b = [
                   r.dateLabel,
                   r.petrolLiters,
+                  r.petrolRate,
                   r.petrolAmount,
                   r.dieselLiters,
+                  r.dieselRate,
                   r.dieselAmount,
                   r.xpLiters,
+                  r.xpRate,
                   r.xpAmount,
                 ];
-                const o = showOtherFuelCol ? [r.otherLiters, r.otherAmount] : [];
+                const o = showOtherFuelCol ? [r.otherLiters, r.otherRate, r.otherAmount] : [];
                 return [...b, ...o, r.totalAmount];
               });
               downloadCsv('daily_sales_pivot.csv', hdr, rows);
@@ -802,18 +832,18 @@ export function ReportsPage() {
             <TableHead>
               <TableRow>
                 <TableCell>Customer</TableCell>
+                <TableCell align="right">Total sales</TableCell>
+                <TableCell align="right">Total paid</TableCell>
                 <TableCell align="right">Balance</TableCell>
-                <TableCell align="right">Total sales to date</TableCell>
-                <TableCell align="right">Total paid to date</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {creditRows.map((r) => (
                 <TableRow key={r.name + r.bal}>
                   <TableCell>{r.name}</TableCell>
-                  <TableCell align="right">{r.bal.toFixed(2)}</TableCell>
                   <TableCell align="right">{r.sales.toFixed(2)}</TableCell>
                   <TableCell align="right">{r.pay.toFixed(2)}</TableCell>
+                  <TableCell align="right">{r.bal.toFixed(2)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -823,8 +853,8 @@ export function ReportsPage() {
             onClick={() =>
               downloadCsv(
                 'credit_report.csv',
-                ['Name', 'Balance', 'TotalSales', 'TotalPaid'],
-                creditRows.map((r) => [r.name, r.bal, r.sales, r.pay]),
+                ['Name', 'TotalSales', 'TotalPaid', 'Balance'],
+                creditRows.map((r) => [r.name, r.sales, r.pay, r.bal]),
               )
             }
           >

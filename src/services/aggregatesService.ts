@@ -363,16 +363,49 @@ export type DailySalesPivotRow = {
   /** e.g. 01-Apr */
   dateLabel: string;
   petrolLiters: number;
+  petrolRate: number;
   petrolAmount: number;
   dieselLiters: number;
+  dieselRate: number;
   dieselAmount: number;
   xpLiters: number;
+  xpRate: number;
   xpAmount: number;
   otherLiters: number;
+  otherRate: number;
   otherAmount: number;
   /** Sum of PETROL+DIESEL+XP+other ₹ for the day */
   totalAmount: number;
 };
+
+async function catalogRateByBucket(): Promise<Record<'petrol' | 'diesel' | 'xp' | 'other', number>> {
+  const fuels = await listFuelTypes();
+  const catalog: Record<'petrol' | 'diesel' | 'xp' | 'other', number> = {
+    petrol: 0,
+    diesel: 0,
+    xp: 0,
+    other: 0,
+  };
+  for (const f of fuels) {
+    const b = fuelSalesBucket(f.name);
+    if (catalog[b] <= 0 && Number(f.currentRate) > 0) {
+      catalog[b] = Number(f.currentRate);
+    }
+  }
+  return catalog;
+}
+
+function readingSaleRate(rateAtSale: number, currentRate: number): number {
+  if (Number.isFinite(rateAtSale) && rateAtSale > 0) return rateAtSale;
+  if (Number.isFinite(currentRate) && currentRate > 0) return currentRate;
+  return 0;
+}
+
+/** RATE shown so PETROL × RATE = AMOUNTS (weighted if mixed rates that day). */
+function displayRate(liters: number, amount: number, fallback: number): number {
+  if (liters > 0) return pivotRound(amount / liters);
+  return pivotRound(fallback);
+}
 
 /**
  * Rows for **each calendar day** in `[from, to]` (inclusive local dates).
@@ -385,7 +418,10 @@ export async function getDailySalesFuelPivot(from: Date, to: Date): Promise<Dail
     return [];
   }
   const days = eachDayOfInterval({ start: intervalStart, end: intervalEnd });
-  const closed = await listClosedShiftsByPumpDayRange(intervalStart, endOfDay(to));
+  const [closed, catalog] = await Promise.all([
+    listClosedShiftsByPumpDayRange(intervalStart, endOfDay(to)),
+    catalogRateByBucket(),
+  ]);
 
   type DayAcc = {
     petrolL: number;
@@ -424,7 +460,8 @@ export async function getDailySalesFuelPivot(from: Date, to: Date): Promise<Dail
       const nm = ft?.name ?? 'Unknown';
       const b = fuelSalesBucket(nm);
       const liters = Number(r.finalSalesLiters ?? 0);
-      const amt = Number(r.totalAmount ?? 0);
+      const rate = readingSaleRate(Number(r.rateAtSale ?? 0), Number(ft?.currentRate ?? 0));
+      const amt = liters * rate;
       if (b === 'petrol') {
         acc.petrolL += liters;
         acc.petrolAmt += amt;
@@ -458,12 +495,16 @@ export async function getDailySalesFuelPivot(from: Date, to: Date): Promise<Dail
       dateIso: format(day, 'yyyy-MM-dd'),
       dateLabel: format(day, 'dd-MMM'),
       petrolLiters,
+      petrolRate: displayRate(petrolLiters, petrolAmount, catalog.petrol),
       petrolAmount,
       dieselLiters,
+      dieselRate: displayRate(dieselLiters, dieselAmount, catalog.diesel),
       dieselAmount,
       xpLiters,
+      xpRate: displayRate(xpLiters, xpAmount, catalog.xp),
       xpAmount,
       otherLiters,
+      otherRate: displayRate(otherLiters, otherAmount, catalog.other),
       otherAmount,
       totalAmount,
     });
