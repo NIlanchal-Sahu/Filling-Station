@@ -54,6 +54,7 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'edit:fuel',
     'edit:reconciliation',
     'approve:reconciliation',
+    'manage:team',
   ]),
   operator: new Set(['view:dashboard', 'view:operations', 'edit:shifts', 'edit:reconciliation']),
 };
@@ -120,9 +121,6 @@ export function canAccessRoute(role: UserRole | null | undefined, pathname: stri
   }
   if (path.startsWith('/manager')) {
     if (role === 'manager' || role === 'admin') {
-      if (path === '/manager/team' || path.startsWith('/manager/team/')) {
-        return false;
-      }
       return true;
     }
     if (role === 'owner') {
@@ -138,7 +136,7 @@ export function canAccessRoute(role: UserRole | null | undefined, pathname: stri
 
 export function routeRequiresPermission(pathname: string): Permission | null {
   const path = pathname.split('?')[0] ?? pathname;
-  if (path.startsWith('/admin/team')) {
+  if (path.startsWith('/admin/team') || path.startsWith('/manager/team')) {
     return 'manage:team';
   }
   if (path.startsWith('/admin/settings')) {

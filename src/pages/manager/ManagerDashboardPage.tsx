@@ -62,7 +62,16 @@ export function ManagerDashboardPage() {
 
   return (
     <>
-      <Stack spacing={3.5} sx={{ pb: 4, pr: { xs: 6, sm: 7 } }}>
+      <Stack
+        spacing={3.5}
+        sx={{
+          width: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          pb: 4,
+          pr: { xs: 0, sm: 4.5 },
+        }}
+      >
         <PageHeader
           title="Manager dashboard"
           subtitle={`${reportLabel}${isSelectedToday ? ' · Today' : ''}`}
@@ -82,7 +91,7 @@ export function ManagerDashboardPage() {
             borderColor: 'divider',
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ width: { xs: '100%', sm: 'auto' } }}>
             <CalendarMonthOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }} />
             <TextField
               type="date"
@@ -94,7 +103,12 @@ export function ManagerDashboardPage() {
                 htmlInput: { max: maxSelectableIso },
                 inputLabel: { shrink: true },
               }}
-              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+              sx={{
+                width: { xs: '100%', sm: 'auto' },
+                minWidth: { xs: 0, sm: 200 },
+                maxWidth: '100%',
+                '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
+              }}
             />
           </Stack>
         </Paper>

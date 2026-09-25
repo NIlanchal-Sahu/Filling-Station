@@ -12,6 +12,7 @@ import ChevronLeftOutlinedIcon from '@mui/icons-material/ChevronLeftOutlined';
 import AppsOutlinedIcon from '@mui/icons-material/AppsOutlined';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 import type { QuickAction } from '@/components/ui/QuickActionBar';
+import { DRAWER_WIDTH } from '@/theme/theme';
 
 type Props = {
   actions: QuickAction[];
@@ -33,7 +34,12 @@ export function FloatingActionPanel({ actions, label = 'Shortcuts' }: Props) {
   const panelSx = {
     position: 'fixed' as const,
     zIndex: 1100,
-    right: 0,
+    // Stay on the viewport edge until the app content reaches its 1200px
+    // maximum, then follow the centered content edge on wide desktops.
+    right: {
+      xs: 0,
+      lg: `max(0px, calc((100% - ${DRAWER_WIDTH}px - 1200px) / 2))`,
+    },
     top: { xs: 'auto', sm: '50%' },
     bottom: { xs: 88, sm: 'auto' },
     transform: { xs: 'none', sm: 'translateY(-50%)' },

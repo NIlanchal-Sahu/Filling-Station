@@ -108,7 +108,7 @@ export default function App() {
           <Route element={<ProtectedRoute requireRole={['manager', 'admin', 'owner']} />}>
             <Route path="manager" element={<Outlet />}>
               <Route index element={<ManagerDashboardPage />} />
-              <Route path="team" element={<Navigate to="/admin/team" replace />} />
+              <Route path="team" element={<TeamPage />} />
               <Route path="credit" element={<CreditCustomersPage />} />
               <Route path="credit/:id" element={<CustomerDetailPage />} />
               <Route path="ledger" element={<LedgerPage />} />

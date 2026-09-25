@@ -223,10 +223,11 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
   return (
     <Stack spacing={2}>
       <Stack
-        direction={{ xs: 'column', sm: 'row' }}
+        direction={{ xs: 'column', md: 'row' }}
         spacing={1.5}
         justifyContent="space-between"
-        alignItems={{ sm: 'center' }}
+        alignItems={{ md: 'center' }}
+        sx={{ minWidth: 0 }}
       >
         <Stack direction="row" spacing={1.25} alignItems="center">
           <Box
@@ -249,7 +250,18 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
             </Stack>
           </Box>
         </Stack>
-        <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ flexShrink: 0, alignSelf: { xs: 'flex-start', sm: 'center' } }}>
+        <Stack
+          direction="row"
+          spacing={0}
+          flexWrap="wrap"
+          sx={{
+            width: { xs: '100%', md: 'auto' },
+            minWidth: 0,
+            flexShrink: { md: 0 },
+            alignSelf: { xs: 'flex-start', md: 'center' },
+            gap: 1,
+          }}
+        >
           <Button
             variant="outlined"
             size="small"

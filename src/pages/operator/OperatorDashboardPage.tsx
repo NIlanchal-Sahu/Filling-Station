@@ -222,7 +222,7 @@ export function OperatorDashboardPage() {
                 onClick={() => nav('/operator/prices')}
                 sx={touchButtonSx}
               >
-                Open fuel prices
+                View fuel prices
               </Button>
             </Stack>
           </CardContent>

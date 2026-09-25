@@ -17,6 +17,13 @@ export function requireEmail(value: string): string | undefined {
   return undefined;
 }
 
+export function optionalEmail(value: string): string | undefined {
+  if (!value.trim()) {
+    return undefined;
+  }
+  return requireEmail(value);
+}
+
 export function requirePositiveNumber(value: string, field: string): string | undefined {
   const n = Number(value);
   if (value === '' || Number.isNaN(n)) {

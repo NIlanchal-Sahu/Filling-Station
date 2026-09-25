@@ -8,9 +8,10 @@ import {
   updateDoc,
   type DocumentData,
 } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 import { LOCAL_DEMO } from '@/config/appMode';
 import type { User, UserRole } from '@/types/entities';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
+import { COLLECTIONS, getDb, getStorageInstance } from '@/lib/firebase';
 import {
   demoGetUser,
   demoListActiveUsers,
@@ -20,12 +21,23 @@ import {
 } from '@/localDemo/demoBackend';
 import { parseUserRole } from '@/utils/roles';
 
+function optionalText(value: unknown): string | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  const s = String(value).trim();
+  return s || undefined;
+}
+
 function mapUser(id: string, data: DocumentData): User {
   return {
     id,
     name: String(data.name ?? ''),
     role: parseUserRole(data.role),
-    phone: data.phone ? String(data.phone) : undefined,
+    phone: optionalText(data.phone),
+    email: optionalText(data.email),
+    photoUrl: optionalText(data.photoUrl),
+    address: optionalText(data.address),
     isActive: data.isActive !== false,
   };
 }
@@ -61,17 +73,30 @@ export async function listUsersForManager(): Promise<User[]> {
   return snap.docs.map((d) => mapUser(d.id, d.data()));
 }
 
+/** Demo: keep the data URL on the user record. Live: store in Firebase Storage. */
+export async function persistStaffPhoto(uid: string, dataUrl: string): Promise<string> {
+  if (LOCAL_DEMO) {
+    return dataUrl;
+  }
+  const photoRef = ref(getStorageInstance(), `staff-photos/${uid}.jpg`);
+  await uploadString(photoRef, dataUrl, 'data_url');
+  return getDownloadURL(photoRef);
+}
+
 export async function upsertUser(uid: string, input: Omit<User, 'id'>): Promise<void> {
   if (LOCAL_DEMO) {
     return demoUpsertUser(uid, input);
   }
-  const ref = doc(getDb(), COLLECTIONS.users, uid);
+  const refDoc = doc(getDb(), COLLECTIONS.users, uid);
   await setDoc(
-    ref,
+    refDoc,
     {
       name: input.name,
       role: input.role,
-      phone: input.phone ?? null,
+      phone: input.phone?.trim() || null,
+      email: input.email?.trim() || null,
+      photoUrl: input.photoUrl?.trim() || null,
+      address: input.address?.trim() || null,
       isActive: input.isActive,
       updatedAt: serverTimestamp(),
     },
@@ -83,6 +108,6 @@ export async function updateUserRole(uid: string, role: UserRole): Promise<void>
   if (LOCAL_DEMO) {
     return demoUpdateUserRole(uid, role);
   }
-  const ref = doc(getDb(), COLLECTIONS.users, uid);
-  await updateDoc(ref, { role, updatedAt: serverTimestamp() });
+  const refDoc = doc(getDb(), COLLECTIONS.users, uid);
+  await updateDoc(refDoc, { role, updatedAt: serverTimestamp() });
 }

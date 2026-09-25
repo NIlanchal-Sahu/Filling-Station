@@ -15,6 +15,13 @@ function fmtInr(n: number): string {
 
 /** 3 cards per row on sm+ → two rows for six KPIs */
 const KPI_GRID_SIZE = { xs: 6, sm: 4 } as const;
+const KPI_GRID_ITEM_SX = {
+  minWidth: 0,
+  '@media (max-width:359.95px)': {
+    flexBasis: '100%',
+    maxWidth: '100%',
+  },
+} as const;
 
 type Props = {
   loading: boolean;
@@ -25,9 +32,9 @@ type Props = {
 export function DashboardKpiGrid({ loading, data, showStartShift = false }: Props) {
   if (loading) {
     return (
-      <Grid container spacing={2}>
+      <Grid container spacing={2} sx={{ width: '100%', minWidth: 0 }}>
         {[0, 1, 2, 3, 4, 5].map((i) => (
-          <Grid key={i} size={KPI_GRID_SIZE}>
+          <Grid key={i} size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
             <KpiStatSkeleton />
           </Grid>
         ))}
@@ -88,9 +95,9 @@ export function DashboardKpiGrid({ loading, data, showStartShift = false }: Prop
   ];
 
   return (
-    <Grid container spacing={2}>
+    <Grid container spacing={2} sx={{ width: '100%', minWidth: 0 }}>
       {kpis.map((kpi) => (
-        <Grid key={kpi.label} size={KPI_GRID_SIZE}>
+        <Grid key={kpi.label} size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
           <KpiStat
             label={kpi.label}
             value={kpi.value}

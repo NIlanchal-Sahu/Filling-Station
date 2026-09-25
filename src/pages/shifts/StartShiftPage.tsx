@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   alpha,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -18,13 +19,15 @@ import {
   Typography,
 } from '@mui/material';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { StaffAvatar } from '@/components/ui/StaffAvatar';
 import { MotionButton } from '@/components/motion/MotionButton';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { listNozzles } from '@/services/nozzlesService';
 import { getLastClosingForNozzle, createInitialReadings } from '@/services/shiftReadingsService';
 import { createShift } from '@/services/shiftsService';
-import { SHIFT_LABELS, type Nozzle } from '@/types/entities';
+import { listActiveUsers } from '@/services/usersService';
+import { SHIFT_LABELS, type Nozzle, type User } from '@/types/entities';
 import { compareNozzleOrder } from '@/utils/nozzleSort';
 import { formatMachineLabelFromNozzleSelection } from '@/utils/machineDisplay';
 import {
@@ -35,7 +38,8 @@ import {
   recalledAdminPumpDay,
   todayIso,
 } from '@/utils/dateEntryPolicy';
-import { attendantNameList, joinAttendantNames, shiftOptionLabel } from '@/utils/shiftStatusDisplay';
+import { isPumpRosterUser } from '@/utils/roles';
+import { joinAttendantNames, shiftOptionLabel } from '@/utils/shiftStatusDisplay';
 
 export function StartShiftPage() {
   const { profile } = useAuth();
@@ -46,13 +50,15 @@ export function StartShiftPage() {
   const [nozzles, setNozzles] = useState<Nozzle[]>([]);
   const [calendarDate, setCalendarDate] = useState(() => todayIso());
   const [shiftLabel, setShiftLabel] = useState<string>(SHIFT_LABELS[0]);
-  const [pumpAttendants, setPumpAttendants] = useState('');
+  const [roster, setRoster] = useState<User[]>([]);
+  const [selectedAttendants, setSelectedAttendants] = useState<User[]>([]);
   const [notes, setNotes] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const preselectedRef = useRef(false);
 
   useEffect(() => {
     if (!profile) {
@@ -62,11 +68,16 @@ export function StartShiftPage() {
     (async () => {
       setLoading(true);
       try {
-        const nz = await listNozzles(true);
+        const [nz, users] = await Promise.all([listNozzles(true), listActiveUsers()]);
         if (!ok) {
           return;
         }
         setNozzles(nz);
+        setRoster(
+          users
+            .filter(isPumpRosterUser)
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
       } catch (e) {
         if (ok) {
           setLoadErr(e instanceof Error ? e.message : 'Failed to load data');
@@ -81,6 +92,21 @@ export function StartShiftPage() {
       ok = false;
     };
   }, [profile]);
+
+  useEffect(() => {
+    if (preselectedRef.current || !profile || roster.length === 0) {
+      return;
+    }
+    if (profile.role !== 'operator') {
+      preselectedRef.current = true;
+      return;
+    }
+    const me = roster.find((u) => u.id === profile.id);
+    if (me) {
+      setSelectedAttendants([me]);
+    }
+    preselectedRef.current = true;
+  }, [profile, roster]);
 
   useEffect(() => {
     const fromUrl = parsePumpDayParam(searchParams.get('day'));
@@ -124,7 +150,7 @@ export function StartShiftPage() {
       const day = clampEntryDateForRole(profile?.role, calendarDate);
       assertEntryDateAllowed(profile?.role, day);
       const oid = profile.id;
-      const pt = joinAttendantNames(attendantNameList(pumpAttendants));
+      const pt = joinAttendantNames(selectedAttendants.map((u) => u.name));
       const shiftId = await createShift({
         operatorId: oid,
         shiftLabel,
@@ -215,13 +241,33 @@ export function StartShiftPage() {
         </Select>
       </FormControl>
 
-      <TextField
-        fullWidth
-        margin="normal"
-        label="Pump attendants"
-        value={pumpAttendants}
-        onChange={(e) => setPumpAttendants(e.target.value)}
-        placeholder="Priya, Ravi"
+      <Autocomplete
+        multiple
+        options={roster}
+        value={selectedAttendants}
+        onChange={(_, next) => setSelectedAttendants(next)}
+        isOptionEqualToValue={(a, b) => a.id === b.id}
+        getOptionLabel={(u) => u.name}
+        renderOption={(props, u) => {
+          const { key, ...liProps } = props;
+          return (
+            <Box component="li" key={key ?? u.id} {...liProps}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <StaffAvatar name={u.name} photoUrl={u.photoUrl} size={28} />
+                <Typography variant="body2">{u.name}</Typography>
+              </Stack>
+            </Box>
+          );
+        }}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            margin="normal"
+            label="Pump attendants"
+            placeholder={roster.length === 0 ? 'No active workers' : 'Select staff'}
+            helperText="Optional. Choose who is on the island."
+          />
+        )}
       />
 
       <TextField

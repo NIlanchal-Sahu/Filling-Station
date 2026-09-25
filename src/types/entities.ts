@@ -8,6 +8,9 @@ export interface User {
   name: string;
   role: UserRole;
   phone?: string;
+  email?: string;
+  photoUrl?: string;
+  address?: string;
   isActive: boolean;
 }
 

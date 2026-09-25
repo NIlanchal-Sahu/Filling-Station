@@ -156,6 +156,9 @@ function resolveItemPath(item: NavItem, role: UserRole): string {
   if (item.to === '__dashboard__') {
     return resolveDashboardPath(role);
   }
+  if (item.to === '/admin/team' && role !== 'admin') {
+    return '/manager/team';
+  }
   return item.to;
 }
 
@@ -286,6 +289,12 @@ export function getMobileBottomNavItems(role: UserRole): NavItem[] {
         label: 'Credit',
         icon: CreditCardOutlinedIcon,
         permission: 'edit:credit',
+      },
+      {
+        to: '/manager/team',
+        label: 'Team',
+        icon: GroupsOutlinedIcon,
+        permission: 'manage:team',
       },
       {
         to: '/manager/reports',

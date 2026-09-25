@@ -1,6 +1,7 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import { LOCAL_DEMO } from '@/config/appMode';
 
 const firebaseConfig = {
@@ -43,6 +44,7 @@ export function getFirebaseConfigStatus(): { ok: boolean; missing: string[] } {
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
+let storage: FirebaseStorage | null = null;
 
 export function getFirebaseApp(): FirebaseApp {
   if (LOCAL_DEMO) {
@@ -72,6 +74,13 @@ export function getDb(): Firestore {
     db = getFirestore(getFirebaseApp());
   }
   return db;
+}
+
+export function getStorageInstance(): FirebaseStorage {
+  if (!storage) {
+    storage = getStorage(getFirebaseApp());
+  }
+  return storage;
 }
 
 export { COLLECTIONS } from '@/constants/collections';

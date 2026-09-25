@@ -45,6 +45,9 @@ type StoredUser = {
   name: string;
   role: string;
   phone?: string | null;
+  email?: string | null;
+  photoUrl?: string | null;
+  address?: string | null;
   isActive: boolean;
 };
 type StoredFuelType = {
@@ -455,6 +458,9 @@ function mapUser(id: string, u: StoredUser): User {
     name: u.name,
     role: parseUserRole(u.role),
     phone: u.phone ?? undefined,
+    email: u.email ?? undefined,
+    photoUrl: u.photoUrl ?? undefined,
+    address: u.address ?? undefined,
     isActive: u.isActive !== false,
   };
 }
@@ -561,6 +567,9 @@ export async function demoUpsertUser(uid: string, input: Omit<User, 'id'>): Prom
     name: input.name,
     role: input.role,
     phone: input.phone ?? null,
+    email: input.email ?? null,
+    photoUrl: input.photoUrl ?? null,
+    address: input.address ?? null,
     isActive: input.isActive,
   };
   persist();

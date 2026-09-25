@@ -53,6 +53,15 @@ type AttentionItem = {
   to: string;
 };
 
+const KPI_GRID_SIZE = { xs: 6, sm: 4 } as const;
+const KPI_GRID_ITEM_SX = {
+  minWidth: 0,
+  '@media (max-width:359.95px)': {
+    flexBasis: '100%',
+    maxWidth: '100%',
+  },
+} as const;
+
 export function OwnerDashboardPage() {
   const [reportIso, setReportIso] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const maxSelectableIso = format(new Date(), 'yyyy-MM-dd');
@@ -151,7 +160,16 @@ export function OwnerDashboardPage() {
 
   return (
     <>
-      <Stack spacing={3.5} sx={{ pb: 4, pr: { xs: 6, sm: 7 } }}>
+      <Stack
+        spacing={3.5}
+        sx={{
+          width: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          pb: 4,
+          pr: { xs: 0, sm: 4.5 },
+        }}
+      >
         <PageHeader
           title="Owner dashboard"
           subtitle={`${reportLabel}${isSelectedToday ? ' · Today' : ''}`}
@@ -172,7 +190,12 @@ export function OwnerDashboardPage() {
           }}
         >
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}>
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ width: { xs: '100%', sm: 'auto' } }}
+            >
               <CalendarMonthOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }} />
               <TextField
                 type="date"
@@ -184,7 +207,12 @@ export function OwnerDashboardPage() {
                   htmlInput: { max: maxSelectableIso },
                   inputLabel: { shrink: true },
                 }}
-                sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                sx={{
+                  width: { xs: '100%', sm: 'auto' },
+                  minWidth: { xs: 0, sm: 200 },
+                  maxWidth: '100%',
+                  '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
+                }}
               />
             </Stack>
           </Stack>
@@ -219,16 +247,16 @@ export function OwnerDashboardPage() {
           </Stack>
         )}
 
-        <Grid container spacing={2}>
+        <Grid container spacing={2} sx={{ width: '100%', minWidth: 0 }}>
           {kpisLoading ? (
             Array.from({ length: 6 }, (_, i) => (
-              <Grid key={i} size={{ xs: 6, sm: 4, md: 4 }}>
+              <Grid key={i} size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
                 <KpiStatSkeleton />
               </Grid>
             ))
           ) : (
             <>
-              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+              <Grid size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
                 <KpiStat
                   label="Meter sales"
                   value={fmtInr(meterSales)}
@@ -240,7 +268,7 @@ export function OwnerDashboardPage() {
                   staggerIndex={1}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+              <Grid size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
                 <KpiStat
                   label="Cash collected"
                   value={fmtInr(cashCollected)}
@@ -250,7 +278,7 @@ export function OwnerDashboardPage() {
                   staggerIndex={2}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+              <Grid size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
                 <KpiStat
                   label="Shortage"
                   value={fmtInr(shortage)}
@@ -260,7 +288,7 @@ export function OwnerDashboardPage() {
                   staggerIndex={3}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+              <Grid size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
                 <KpiStat
                   label="Expenses"
                   value={fmtInr(expenses)}
@@ -272,7 +300,7 @@ export function OwnerDashboardPage() {
                   staggerIndex={4}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+              <Grid size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
                 <KpiStat
                   label="Tank variation"
                   value={`${variationLiters.toLocaleString('en-IN')} L`}
@@ -283,7 +311,7 @@ export function OwnerDashboardPage() {
                   staggerIndex={5}
                 />
               </Grid>
-              <Grid size={{ xs: 6, sm: 4, md: 4 }}>
+              <Grid size={KPI_GRID_SIZE} sx={KPI_GRID_ITEM_SX}>
                 <KpiStat
                   label="Overdue credit"
                   value={fmtInr(overdueCredit)}

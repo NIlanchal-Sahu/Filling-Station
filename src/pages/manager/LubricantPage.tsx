@@ -738,6 +738,7 @@ export function LubricantPage() {
   return (
     <Box>
       <PageHeader
+        sx={{ mb: 3 }}
         title="Lubricants"
         action={
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>

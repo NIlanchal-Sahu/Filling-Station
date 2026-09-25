@@ -9,6 +9,7 @@ import {
 import MenuIcon from '@mui/icons-material/Menu';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import { useNavigate } from 'react-router-dom';
+import { StaffAvatar } from '@/components/ui/StaffAvatar';
 import { useAuth } from '@/context/AuthContext';
 import { roleLabel } from '@/utils/roles';
 
@@ -48,6 +49,7 @@ export function TopBar({ onMenuClick, showMenuButton }: Props) {
         </Typography>
         {profile ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <StaffAvatar name={profile.name} photoUrl={profile.photoUrl} size={32} />
             <Box sx={{ display: { xs: 'none', sm: 'block' }, textAlign: 'right' }}>
               <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
                 {profile.name}
