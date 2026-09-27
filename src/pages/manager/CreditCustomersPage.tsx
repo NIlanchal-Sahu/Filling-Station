@@ -28,7 +28,14 @@ import {
   TableRow,
   TextField,
   Typography,
+  Pagination,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import GroupOutlinedIcon from '@mui/icons-material/GroupOutlined';
@@ -69,8 +76,12 @@ function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+const PARTIES_PER_PAGE_MOBILE = 8;
+
 export function CreditCustomersPage() {
   const nav = useNavigate();
+  const theme = useTheme();
+  const isMobileLayout = useMediaQuery(theme.breakpoints.down('md'));
   const { profile } = useAuth();
   const { readOnlyOps, role } = usePermissions();
   const isAdmin = role === 'admin';
@@ -111,6 +122,7 @@ export function CreditCustomersPage() {
   const [fuelTotalsByCustomerId, setFuelTotalsByCustomerId] = useState<
     Record<string, CustomerFuelCreditTotals>
   >({});
+  const [partyPage, setPartyPage] = useState(1);
 
   async function load() {
     setLoading(true);
@@ -204,6 +216,25 @@ export function CreditCustomersPage() {
         r.fuel.toLowerCase().includes(t),
     );
   }, [registerRows, q]);
+
+  useEffect(() => {
+    setPartyPage(1);
+  }, [q, showInactive, list.length]);
+
+  const partyPageCount = Math.max(1, Math.ceil(filtered.length / PARTIES_PER_PAGE_MOBILE));
+  const partiesPaged = useMemo(() => {
+    if (!isMobileLayout) {
+      return filtered;
+    }
+    const start = (partyPage - 1) * PARTIES_PER_PAGE_MOBILE;
+    return filtered.slice(start, start + PARTIES_PER_PAGE_MOBILE);
+  }, [filtered, isMobileLayout, partyPage]);
+
+  useEffect(() => {
+    if (partyPage > partyPageCount) {
+      setPartyPage(partyPageCount);
+    }
+  }, [partyPage, partyPageCount]);
 
   useEffect(() => {
     const act = activeForCreditSale;
@@ -325,7 +356,15 @@ export function CreditCustomersPage() {
   }
 
   return (
-    <Stack spacing={3} sx={{ pb: 4 }}>
+    <Stack
+      spacing={3}
+      sx={{
+        width: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        pb: { xs: 10, md: 4 },
+      }}
+    >
       {readOnlyOps ? (
         <ReadOnlyBanner message="You can review parties and the credit register. Staff post sales and new accounts." />
       ) : null}
@@ -340,7 +379,8 @@ export function CreditCustomersPage() {
             onChange={(e) => setQ(e.target.value)}
             fullWidth
             sx={{
-              maxWidth: { md: 360 },
+              maxWidth: { xs: '100%', md: 360 },
+              width: '100%',
               '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
             }}
             slotProps={{
@@ -354,12 +394,15 @@ export function CreditCustomersPage() {
             }}
           />
           <FormControlLabel
+            sx={{ mx: 0, width: { xs: '100%', sm: 'auto' } }}
             control={<Switch checked={showInactive} onChange={(_, c) => setShowInactive(c)} color="primary" />}
             label={<Typography variant="body2">Show inactive parties</Typography>}
           />
           <Button
             variant="contained"
             color="secondary"
+            fullWidth={isMobileLayout}
+            sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0, minHeight: 44 }}
             onClick={() =>
               downloadCsv(
                 'credit_customers.csv',
@@ -381,7 +424,6 @@ export function CreditCustomersPage() {
                 }),
               )
             }
-            sx={{ minHeight: 44 }}
           >
             Export parties CSV
           </Button>
@@ -548,22 +590,82 @@ export function CreditCustomersPage() {
                 Export register CSV
               </Button>
             </Stack>
+            <Box
+              sx={{
+                display: { xs: 'block', md: 'none' },
+                maxHeight: '50vh',
+                overflowY: 'auto',
+                borderTop: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              {registerFiltered.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                  No credit sales match this view — post a sale above or widen your search.
+                </Typography>
+              ) : (
+                <List dense disablePadding>
+                  {registerFiltered.map((r, idx) => (
+                    <ListItem
+                      key={r.id}
+                      divider
+                      sx={{
+                        flexDirection: 'column',
+                        alignItems: 'stretch',
+                        py: 1.25,
+                        px: 2,
+                        bgcolor:
+                          idx % 2 === 1 ? (t) => alpha(t.palette.primary.main, 0.035) : 'transparent',
+                      }}
+                    >
+                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            {r.party}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {r.dateLabel} · {r.fuel}
+                          </Typography>
+                        </Box>
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                          ₹{r.amount}
+                        </Typography>
+                      </Stack>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.75 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {r.qty} L @ ₹{r.rate}/L
+                        </Typography>
+                        {isAdmin ? (
+                          <Stack direction="row" spacing={0.5}>
+                            <IconButton
+                              size="small"
+                              aria-label={`Edit credit sale for ${r.party}`}
+                              onClick={() => openEdit(r.sale)}
+                            >
+                              <EditOutlinedIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              aria-label={`Delete credit sale for ${r.party}`}
+                              onClick={() => void handleDeleteSale(r)}
+                            >
+                              <DeleteOutlineOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          </Stack>
+                        ) : null}
+                      </Stack>
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </Box>
             <ResponsiveTableContainer
               sx={{
+                display: { xs: 'none', md: 'block' },
                 maxHeight: 420,
                 minWidth: 0,
-                overflowX: { xs: 'auto', md: 'hidden' },
-                '& thead th:first-of-type': {
-                  left: { xs: 0, md: 'auto' },
-                  boxShadow: { xs: '2px 0 4px -2px rgba(0,0,0,0.18)', md: 'none' },
-                },
-                '& tbody td:first-of-type': {
-                  position: { xs: 'sticky', md: 'static' },
-                  left: { xs: 0, md: 'auto' },
-                  zIndex: { xs: 2, md: 'auto' },
-                  bgcolor: { xs: 'background.paper', md: 'transparent' },
-                  boxShadow: { xs: '2px 0 4px -2px rgba(0,0,0,0.18)', md: 'none' },
-                },
+                overflowX: 'hidden',
               }}
             >
               <Table
@@ -572,8 +674,8 @@ export function CreditCustomersPage() {
                 aria-label="Credit register"
                 sx={{
                   width: '100%',
-                  minWidth: { xs: 640, md: 0 },
-                  tableLayout: { xs: 'auto', md: 'fixed' },
+                  minWidth: 0,
+                  tableLayout: 'fixed',
                   borderCollapse: 'separate',
                   borderSpacing: 0,
                   '& th': {
@@ -674,102 +776,193 @@ export function CreditCustomersPage() {
             </ResponsiveTableContainer>
           </Paper>
 
-          <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
-              Parties
-            </Typography>
-            <Stack spacing={1.5}>
-              {filtered.map((c) => (
-                <Card
-                  key={c.id}
-                  elevation={0}
-                  sx={{
-                    borderRadius: 2,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    transition: 'border-color 0.2s, box-shadow 0.2s',
-                    '&:hover': {
-                      borderColor: 'primary.light',
-                      boxShadow: (t) => `0 6px 20px ${alpha(t.palette.primary.main, 0.08)}`,
-                    },
-                  }}
-                >
-                  <CardContent
+          <Box sx={{ minWidth: 0 }}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              flexWrap="wrap"
+              gap={1}
+              sx={{ mb: 1.5 }}
+            >
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                Parties
+              </Typography>
+              {isMobileLayout && filtered.length > 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  {filtered.length} total
+                </Typography>
+              ) : null}
+            </Stack>
+
+            {isMobileLayout ? (
+              <>
+                {partiesPaged.length === 0 ? (
+                  <Paper variant="outlined" sx={{ borderRadius: 2, p: 3, textAlign: 'center' }}>
+                    <Typography color="text.secondary">
+                      No parties match your search. Try clearing the filter or add a new party above.
+                    </Typography>
+                  </Paper>
+                ) : (
+                  <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                    <List disablePadding dense>
+                      {partiesPaged.map((c) => (
+                        <ListItem
+                          key={c.id}
+                          divider
+                          disablePadding
+                          secondaryAction={
+                            !readOnlyOps ? (
+                              <IconButton
+                                edge="end"
+                                size="small"
+                                aria-label={c.isActive ? `Deactivate ${c.name}` : `Activate ${c.name}`}
+                                onClick={async () => {
+                                  await updateCustomer(c.id, { isActive: !c.isActive });
+                                  await load();
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ fontWeight: 700, px: 0.5 }}>
+                                  {c.isActive ? 'Off' : 'On'}
+                                </Typography>
+                              </IconButton>
+                            ) : undefined
+                          }
+                        >
+                          <ListItemButton onClick={() => nav(`/manager/credit/${c.id}`)} sx={{ py: 1.25, pr: 7 }}>
+                            <ListItemText
+                              primary={
+                                <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                                  <Typography component="span" variant="body2" sx={{ fontWeight: 700 }}>
+                                    {c.name}
+                                  </Typography>
+                                  {!c.isActive ? (
+                                    <Chip label="Inactive" size="small" sx={{ height: 20, fontSize: '0.65rem' }} />
+                                  ) : null}
+                                </Stack>
+                              }
+                              secondary={
+                                <Typography
+                                  component="span"
+                                  variant="caption"
+                                  color="primary.main"
+                                  sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
+                                >
+                                  {fmtRs(c.currentBalance)}
+                                </Typography>
+                              }
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      ))}
+                    </List>
+                  </Paper>
+                )}
+                {partyPageCount > 1 ? (
+                  <Pagination
+                    count={partyPageCount}
+                    page={partyPage}
+                    onChange={(_, p) => setPartyPage(p)}
+                    size="small"
+                    color="primary"
+                    sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <Stack spacing={1.5}>
+                {filtered.map((c) => (
+                  <Card
+                    key={c.id}
+                    elevation={0}
                     sx={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: 2,
-                      py: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      transition: 'border-color 0.2s, box-shadow 0.2s',
+                      '&:hover': {
+                        borderColor: 'primary.light',
+                        boxShadow: (t) => `0 6px 20px ${alpha(t.palette.primary.main, 0.08)}`,
+                      },
                     }}
                   >
-                    <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
-                      <Avatar
-                        sx={{
-                          bgcolor: (t) => alpha(t.palette.primary.main, 0.15),
-                          color: 'primary.main',
-                          fontWeight: 700,
-                          width: 48,
-                          height: 48,
-                        }}
-                      >
-                        {c.name.trim().slice(0, 1).toUpperCase()}
-                      </Avatar>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                          <Typography sx={{ fontWeight: 700, fontSize: '1.05rem' }}>{c.name}</Typography>
-                          {!c.isActive ? (
-                            <Chip label="Inactive" size="small" color="default" sx={{ height: 24 }} />
-                          ) : (
-                            <Chip label="Active" size="small" color="success" variant="outlined" sx={{ height: 24 }} />
-                          )}
-                        </Stack>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                          Balance owed ·{' '}
-                          <Typography component="span" color="primary.main" fontWeight={700} variant="body2">
-                            {fmtRs(c.currentBalance)}
-                          </Typography>
-                        </Typography>
-                        {(() => {
-                          const ft = fuelTotalsByCustomerId[c.id];
-                          const line = ft ? describeFuelCreditTotals(ft) : '';
-                          if (!line) return null;
-                          return (
-                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
-                              Lifetime credit fuel: {line}
-                            </Typography>
-                          );
-                        })()}
-                      </Box>
-                    </Stack>
-                    <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
-                      <Button variant="contained" size="small" onClick={() => nav(`/manager/credit/${c.id}`)}>
-                        Open ledger
-                      </Button>
-                      {!readOnlyOps ? (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={async () => {
-                            await updateCustomer(c.id, { isActive: !c.isActive });
-                            await load();
+                    <CardContent
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 2,
+                        py: 2,
+                      }}
+                    >
+                      <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
+                        <Avatar
+                          sx={{
+                            bgcolor: (t) => alpha(t.palette.primary.main, 0.15),
+                            color: 'primary.main',
+                            fontWeight: 700,
+                            width: 48,
+                            height: 48,
                           }}
                         >
-                          {c.isActive ? 'Deactivate' : 'Activate'}
+                          {c.name.trim().slice(0, 1).toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <Typography sx={{ fontWeight: 700, fontSize: '1.05rem' }}>{c.name}</Typography>
+                            {!c.isActive ? (
+                              <Chip label="Inactive" size="small" color="default" sx={{ height: 24 }} />
+                            ) : (
+                              <Chip label="Active" size="small" color="success" variant="outlined" sx={{ height: 24 }} />
+                            )}
+                          </Stack>
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                            Balance owed ·{' '}
+                            <Typography component="span" color="primary.main" fontWeight={700} variant="body2">
+                              {fmtRs(c.currentBalance)}
+                            </Typography>
+                          </Typography>
+                          {(() => {
+                            const ft = fuelTotalsByCustomerId[c.id];
+                            const line = ft ? describeFuelCreditTotals(ft) : '';
+                            if (!line) return null;
+                            return (
+                              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
+                                Lifetime credit fuel: {line}
+                              </Typography>
+                            );
+                          })()}
+                        </Box>
+                      </Stack>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+                        <Button variant="contained" size="small" onClick={() => nav(`/manager/credit/${c.id}`)}>
+                          Open ledger
                         </Button>
-                      ) : null}
-                    </Stack>
-                  </CardContent>
-                </Card>
-              ))}
-              {filtered.length === 0 && (
-                <Paper variant="outlined" sx={{ borderRadius: 2, p: 3, textAlign: 'center' }}>
-                  <Typography color="text.secondary">
-                    No parties match your search. Try clearing the filter or add a new party above.
-                  </Typography>
-                </Paper>
-              )}
-            </Stack>
+                        {!readOnlyOps ? (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={async () => {
+                              await updateCustomer(c.id, { isActive: !c.isActive });
+                              await load();
+                            }}
+                          >
+                            {c.isActive ? 'Deactivate' : 'Activate'}
+                          </Button>
+                        ) : null}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                ))}
+                {filtered.length === 0 && (
+                  <Paper variant="outlined" sx={{ borderRadius: 2, p: 3, textAlign: 'center' }}>
+                    <Typography color="text.secondary">
+                      No parties match your search. Try clearing the filter or add a new party above.
+                    </Typography>
+                  </Paper>
+                )}
+              </Stack>
+            )}
           </Box>
         </Stack>
       )}

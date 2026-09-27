@@ -18,7 +18,8 @@ import {
   Typography,
 } from '@mui/material';
 import PlaylistAddOutlinedIcon from '@mui/icons-material/PlaylistAddOutlined';
-import { alpha } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import { useAuth } from '@/context/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { createManualCreditSale } from '@/services/creditSalesService';
@@ -52,9 +53,13 @@ export type ManualCreditSaleFormCardProps = {
 } & (FixedParty | PickParty);
 
 /** Ledger-style posting row — matches manager credit workbook layout. */
+const mobileFieldSx = { width: '100%', '& .MuiOutlinedInput-root': { borderRadius: 1.5 } };
+
 export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
   const { onSuccess } = props;
   const { profile } = useAuth();
+  const theme = useTheme();
+  const compactForm = useMediaQuery(theme.breakpoints.down('md'));
   const [searchParams] = useSearchParams();
   const dateBounds = dateInputBoundsForRole(profile?.role);
   const [fuels, setFuels] = useState<Array<{ id: string; name: string; currentRate: number }>>([]);
@@ -185,6 +190,96 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
 
   const partyDisabled = props.mode === 'pickCustomer' && props.customers.length === 0;
 
+  const dateField = (
+    <TextField
+      type="date"
+      label={compactForm ? 'Date' : undefined}
+      value={saleDate}
+      onChange={(ev) => setSaleDate(clampEntryDateForRole(profile?.role, ev.target.value))}
+      size="small"
+      fullWidth
+      sx={compactForm ? mobileFieldSx : undefined}
+      slotProps={{
+        inputLabel: { shrink: true },
+        htmlInput: { min: dateBounds.min, max: dateBounds.max },
+      }}
+    />
+  );
+
+  const partyField =
+    props.mode === 'fixed' ? (
+      <TextField
+        label={compactForm ? 'Party' : undefined}
+        value={props.partyDisplayName}
+        size="small"
+        fullWidth
+        disabled
+        sx={compactForm ? mobileFieldSx : undefined}
+      />
+    ) : (
+      <TextField
+        select
+        label={compactForm ? 'Party' : undefined}
+        value={props.customerId}
+        onChange={(ev) => props.onCustomerIdChange(ev.target.value)}
+        size="small"
+        fullWidth
+        disabled={partyDisabled}
+        sx={compactForm ? mobileFieldSx : undefined}
+      >
+        {props.customers.map((cust) => (
+          <MenuItem key={cust.id} value={cust.id}>
+            {cust.name}
+          </MenuItem>
+        ))}
+      </TextField>
+    );
+
+  const fuelField = (
+    <TextField
+      select
+      label={compactForm ? 'Fuel' : undefined}
+      value={fuelTypeId}
+      onChange={(ev) => setFuelTypeId(ev.target.value)}
+      size="small"
+      fullWidth
+      disabled={!fuels.length}
+      sx={compactForm ? mobileFieldSx : undefined}
+    >
+      {fuels.map((f) => (
+        <MenuItem key={f.id} value={f.id}>
+          {f.name}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+
+  const litersField = (
+    <TextField
+      label={compactForm ? 'Litres' : undefined}
+      size="small"
+      type="number"
+      value={liters}
+      onChange={(ev) => setLiters(ev.target.value)}
+      fullWidth
+      sx={compactForm ? mobileFieldSx : undefined}
+      slotProps={{ htmlInput: { min: 0, step: '0.001' } }}
+    />
+  );
+
+  const rateField = (
+    <TextField
+      label={compactForm ? '₹ / L' : undefined}
+      size="small"
+      type="number"
+      value={rate}
+      onChange={(ev) => setRate(ev.target.value)}
+      fullWidth
+      sx={compactForm ? mobileFieldSx : undefined}
+      slotProps={{ htmlInput: { min: 0, step: '0.01' } }}
+    />
+  );
+
   return (
     <Card
       elevation={0}
@@ -215,127 +310,111 @@ export function ManualCreditSaleFormCard(props: ManualCreditSaleFormCardProps) {
             {fuelsErr}
           </Alert>
         )}
-        <TableContainer component={Paper} variant="outlined" sx={creditSheetWrapSx}>
-          <Table size="small" sx={creditSheetTableSx}>
-            <colgroup>
-              <col style={{ width: '16%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '16%' }} />
-            </colgroup>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={creditSheetHeaderCellSx}>Date</TableCell>
-                <TableCell sx={creditSheetHeaderCellSx}>Party</TableCell>
-                <TableCell sx={creditSheetHeaderCellSx}>Fuel</TableCell>
-                <TableCell sx={creditSheetHeaderCellSx} align="right">
-                  Litres
-                </TableCell>
-                <TableCell sx={creditSheetHeaderCellSx} align="right">
-                  ₹ / L
-                </TableCell>
-                <TableCell sx={creditSheetHeaderCellSx} align="right">
-                  Amount
-                </TableCell>
-                <TableCell sx={creditSheetHeaderCellSx} />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              <TableRow>
-                <TableCell sx={creditSheetBodyCellSx}>
-                  <TextField
-                    type="date"
-                    value={saleDate}
-                    onChange={(ev) => setSaleDate(clampEntryDateForRole(profile?.role, ev.target.value))}
-                    size="small"
-                    fullWidth
-                    slotProps={{
-                      inputLabel: { shrink: true },
-                      htmlInput: { min: dateBounds.min, max: dateBounds.max },
-                    }}
-                  />
-                </TableCell>
-                <TableCell sx={creditSheetBodyCellSx}>
-                  {props.mode === 'fixed' ? (
-                    <Typography variant="body2" sx={{ pt: 0.75, fontWeight: 600 }}>
-                      {props.partyDisplayName}
+        {compactForm ? (
+          <Stack spacing={2} sx={{ minWidth: 0 }}>
+            {dateField}
+            {partyField}
+            {fuelField}
+            <Stack direction="row" spacing={1.5} sx={{ minWidth: 0 }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>{litersField}</Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>{rateField}</Box>
+            </Stack>
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              sx={{
+                px: 1.5,
+                py: 1.25,
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor: 'action.hover',
+              }}
+            >
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                Amount
+              </Typography>
+              <Typography variant="subtitle1" fontWeight={800} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                ₹{computedAmount.toFixed(2)}
+              </Typography>
+            </Stack>
+            <Button
+              type="submit"
+              variant="contained"
+              size="large"
+              fullWidth
+              disabled={savingSale || !fuels.length || partyDisabled}
+              sx={{ borderRadius: 1.5, minHeight: 48 }}
+            >
+              {savingSale ? 'Posting…' : 'Post credit sale'}
+            </Button>
+          </Stack>
+        ) : (
+          <TableContainer component={Paper} variant="outlined" sx={creditSheetWrapSx}>
+            <Table size="small" sx={creditSheetTableSx}>
+              <colgroup>
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '16%' }} />
+              </colgroup>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={creditSheetHeaderCellSx}>Date</TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx}>Party</TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx}>Fuel</TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx} align="right">
+                    Litres
+                  </TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx} align="right">
+                    ₹ / L
+                  </TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx} align="right">
+                    Amount
+                  </TableCell>
+                  <TableCell sx={creditSheetHeaderCellSx} />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                <TableRow>
+                  <TableCell sx={creditSheetBodyCellSx}>{dateField}</TableCell>
+                  <TableCell sx={creditSheetBodyCellSx}>
+                    {props.mode === 'fixed' ? (
+                      <Typography variant="body2" sx={{ pt: 0.75, fontWeight: 600 }}>
+                        {props.partyDisplayName}
+                      </Typography>
+                    ) : (
+                      partyField
+                    )}
+                  </TableCell>
+                  <TableCell sx={creditSheetBodyCellSx}>{fuelField}</TableCell>
+                  <TableCell sx={creditSheetBodyCellSx}>{litersField}</TableCell>
+                  <TableCell sx={creditSheetBodyCellSx}>{rateField}</TableCell>
+                  <TableCell sx={{ ...creditSheetBodyCellSx, pt: 1.75 }} align="right">
+                    <Typography variant="body2" fontWeight={700} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      ₹{computedAmount.toFixed(2)}
                     </Typography>
-                  ) : (
-                    <TextField
-                      select
-                      value={props.customerId}
-                      onChange={(ev) => props.onCustomerIdChange(ev.target.value)}
+                  </TableCell>
+                  <TableCell sx={creditSheetBodyCellSx}>
+                    <Button
+                      type="submit"
                       size="small"
-                      fullWidth
-                      disabled={partyDisabled}
+                      variant="contained"
+                      disabled={savingSale || !fuels.length || partyDisabled}
+                      sx={{ borderRadius: 1.25 }}
                     >
-                      {props.customers.map((cust) => (
-                        <MenuItem key={cust.id} value={cust.id}>
-                          {cust.name}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                </TableCell>
-                <TableCell sx={creditSheetBodyCellSx}>
-                  <TextField
-                    select
-                    value={fuelTypeId}
-                    onChange={(ev) => setFuelTypeId(ev.target.value)}
-                    size="small"
-                    fullWidth
-                    disabled={!fuels.length}
-                  >
-                    {fuels.map((f) => (
-                      <MenuItem key={f.id} value={f.id}>
-                        {f.name}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                </TableCell>
-                <TableCell sx={creditSheetBodyCellSx}>
-                  <TextField
-                    size="small"
-                    type="number"
-                    value={liters}
-                    onChange={(ev) => setLiters(ev.target.value)}
-                    fullWidth
-                    inputProps={{ min: 0, step: '0.001' }}
-                  />
-                </TableCell>
-                <TableCell sx={creditSheetBodyCellSx}>
-                  <TextField
-                    size="small"
-                    type="number"
-                    value={rate}
-                    onChange={(ev) => setRate(ev.target.value)}
-                    fullWidth
-                    inputProps={{ min: 0, step: '0.01' }}
-                  />
-                </TableCell>
-                <TableCell sx={{ ...creditSheetBodyCellSx, pt: 1.75 }} align="right">
-                  <Typography variant="body2" fontWeight={700} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                    ₹{computedAmount.toFixed(2)}
-                  </Typography>
-                </TableCell>
-                <TableCell sx={creditSheetBodyCellSx}>
-                  <Button
-                    type="submit"
-                    size="small"
-                    variant="contained"
-                    disabled={savingSale || !fuels.length || partyDisabled}
-                    sx={{ borderRadius: 1.25 }}
-                  >
-                    Post
-                  </Button>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </TableContainer>
+                      Post
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
         {saleErr && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {saleErr}
