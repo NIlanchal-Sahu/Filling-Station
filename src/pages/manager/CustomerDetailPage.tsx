@@ -16,13 +16,16 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
+  List,
+  ListItem,
   TableHead,
   TableRow,
   TextField,
   Typography,
   useTheme,
 } from '@mui/material';
+import type { Theme } from '@mui/material/styles';
+import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
@@ -56,6 +59,7 @@ import {
 import {
   buildPartyCreditLedger,
   particularsForLedgerCreditSale,
+  type PartyCreditLedgerDisplayRow,
 } from '@/pages/manager/partyCreditLedger';
 import {
   PARTY_LEDGER_CSV_HEADERS,
@@ -74,6 +78,109 @@ import {
 
 function fmtRs(n: number): string {
   return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function MobilePartyLedgerList(props: {
+  rows: PartyCreditLedgerDisplayRow[];
+  ledgerFuelFmt: PartyLedgerFuelFormatters;
+  theme: Theme;
+}) {
+  const { rows, ledgerFuelFmt, theme } = props;
+
+  if (rows.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary" sx={{ py: 2, px: 0.5 }}>
+        No ledger movements yet — add a fuel credit sale above to start this account.
+      </Typography>
+    );
+  }
+
+  return (
+    <List dense disablePadding sx={{ minWidth: 0 }}>
+      {rows.map((row, idx) => {
+        const stripe =
+          idx % 2 === 1
+            ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.035)
+            : 'transparent';
+
+        if (row.kind === 'broughtForward') {
+          return (
+            <ListItem
+              key="bf"
+              divider
+              sx={{ flexDirection: 'column', alignItems: 'stretch', py: 1.25, bgcolor: stripe }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                Brought forward (before entries below)
+              </Typography>
+              <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Balance
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                  ₹{row.balanceAfter.toFixed(2)}
+                </Typography>
+              </Stack>
+            </ListItem>
+          );
+        }
+
+        if (row.kind === 'payment') {
+          return (
+            <ListItem
+              key={`pay-${row.id}`}
+              divider
+              sx={{ flexDirection: 'column', alignItems: 'stretch', py: 1.25, bgcolor: stripe }}
+            >
+              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    Payment · {creditPaymentModeLabel(row.mode)}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {row.dateLabel}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                  Bal ₹{row.balanceAfter.toFixed(2)}
+                </Typography>
+              </Stack>
+              <Typography variant="caption" color="success.main" sx={{ mt: 0.75, fontVariantNumeric: 'tabular-nums' }}>
+                Credit ₹{row.creditRupees.toFixed(2)}
+              </Typography>
+            </ListItem>
+          );
+        }
+
+        const s = row.sale;
+        return (
+          <ListItem
+            key={`sale-${row.id}`}
+            divider
+            sx={{ flexDirection: 'column', alignItems: 'stretch', py: 1.25, bgcolor: stripe }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                  {particularsForLedgerCreditSale(s)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {row.dateLabel} · {ledgerFuelFmt.fuelUpper(s)}
+                </Typography>
+              </Box>
+              <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                Bal ₹{row.balanceAfter.toFixed(2)}
+              </Typography>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, fontVariantNumeric: 'tabular-nums' }}>
+              {ledgerFuelFmt.litresDisplay(s)} L @ ₹{ledgerFuelFmt.rateDisplay(s)}/L · Debit ₹
+              {row.debitRupees.toFixed(2)}
+            </Typography>
+          </ListItem>
+        );
+      })}
+    </List>
+  );
 }
 
 export function CustomerDetailPage() {
@@ -148,7 +255,10 @@ export function CustomerDetailPage() {
       : theme.palette.warning.main;
 
   return (
-    <Stack spacing={3} sx={{ pb: 4 }}>
+    <Stack
+      spacing={3}
+      sx={{ width: '100%', minWidth: 0, boxSizing: 'border-box', pb: { xs: 10, md: 4 } }}
+    >
       {readOnlyOps ? (
         <ReadOnlyBanner message="You can review this party's ledger. Staff record payments and credit sales." />
       ) : null}
@@ -569,7 +679,26 @@ function CustomerCreditSection({
               Fuel taken on credit (lifetime): <strong>{fuelCreditSummary}</strong>
             </Typography>
           ) : null}
-          <TableContainer component={Paper} variant="outlined" sx={creditSheetWrapSx}>
+          <Paper
+            variant="outlined"
+            sx={{
+              ...creditSheetWrapSx,
+              overflow: { xs: 'visible', md: 'hidden' },
+              display: { xs: 'block', md: 'none' },
+              px: { xs: 1.5, md: 0 },
+              py: { xs: 1, md: 0 },
+            }}
+          >
+            <MobilePartyLedgerList rows={ledgerRows} ledgerFuelFmt={ledgerFuelFmt} theme={theme} />
+          </Paper>
+          <Paper
+            variant="outlined"
+            sx={{
+              ...creditSheetWrapSx,
+              display: { xs: 'none', md: 'block' },
+            }}
+          >
+            <ResponsiveTableContainer stickyFirstColumn>
             <Table size="small" aria-label={`Credit ledger for ${partyName}`} sx={creditSheetTableSx}>
               <colgroup>
                 <col style={{ width: '16%' }} />
@@ -711,7 +840,8 @@ function CustomerCreditSection({
                 )}
               </TableBody>
             </Table>
-          </TableContainer>
+            </ResponsiveTableContainer>
+          </Paper>
         </Box>
       </Paper>
     </Stack>

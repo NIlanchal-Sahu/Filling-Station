@@ -29,6 +29,15 @@ const OperatorDashboardPage = lazy(() =>
 const ManagerDashboardPage = lazy(() =>
   import('@/pages/manager/ManagerDashboardPage').then((m) => ({ default: m.ManagerDashboardPage })),
 );
+const ManagerShiftSalesPage = lazy(() =>
+  import('@/pages/manager/ManagerShiftSalesPage').then((m) => ({ default: m.ManagerShiftSalesPage })),
+);
+const ManagerOperationsHubPage = lazy(() =>
+  import('@/pages/manager/ManagerMobileHubPage').then((m) => ({ default: m.ManagerOperationsHubPage })),
+);
+const ManagerMenuHubPage = lazy(() =>
+  import('@/pages/manager/ManagerMobileHubPage').then((m) => ({ default: m.ManagerMenuHubPage })),
+);
 const CreditCustomersPage = lazy(() =>
   import('@/pages/manager/CreditCustomersPage').then((m) => ({ default: m.CreditCustomersPage })),
 );
@@ -108,6 +117,9 @@ export default function App() {
           <Route element={<ProtectedRoute requireRole={['manager', 'admin', 'owner']} />}>
             <Route path="manager" element={<Outlet />}>
               <Route index element={<ManagerDashboardPage />} />
+              <Route path="sales" element={<ManagerShiftSalesPage />} />
+              <Route path="operations" element={<ManagerOperationsHubPage />} />
+              <Route path="menu" element={<ManagerMenuHubPage />} />
               <Route path="team" element={<TeamPage />} />
               <Route path="credit" element={<CreditCustomersPage />} />
               <Route path="credit/:id" element={<CustomerDetailPage />} />

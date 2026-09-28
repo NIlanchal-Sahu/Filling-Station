@@ -46,22 +46,24 @@ function DonutChart(props: {
   gradient: string;
   legend: { label: string; pct: number; color: string; amount?: string }[];
   emptyMessage?: string;
+  compact?: boolean;
 }) {
-  const { title, centerLabel, centerValue, gradient, legend, emptyMessage } = props;
+  const { title, centerLabel, centerValue, gradient, legend, emptyMessage, compact = false } = props;
   const hasData = legend.some((l) => l.pct > 0);
+  const donutSize = compact ? 112 : 140;
 
   return (
     <Card
       elevation={0}
       sx={{
-        p: 2.5,
+        p: compact ? 1.75 : 2.5,
         height: '100%',
         borderRadius: 2,
         border: '1px solid',
         borderColor: 'divider',
       }}
     >
-      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2 }}>
+      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: compact ? 1.25 : 2, fontSize: compact ? '0.85rem' : undefined }}>
         {title}
       </Typography>
       {!hasData && emptyMessage ? (
@@ -69,8 +71,8 @@ function DonutChart(props: {
           {emptyMessage}
         </Alert>
       ) : (
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2.5} alignItems="center">
-          <Box sx={{ position: 'relative', width: 140, height: 140, flexShrink: 0 }}>
+        <Stack direction={{ xs: 'column', sm: compact ? 'row' : 'row' }} spacing={compact ? 1.5 : 2.5} alignItems="center">
+          <Box sx={{ position: 'relative', width: donutSize, height: donutSize, flexShrink: 0 }}>
             <Box sx={{ width: '100%', height: '100%', borderRadius: '50%', background: gradient }} />
             <Box
               sx={{
@@ -130,8 +132,8 @@ const COLLECTION_LABELS: Record<CollectionModeKey, string> = {
   fleet: 'Fleet',
 };
 
-export function DashboardInsightsPanel(props: { pumpDayIso: string }) {
-  const { pumpDayIso } = props;
+export function DashboardInsightsPanel(props: { pumpDayIso: string; compact?: boolean }) {
+  const { pumpDayIso, compact = false } = props;
   const [loading, setLoading] = useState(true);
   const [fuelTotal, setFuelTotal] = useState(0);
   const [fuelRows, setFuelRows] = useState<{ label: string; pct: number; color: string; amount: string }[]>([]);
@@ -214,24 +216,26 @@ export function DashboardInsightsPanel(props: { pumpDayIso: string }) {
       <Box
         sx={{
           display: 'grid',
-          gap: 2,
+          gap: compact ? 1.5 : 2,
           gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
         }}
       >
         <DonutChart
-          title="Sales mix by fuel"
+          title={compact ? 'Sales by fuel' : 'Sales mix by fuel'}
           centerLabel="Total sales"
           centerValue={fmtRs(fuelTotal)}
           gradient={fuelGradient}
           legend={fuelRows}
+          compact={compact}
           emptyMessage="No reconciled fuel sales yet. Complete shift reconciliation to see the mix."
         />
         <DonutChart
-          title="Collections by payment mode"
+          title={compact ? 'Collections' : 'Collections by payment mode'}
           centerLabel="Collected"
           centerValue={fmtRs(collectionTotal)}
           gradient={collectionGradient}
           legend={collectionRows}
+          compact={compact}
           emptyMessage="No collections recorded yet. Reconcile shifts to populate payment breakdown."
         />
       </Box>

@@ -255,10 +255,10 @@ export function getMobileBottomNavItems(role: UserRole): NavItem[] {
     return [
       dashboard,
       {
-        to: '/manager/daily-sheet',
-        label: 'Sheet',
-        icon: ReceiptLongOutlinedIcon,
-        permission: 'view:ledger',
+        to: '/manager/reports',
+        label: 'Reports',
+        icon: AssessmentOutlinedIcon,
+        permission: 'view:reports',
       },
       {
         to: '/manager/credit',
@@ -267,10 +267,10 @@ export function getMobileBottomNavItems(role: UserRole): NavItem[] {
         permission: 'view:credit',
       },
       {
-        to: '/manager/reconciliations',
-        label: 'Recon',
-        icon: FactCheckOutlinedIcon,
-        permission: 'view:operations',
+        to: '/manager/daily-sheet',
+        label: 'Sheet',
+        icon: ReceiptLongOutlinedIcon,
+        permission: 'view:ledger',
       },
     ];
   }
@@ -279,28 +279,22 @@ export function getMobileBottomNavItems(role: UserRole): NavItem[] {
     return [
       dashboard,
       {
-        to: '/shifts/new',
-        label: 'Shift',
+        to: '/manager/operations',
+        label: 'Operations',
         icon: PlayCircleOutlineOutlinedIcon,
-        permission: 'edit:shifts',
-      },
-      {
-        to: '/manager/credit',
-        label: 'Credit',
-        icon: CreditCardOutlinedIcon,
-        permission: 'edit:credit',
-      },
-      {
-        to: '/manager/team',
-        label: 'Team',
-        icon: GroupsOutlinedIcon,
-        permission: 'manage:team',
+        permission: 'view:operations',
       },
       {
         to: '/manager/reports',
         label: 'Reports',
         icon: AssessmentOutlinedIcon,
         permission: 'view:reports',
+      },
+      {
+        to: '/manager/menu',
+        label: 'Menu',
+        icon: SettingsOutlinedIcon,
+        permission: 'view:dashboard',
       },
     ];
   }

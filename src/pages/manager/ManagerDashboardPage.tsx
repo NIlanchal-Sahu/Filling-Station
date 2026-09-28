@@ -1,51 +1,41 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 
 import {
   alpha,
+  Box,
   Button,
   Card,
   CardContent,
-  Chip,
   Paper,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
-import CreditCardOutlinedIcon from '@mui/icons-material/CreditCardOutlined';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
-import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
-import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
-import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 
 import { format, isSameDay } from 'date-fns';
 
 import { LOCAL_DEMO } from '@/config/appMode';
 import { DashboardSection } from '@/components/ui/DashboardSection';
-import { PageHeader } from '@/components/ui/PageHeader';
-import { FloatingActionPanel } from '@/components/ui/FloatingActionPanel';
-import { DashboardKpiGrid } from '@/components/dashboard/DashboardKpiGrid';
 import { DashboardInsightsPanel } from '@/components/dashboard/DashboardInsightsPanel';
 import { useDashboardKpis } from '@/hooks/useDashboardKpis';
 import { demoResetStores } from '@/localDemo/demoBackend';
-import { CashBankCollectionSummary } from '@/pages/manager/CashBankCollectionSummary';
-import { TankStockDipSummary } from '@/pages/manager/TankStockDipSummary';
-import { TodaySalesByShiftSection } from '@/pages/manager/TodaySalesByShiftSection';
-import { TodayShiftStatusSection } from '@/pages/manager/TodayShiftStatusSection';
 import { SalesByFuelChart } from '@/pages/manager/SalesByFuelChart';
+import { ManagerDashboardHeader } from '@/components/dashboard/manager/ManagerDashboardHeader';
+import { ManagerOverviewKpis } from '@/components/dashboard/manager/ManagerOverviewKpis';
+import { ManagerAttentionRequired } from '@/components/dashboard/manager/ManagerAttentionRequired';
+import { ManagerQuickActions } from '@/components/dashboard/manager/ManagerQuickActions';
+import { ManagerShiftStatusCompact } from '@/components/dashboard/manager/ManagerShiftStatusCompact';
+import { ManagerTodaySalesSummary } from '@/components/dashboard/manager/ManagerTodaySalesSummary';
+import { ManagerCollectionsSummary } from '@/components/dashboard/manager/ManagerCollectionsSummary';
+import { ManagerFuelStockSummary } from '@/components/dashboard/manager/ManagerFuelStockSummary';
+import { ManagerCreditSummary } from '@/components/dashboard/manager/ManagerCreditSummary';
+import { ManagerRecentActivity } from '@/components/dashboard/manager/ManagerRecentActivity';
+import { FloatingActionPanel } from '@/components/ui/FloatingActionPanel';
+import { getManagerMobileShortcuts } from '@/config/dashboardMobileShortcuts';
 
 function parseLocalYmd(iso: string): Date {
   return new Date(iso + 'T00:00:00');
 }
-
-const managerQuickActions = [
-  { to: '/manager/fuel-stock/daily', label: 'Daily dip entry', icon: <EditOutlinedIcon fontSize="small" /> },
-  { to: '/manager/credit', label: 'Credit', icon: <CreditCardOutlinedIcon fontSize="small" /> },
-  { to: '/manager/reconciliations', label: 'Reconciliations', icon: <FactCheckOutlinedIcon fontSize="small" /> },
-  { to: '/manager/reports', label: 'Reports', icon: <AssessmentOutlinedIcon fontSize="small" /> },
-  { to: '/manager/daily-sheet', label: 'Daily sheet', icon: <PaymentsOutlinedIcon fontSize="small" /> },
-] as const;
 
 export function ManagerDashboardPage() {
   const [reportIso, setReportIso] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -59,118 +49,71 @@ export function ManagerDashboardPage() {
   const isSelectedToday = Number.isFinite(reportDay.getTime()) && isSameDay(reportDay, new Date());
 
   const { loading: kpisLoading, data: kpiData } = useDashboardKpis(reportIso);
+  const mobileShortcuts = useMemo(() => getManagerMobileShortcuts(reportIso), [reportIso]);
 
   return (
-    <>
+    <Fragment>
+    <Stack
+      spacing={2.5}
+      sx={{
+        width: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        pb: { xs: 10, md: 4 },
+      }}
+    >
+      <ManagerDashboardHeader
+        reportLabel={reportLabel}
+        isSelectedToday={isSelectedToday}
+        reportIso={reportIso}
+        maxSelectableIso={maxSelectableIso}
+        onReportIsoChange={setReportIso}
+      />
+
+      <ManagerOverviewKpis pumpDayIso={reportIso} loading={kpisLoading} data={kpiData} />
+
+      <ManagerAttentionRequired pumpDayIso={reportIso} kpiLoading={kpisLoading} kpi={kpiData} />
+
+      <ManagerQuickActions pumpDayIso={reportIso} />
+
+      <ManagerShiftStatusCompact pumpDayIso={reportIso} />
+
       <Stack
-        spacing={3.5}
-        sx={{
-          width: '100%',
-          minWidth: 0,
-          boxSizing: 'border-box',
-          pb: 4,
-          pr: { xs: 0, sm: 4.5 },
-        }}
+        direction={{ xs: 'column', md: 'row' }}
+        spacing={2}
+        sx={{ width: '100%', minWidth: 0, alignItems: 'stretch' }}
       >
-        <PageHeader
-          title="Manager dashboard"
-          subtitle={`${reportLabel}${isSelectedToday ? ' · Today' : ''}`}
-          action={
-            isSelectedToday ? (
-              <Chip label="Live" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
-            ) : null
-          }
-        />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <ManagerTodaySalesSummary pumpDayIso={reportIso} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <ManagerCollectionsSummary pumpDayIso={reportIso} />
+        </Box>
+      </Stack>
 
-        <Paper
-          elevation={0}
-          sx={{
-            p: 1.75,
-            borderRadius: 2,
-            border: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ width: { xs: '100%', sm: 'auto' } }}>
-            <CalendarMonthOutlinedIcon sx={{ fontSize: 22, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }} />
-            <TextField
-              type="date"
-              label="Pump day"
-              value={reportIso}
-              onChange={(e) => setReportIso(e.target.value)}
-              size="small"
-              slotProps={{
-                htmlInput: { max: maxSelectableIso },
-                inputLabel: { shrink: true },
-              }}
-              sx={{
-                width: { xs: '100%', sm: 'auto' },
-                minWidth: { xs: 0, sm: 200 },
-                maxWidth: '100%',
-                '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
-              }}
-            />
-          </Stack>
-        </Paper>
+      <ManagerFuelStockSummary pumpDayIso={reportIso} />
 
-        <DashboardKpiGrid loading={kpisLoading} data={kpiData} showStartShift />
+      <ManagerCreditSummary />
 
       <DashboardSection
-        title="Visual insights"
-        subtitle="Fuel sales mix and payment collections for the selected pump day."
+        title="Insights"
+        subtitle="Charts for the selected pump day — tap through for full reports."
         contentReady={!kpisLoading}
       >
-        <DashboardInsightsPanel pumpDayIso={reportIso} />
+        <DashboardInsightsPanel pumpDayIso={reportIso} compact />
       </DashboardSection>
 
       <DashboardSection
-        id="shift-performance"
-        title="Shift performance"
-        subtitle="Compare Shift 1 vs Shift 2 meter sales for the selected day."
+        title="Sales analytics"
+        subtitle="Revenue and volume by fuel type."
         contentReady={!kpisLoading}
       >
-        <TodaySalesByShiftSection pumpDayIso={reportIso} reportLabel={reportLabel} />
-      </DashboardSection>
-
-      <DashboardSection
-        title="Cash & bank collections"
-        subtitle="Today's collections categorized by payment method."
-        contentReady={!kpisLoading}
-      >
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <CashBankCollectionSummary pumpDayIso={reportIso} />
-        </Paper>
-      </DashboardSection>
-
-      <DashboardSection
-        title="Sales by fuel"
-        subtitle="Revenue and volume split across MS, HSD, and XP from reconciled shifts."
-        contentReady={!kpisLoading}
-      >
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <SalesByFuelChart pumpDayIso={reportIso} />
         </Paper>
       </DashboardSection>
 
-      <DashboardSection
-        title="Tank & inventory"
-        subtitle="Dip readings, stock levels, and daily reconciliation."
-        contentReady={!kpisLoading}
-      >
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <TankStockDipSummary pumpDayIso={reportIso} reportLabel={reportLabel} />
-        </Paper>
-      </DashboardSection>
-
-      <DashboardSection
-        title="Shift activity"
-        subtitle="Live shift status, attendants, and reconciliation progress."
-        contentReady={!kpisLoading}
-      >
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <TodayShiftStatusSection pumpDayIso={reportIso} />
-        </Paper>
-      </DashboardSection>
+      <ManagerRecentActivity pumpDayIso={reportIso} />
 
       {LOCAL_DEMO ? (
         <Card
@@ -208,8 +151,8 @@ export function ManagerDashboardPage() {
           </CardContent>
         </Card>
       ) : null}
-      </Stack>
-      <FloatingActionPanel actions={[...managerQuickActions]} label="Shortcuts" />
-    </>
+    </Stack>
+    <FloatingActionPanel actions={mobileShortcuts} label="Shortcuts" />
+    </Fragment>
   );
 }
