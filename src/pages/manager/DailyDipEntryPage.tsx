@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 
 import {
+  alpha,
   Alert,
+  Box,
   Button,
+  Chip,
   CircularProgress,
+  Divider,
   Paper,
   Stack,
   Table,
@@ -12,9 +17,14 @@ import {
   TableHead,
   TableRow,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
+import { FUEL_CHART_COLORS } from '@/utils/fuelSalesChartDisplay';
 
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
@@ -23,15 +33,25 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/context/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { setFuelReceiptLitersForDay } from '@/services/fuelReceiptsService';
-import { getTankStockDaySummary } from '@/services/fuelStockReconciliationService';
 import {
-  formatFuelLiters,
-  previewStockFromDipCm,
-  upsertFuelTankDipForDay,
-} from '@/services/fuelStockService';
+  computeChainVariation,
+  computeClosingBook,
+  getDipValueLedgerEntry,
+  listDipValueLedgerForDay,
+  listDipValueLedgerInRange,
+  suggestOpeningStockLiters,
+  upsertDipValueLedgerEntry,
+} from '@/services/dipValueLedgerService';
+import { getMeterSalesLitersByFuelTypeId } from '@/services/fuelStockReconciliationService';
 import { listFuelTypes } from '@/services/fuelTypesService';
-import type { DailyFuelStockRow, FuelType } from '@/types/entities';
-import { fuelStockDisplayMeta, FUEL_STOCK_UPDATED_EVENT } from '@/utils/fuelStockDisplay';
+import type { FuelType } from '@/types/entities';
+import {
+  fuelStockDisplayMeta,
+  FUEL_STOCK_SORT_ORDER,
+  FUEL_STOCK_UPDATED_EVENT,
+} from '@/utils/fuelStockDisplay';
+import { groupRegisterByFuel, type DipValueRegisterRow } from '@/utils/dipValueRegister';
+import { DipValueRegisterTable } from '@/components/fuel/DipValueRegisterTable';
 import {
   assertEntryDateAllowed,
   clampEntryDateForRole,
@@ -39,39 +59,97 @@ import {
   recalledAdminPumpDay,
   todayIso,
 } from '@/utils/dateEntryPolicy';
-import { canonicalDipCm, normalizeDipCm } from '@/utils/fuelTankCalibration';
 import { FuelStockSubNav } from '@/pages/manager/FuelStockSubNav';
 
 type FuelFormRow = {
   fuelTypeId: string;
   fuelName: string;
-  openingDipCm: string;
-  closingDipCm: string;
+  openingLiters: string;
   receiptLiters: string;
 };
 
 const headSx = {
   fontWeight: 700,
-  fontSize: '0.72rem',
-  letterSpacing: '0.06em',
+  fontSize: '0.68rem',
+  letterSpacing: '0.04em',
   textTransform: 'uppercase' as const,
-  bgcolor: 'action.hover',
-  color: 'text.secondary',
+  bgcolor: 'background.paper',
+  color: 'text.primary',
+  border: '1px solid',
+  borderColor: 'divider',
+  whiteSpace: 'nowrap' as const,
 };
 
-function rowsToForm(fuels: FuelType[], stockRows: DailyFuelStockRow[]): FuelFormRow[] {
-  return fuels
-    .filter((f) => f.tankCapacityLiters != null && f.tankCapacityLiters > 0)
-    .map((f) => {
-      const row = stockRows.find((r) => r.fuelTypeId === f.id);
+const cellSx = {
+  border: '1px solid',
+  borderColor: 'divider',
+  fontVariantNumeric: 'tabular-nums' as const,
+};
+
+function fmtLedger(n: number): string {
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+}
+
+const REGISTER_FUEL_LABELS: Record<(typeof FUEL_STOCK_SORT_ORDER)[number], string> = {
+  MS: 'Motor Spirit (MS)',
+  HSD: 'High Speed Diesel (HSD)',
+  XP: 'Extra Premium (XP)',
+};
+
+type RegisterFuelSlot = {
+  shortCode: (typeof FUEL_STOCK_SORT_ORDER)[number];
+  fuelTypeId: string | null;
+};
+
+function monthRangeForPumpDay(pumpDayIso: string): { start: string; end: string; label: string } {
+  const d = parseISO(`${pumpDayIso}T12:00:00`);
+  return {
+    start: format(startOfMonth(d), 'yyyy-MM-dd'),
+    end: format(endOfMonth(d), 'yyyy-MM-dd'),
+    label: format(d, 'MMMM yyyy'),
+  };
+}
+
+function resolveRegisterFuelSlots(fuels: FuelType[]): RegisterFuelSlot[] {
+  const tankFuels = fuels.filter((f) => f.tankCapacityLiters != null && f.tankCapacityLiters > 0);
+  return FUEL_STOCK_SORT_ORDER.map((shortCode) => {
+    const match = tankFuels.find((f) => fuelStockDisplayMeta(f.name).shortCode === shortCode);
+    return { shortCode, fuelTypeId: match?.id ?? null };
+  });
+}
+
+async function buildFormRows(fuels: FuelType[], pumpDayIso: string): Promise<FuelFormRow[]> {
+  const tankFuels = fuels.filter((f) => f.tankCapacityLiters != null && f.tankCapacityLiters > 0);
+  const [ledgers, salesByFuel] = await Promise.all([
+    listDipValueLedgerForDay(pumpDayIso),
+    getMeterSalesLitersByFuelTypeId(pumpDayIso),
+  ]);
+  const ledgerMap = new Map(ledgers.map((l) => [l.fuelTypeId, l]));
+
+  return Promise.all(
+    tankFuels.map(async (f) => {
+      const ledger = ledgerMap.get(f.id);
+      let openingLiters = '';
+      if (ledger) {
+        openingLiters = String(ledger.openingStockLiters);
+      } else {
+        const suggested = await suggestOpeningStockLiters(f.id, pumpDayIso);
+        if (suggested != null) {
+          openingLiters = String(suggested);
+        }
+      }
+      const receiptLiters = ledger
+        ? String(ledger.receiptLiters)
+        : '';
+      void salesByFuel[f.id];
       return {
         fuelTypeId: f.id,
         fuelName: f.name,
-        openingDipCm: row?.openingDipCm != null ? String(canonicalDipCm(row.openingDipCm)) : '',
-        closingDipCm: row?.closingDipCm != null ? String(canonicalDipCm(row.closingDipCm)) : '',
-        receiptLiters: row?.receiptLiters != null ? String(row.receiptLiters) : '',
+        openingLiters,
+        receiptLiters,
       };
-    });
+    }),
+  );
 }
 
 export function DailyDipEntryPage() {
@@ -88,11 +166,34 @@ export function DailyDipEntryPage() {
   })();
   const [pumpDayIso, setPumpDayIso] = useState(initialDay);
   const [formRows, setFormRows] = useState<FuelFormRow[]>([]);
-  const [stockRows, setStockRows] = useState<DailyFuelStockRow[]>([]);
+  const [salesByFuel, setSalesByFuel] = useState<Record<string, number>>({});
+  const [variationByFuel, setVariationByFuel] = useState<Record<string, number | null>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [registerByFuelId, setRegisterByFuelId] = useState<Map<string, DipValueRegisterRow[]>>(new Map());
+  const [registerFuelSlots, setRegisterFuelSlots] = useState<RegisterFuelSlot[]>(() =>
+    FUEL_STOCK_SORT_ORDER.map((shortCode) => ({ shortCode, fuelTypeId: null })),
+  );
+  const [registerTab, setRegisterTab] = useState<(typeof FUEL_STOCK_SORT_ORDER)[number]>('MS');
+
+  const monthRange = useMemo(() => monthRangeForPumpDay(pumpDayIso), [pumpDayIso]);
+
+  const activeRegisterSlot = useMemo(
+    () => registerFuelSlots.find((s) => s.shortCode === registerTab),
+    [registerFuelSlots, registerTab],
+  );
+
+  const activeRegisterRows = useMemo(
+    () =>
+      activeRegisterSlot?.fuelTypeId
+        ? (registerByFuelId.get(activeRegisterSlot.fuelTypeId) ?? [])
+        : [],
+    [activeRegisterSlot, registerByFuelId],
+  );
+
+  const registerFuelLabel = REGISTER_FUEL_LABELS[registerTab];
 
   useEffect(() => {
     const fromUrl = searchParams.get('day');
@@ -110,12 +211,37 @@ export function DailyDipEntryPage() {
     setLoading(true);
     setErr(null);
     try {
-      const [fuels, summary] = await Promise.all([
-        listFuelTypes(),
-        getTankStockDaySummary(pumpDayIso),
+      const fuels = await listFuelTypes();
+      const { start, end } = monthRangeForPumpDay(pumpDayIso);
+      const [rows, sales, ledgerEntries] = await Promise.all([
+        buildFormRows(fuels, pumpDayIso),
+        getMeterSalesLitersByFuelTypeId(pumpDayIso),
+        listDipValueLedgerInRange(start, end),
       ]);
-      setStockRows(summary.rows);
-      setFormRows(rowsToForm(fuels, summary.rows));
+      setFormRows(rows);
+      setSalesByFuel(sales);
+      setRegisterFuelSlots(resolveRegisterFuelSlots(fuels));
+      setRegisterByFuelId(groupRegisterByFuel(ledgerEntries));
+
+      const variations: Record<string, number | null> = {};
+      await Promise.all(
+        rows.map(async (r) => {
+          const ledger = await getDipValueLedgerEntry(r.fuelTypeId, pumpDayIso);
+          const opening = r.openingLiters.trim() !== '' ? Number(r.openingLiters) : NaN;
+          const receipt = r.receiptLiters.trim() === '' ? 0 : Number(r.receiptLiters);
+          const salesL = sales[r.fuelTypeId] ?? 0;
+          const closing =
+            Number.isFinite(opening) ? computeClosingBook(opening, receipt, salesL) : null;
+          if (ledger?.variationLiters != null) {
+            variations[r.fuelTypeId] = ledger.variationLiters;
+          } else if (closing != null) {
+            variations[r.fuelTypeId] = await computeChainVariation(r.fuelTypeId, pumpDayIso, closing);
+          } else {
+            variations[r.fuelTypeId] = null;
+          }
+        }),
+      );
+      setVariationByFuel(variations);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -133,15 +259,35 @@ export function DailyDipEntryPage() {
     return () => window.removeEventListener(FUEL_STOCK_UPDATED_EVENT, onRefresh);
   }, [load]);
 
-  const computed = useMemo(() => {
-    const map = new Map<string, DailyFuelStockRow>();
-    for (const r of stockRows) map.set(r.fuelTypeId, r);
-    return map;
-  }, [stockRows]);
-
   function updateRow(fuelTypeId: string, patch: Partial<FuelFormRow>) {
     setFormRows((prev) => prev.map((r) => (r.fuelTypeId === fuelTypeId ? { ...r, ...patch } : r)));
   }
+
+  const rowCalcs = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        total: number | null;
+        sales: number;
+        closing: number | null;
+        variation: number | null;
+      }
+    >();
+    for (const row of formRows) {
+      const opening = row.openingLiters.trim() !== '' ? Number(row.openingLiters) : NaN;
+      const receipt = row.receiptLiters.trim() === '' ? 0 : Number(row.receiptLiters);
+      const sales = salesByFuel[row.fuelTypeId] ?? 0;
+      const total = Number.isFinite(opening) ? opening + receipt : null;
+      const closing = total != null ? computeClosingBook(opening, receipt, sales) : null;
+      map.set(row.fuelTypeId, {
+        total,
+        sales,
+        closing,
+        variation: variationByFuel[row.fuelTypeId] ?? null,
+      });
+    }
+    return map;
+  }, [formRows, salesByFuel, variationByFuel]);
 
   async function handleSave() {
     setSaving(true);
@@ -153,47 +299,43 @@ export function DailyDipEntryPage() {
       if (day !== pumpDayIso) {
         setPumpDayIso(day);
       }
+      const sales = await getMeterSalesLitersByFuelTypeId(day);
+
       for (const row of formRows) {
-        const opening = row.openingDipCm.trim();
-        if (opening !== '') {
-          const cm = canonicalDipCm(Number(opening));
-          if (!Number.isFinite(cm) || cm <= 0) throw new Error(`Invalid opening dip for ${row.fuelName}`);
-          await upsertFuelTankDipForDay({
-            fuelTypeId: row.fuelTypeId,
-            pumpDayIso: day,
-            dipKind: 'opening',
-            dipCm: cm,
-            recordedBy: profile?.name,
-          });
+        const openingStr = row.openingLiters.trim();
+        if (openingStr === '') {
+          throw new Error(`Enter opening stock (L) for ${row.fuelName}`);
         }
-
-        const closing = row.closingDipCm.trim();
-        if (closing !== '') {
-          const cm = canonicalDipCm(Number(closing));
-          if (!Number.isFinite(cm) || cm <= 0) throw new Error(`Invalid closing dip for ${row.fuelName}`);
-          await upsertFuelTankDipForDay({
-            fuelTypeId: row.fuelTypeId,
-            pumpDayIso: day,
-            dipKind: 'closing',
-            dipCm: cm,
-            recordedBy: profile?.name,
-          });
+        const opening = Number(openingStr);
+        if (!Number.isFinite(opening) || opening < 0) {
+          throw new Error(`Invalid opening stock for ${row.fuelName}`);
         }
-
         const rcpt = row.receiptLiters.trim();
-        const liters = rcpt === '' ? 0 : Number(rcpt);
-        if (rcpt !== '' && (!Number.isFinite(liters) || liters < 0)) {
+        const receiptLiters = rcpt === '' ? 0 : Number(rcpt);
+        if (rcpt !== '' && (!Number.isFinite(receiptLiters) || receiptLiters < 0)) {
           throw new Error(`Invalid receipt liters for ${row.fuelName}`);
         }
+        const salesLiters = sales[row.fuelTypeId] ?? 0;
+
         await setFuelReceiptLitersForDay({
           fuelTypeId: row.fuelTypeId,
           pumpDayIso: day,
-          liters,
+          liters: receiptLiters,
           recordedBy: profile?.name,
         });
+
+        await upsertDipValueLedgerEntry({
+          fuelTypeId: row.fuelTypeId,
+          pumpDayIso: day,
+          openingStockLiters: opening,
+          receiptLiters,
+          salesLiters,
+          updatedBy: profile?.name,
+        });
       }
-      setOk('Daily dip entries saved.');
+      setOk('Dip value entries saved.');
       await load();
+      window.dispatchEvent(new Event(FUEL_STOCK_UPDATED_EVENT));
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -206,32 +348,31 @@ export function DailyDipEntryPage() {
       {readOnlyOps ? <ReadOnlyBanner /> : null}
       <FuelStockSubNav />
 
-      <PageHeader
-        title="Daily dip entry"
-        action={
-          <Button
-            variant="contained"
-            startIcon={<SaveOutlinedIcon />}
-            disabled={readOnlyOps || saving || loading}
-            onClick={() => void handleSave()}
-            sx={{ minHeight: 48, alignSelf: { xs: 'stretch', sm: 'auto' } }}
-          >
-            {saving ? 'Saving…' : 'Save all fuels'}
-          </Button>
-        }
-      />
+      <PageHeader title="Daily dip entry" subtitle="Dip value register (liters)" />
 
       {err ? <Alert severity="error">{err}</Alert> : null}
       {ok ? <Alert severity="success">{ok}</Alert> : null}
 
       <Paper variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
+            <CalendarTodayOutlinedIcon fontSize="small" color="action" />
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                Pump day
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Entry applies to all fuels below
+              </Typography>
+            </Box>
+          </Stack>
           <TextField
             type="date"
-            label="Pump day"
+            label="Date"
             value={pumpDayIso}
             onChange={(e) => setPumpDayIso(clampEntryDateForRole(profile?.role, e.target.value))}
             size="small"
+            sx={{ minWidth: { sm: 200 } }}
             slotProps={{
               inputLabel: { shrink: true },
               htmlInput: { min: dateBounds.min, max: dateBounds.max },
@@ -245,128 +386,245 @@ export function DailyDipEntryPage() {
           <CircularProgress />
         </Paper>
       ) : (
-        <Paper variant="outlined" sx={{ borderRadius: 2 }}>
-        <ResponsiveTableContainer stickyFirstColumn>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={headSx}>Fuel</TableCell>
-                <TableCell sx={headSx} align="right">Opening Dip (CM)</TableCell>
-                <TableCell sx={headSx} align="right">Opening Stock (L)</TableCell>
-                <TableCell sx={headSx} align="right">Receipts (L)</TableCell>
-                <TableCell sx={headSx} align="right">Total Stock (L)</TableCell>
-                <TableCell sx={headSx} align="right">Sales (L)</TableCell>
-                <TableCell sx={headSx} align="right">Expected Closing Stock (L)</TableCell>
-                <TableCell sx={headSx} align="right">Closing Dip (CM)</TableCell>
-                <TableCell sx={headSx} align="right">Actual Closing Stock (L)</TableCell>
-                <TableCell sx={headSx} align="right">Variation (L)</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {formRows.map((row) => {
-                const meta = fuelStockDisplayMeta(row.fuelName);
-                const calc = computed.get(row.fuelTypeId);
-                const openingPreview =
-                  row.openingDipCm.trim() !== ''
-                    ? previewStockFromDipCm(Number(row.openingDipCm), row.fuelName)
-                    : null;
-                const closingPreview =
-                  row.closingDipCm.trim() !== ''
-                    ? previewStockFromDipCm(Number(row.closingDipCm), row.fuelName)
-                    : null;
-                const openingStockLiters = openingPreview ?? calc?.openingStockLiters ?? null;
-                const receiptTrim = row.receiptLiters.trim();
-                const receiptLiters = receiptTrim === '' ? (calc?.receiptLiters ?? 0) : Number(receiptTrim);
-                const salesLiters = calc?.salesLiters ?? 0;
-                const totalStockLiters =
-                  openingStockLiters != null ? Math.round(openingStockLiters + receiptLiters) : null;
-                const expectedStockLiters =
-                  totalStockLiters != null ? Math.round(totalStockLiters - salesLiters) : null;
-                const actualStockLiters = closingPreview ?? calc?.actualStockLiters ?? null;
-                const variationLiters =
-                  actualStockLiters != null && expectedStockLiters != null
-                    ? Math.round(actualStockLiters - expectedStockLiters)
-                    : null;
-                return (
-                  <TableRow key={row.fuelTypeId} hover>
-                    <TableCell>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                        {meta.shortCode}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {meta.displayName}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={row.openingDipCm}
-                        onChange={(e) => updateRow(row.fuelTypeId, { openingDipCm: e.target.value })}
-                        sx={{ width: 96 }}
-                        slotProps={{ htmlInput: { step: '0.1', min: 0 } }}
-                      />
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {openingStockLiters != null ? formatFuelLiters(openingStockLiters) : '—'}
-                    </TableCell>
-                    <TableCell align="right">
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={row.receiptLiters}
-                        onChange={(e) => updateRow(row.fuelTypeId, { receiptLiters: e.target.value })}
-                        sx={{ width: 96 }}
-                        slotProps={{ htmlInput: { min: 0 } }}
-                      />
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {totalStockLiters != null ? formatFuelLiters(totalStockLiters) : '—'}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {calc ? formatFuelLiters(salesLiters) : '—'}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {expectedStockLiters != null ? formatFuelLiters(expectedStockLiters) : '—'}
-                    </TableCell>
-                    <TableCell align="right">
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={row.closingDipCm}
-                        onChange={(e) => updateRow(row.fuelTypeId, { closingDipCm: e.target.value })}
-                        sx={{ width: 96 }}
-                        slotProps={{ htmlInput: { step: '0.1', min: 0 } }}
-                      />
-                      {closingPreview != null ? (
-                        <Typography variant="caption" display="block" color="text.secondary">
-                          → {normalizeDipCm(Number(row.closingDipCm))} cm = {formatFuelLiters(closingPreview)}
-                        </Typography>
-                      ) : null}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                      {actualStockLiters != null ? formatFuelLiters(actualStockLiters) : '—'}
-                    </TableCell>
-                    <TableCell
-                      align="right"
-                      sx={{
-                        fontVariantNumeric: 'tabular-nums',
-                        fontWeight: 700,
-                        color: calc?.variationAlert ? 'error.main' : 'inherit',
-                      }}
-                    >
-                      {variationLiters != null
-                        ? `${variationLiters > 0 ? '+' : ''}${variationLiters.toLocaleString('en-IN')} L`
-                        : '—'}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </ResponsiveTableContainer>
+        <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+          <Box
+            sx={{
+              px: 2,
+              py: 1.5,
+              bgcolor: 'action.hover',
+              borderBottom: 1,
+              borderColor: 'divider',
+            }}
+          >
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={{ xs: 1.5, sm: 2 }}
+              alignItems={{ xs: 'stretch', sm: 'center' }}
+              justifyContent="space-between"
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                  Today&apos;s entry
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Opening and receipt in liters — sales from closed shifts
+                </Typography>
+              </Box>
+              <Button
+                variant="contained"
+                startIcon={<SaveOutlinedIcon />}
+                disabled={readOnlyOps || saving || loading}
+                onClick={() => void handleSave()}
+                sx={{ minHeight: 48, flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'auto' } }}
+              >
+                {saving ? 'Saving…' : 'Save all fuels'}
+              </Button>
+            </Stack>
+          </Box>
+          <ResponsiveTableContainer>
+            <Table
+              size="small"
+              sx={{
+                minWidth: 720,
+                borderCollapse: 'collapse',
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={headSx}>Fuel</TableCell>
+                  <TableCell sx={headSx} align="right">
+                    Opening stock (L)
+                  </TableCell>
+                  <TableCell sx={headSx} align="right">
+                    Receipt (L)
+                  </TableCell>
+                  <TableCell sx={headSx} align="right">
+                    Total stock (L)
+                  </TableCell>
+                  <TableCell sx={headSx} align="right">
+                    Sales (L)
+                  </TableCell>
+                  <TableCell sx={headSx} align="right">
+                    Closing stock (L)
+                  </TableCell>
+                  <TableCell sx={headSx} align="right">
+                    Variation
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {formRows.map((row) => {
+                  const meta = fuelStockDisplayMeta(row.fuelName);
+                  const calc = rowCalcs.get(row.fuelTypeId);
+                  return (
+                    <TableRow key={row.fuelTypeId} hover>
+                      <TableCell sx={cellSx}>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Box
+                            sx={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              bgcolor:
+                                FUEL_CHART_COLORS[meta.shortCode as keyof typeof FUEL_CHART_COLORS] ??
+                                'text.secondary',
+                              flexShrink: 0,
+                            }}
+                          />
+                          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                            {meta.shortCode}
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell align="right" sx={cellSx}>
+                        <TextField
+                          size="small"
+                          type="number"
+                          value={row.openingLiters}
+                          onChange={(e) => updateRow(row.fuelTypeId, { openingLiters: e.target.value })}
+                          disabled={readOnlyOps}
+                          sx={{ width: 108 }}
+                          slotProps={{ htmlInput: { step: '0.1', min: 0 } }}
+                        />
+                      </TableCell>
+                      <TableCell align="right" sx={cellSx}>
+                        <TextField
+                          size="small"
+                          type="number"
+                          value={row.receiptLiters}
+                          onChange={(e) => updateRow(row.fuelTypeId, { receiptLiters: e.target.value })}
+                          disabled={readOnlyOps}
+                          sx={{ width: 108 }}
+                          slotProps={{ htmlInput: { step: '0.1', min: 0 } }}
+                        />
+                      </TableCell>
+                      <TableCell align="right" sx={cellSx}>
+                        {calc?.total != null ? fmtLedger(calc.total) : '—'}
+                      </TableCell>
+                      <TableCell align="right" sx={cellSx}>
+                        {fmtLedger(calc?.sales ?? 0)}
+                      </TableCell>
+                      <TableCell align="right" sx={{ ...cellSx, fontWeight: 600 }}>
+                        {calc?.closing != null ? fmtLedger(calc.closing) : '—'}
+                      </TableCell>
+                      <TableCell align="right" sx={cellSx}>
+                        {calc?.variation != null
+                          ? `${calc.variation > 0 ? '+' : ''}${fmtLedger(calc.variation)}`
+                          : '—'}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </ResponsiveTableContainer>
         </Paper>
       )}
+
+      <Divider sx={{ my: 1 }} />
+
+      <Paper component="section" variant="outlined" sx={{ borderRadius: 2, p: { xs: 2, sm: 2.5 } }}>
+        <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ mb: 2 }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: 2,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: (t) => alpha(t.palette.primary.main, 0.1),
+              color: 'primary.main',
+              flexShrink: 0,
+            }}
+          >
+            <HistoryOutlinedIcon fontSize="small" />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center">
+              <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
+                Register history
+              </Typography>
+              <Chip size="small" label={monthRange.label} variant="outlined" sx={{ fontWeight: 600 }} />
+              {!loading ? (
+                <Chip
+                  size="small"
+                  label={`${activeRegisterRows.length} ${activeRegisterRows.length === 1 ? 'day' : 'days'}`}
+                  color="primary"
+                  variant="outlined"
+                />
+              ) : null}
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {registerFuelLabel} · read-only ledger for this month
+            </Typography>
+          </Box>
+        </Stack>
+
+        <ToggleButtonGroup
+          value={registerTab}
+          exclusive
+          onChange={(_, value: (typeof FUEL_STOCK_SORT_ORDER)[number] | null) => {
+            if (value) setRegisterTab(value);
+          }}
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 1,
+            mb: 2,
+            '& .MuiToggleButtonGroup-grouped': {
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: '999px !important',
+              mx: '0 !important',
+            },
+          }}
+        >
+          {FUEL_STOCK_SORT_ORDER.map((code) => {
+            const color = FUEL_CHART_COLORS[code];
+            const selected = registerTab === code;
+            return (
+              <ToggleButton
+                key={code}
+                value={code}
+                sx={{
+                  px: 2.5,
+                  py: 1,
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  gap: 1,
+                  ...(selected
+                    ? {
+                        bgcolor: `${alpha(color, 0.14)} !important`,
+                        borderColor: `${color} !important`,
+                        color: 'text.primary',
+                      }
+                    : {}),
+                }}
+              >
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+                {code}
+              </ToggleButton>
+            );
+          })}
+        </ToggleButtonGroup>
+
+        {loading ? (
+          <Box sx={{ py: 6, display: 'flex', justifyContent: 'center' }}>
+            <CircularProgress size={32} />
+          </Box>
+        ) : (
+          <DipValueRegisterTable
+            key={registerTab}
+            title={registerTab}
+            showTitle={false}
+            highlightDayIso={pumpDayIso}
+            accentColor={FUEL_CHART_COLORS[registerTab]}
+            rows={activeRegisterRows}
+            emptyMessage={`No ${registerTab} entries saved for ${monthRange.label} yet.`}
+          />
+        )}
+      </Paper>
     </Stack>
   );
 }

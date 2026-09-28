@@ -6,9 +6,11 @@ import { listFuelTypes } from '@/services/fuelTypesService';
 import { listClosedShiftsByPumpDayRange } from '@/services/shiftsService';
 import { listFuelTankDipsInRange } from '@/services/fuelStockService';
 import { sumFuelReceiptLitersForDay } from '@/services/fuelReceiptsService';
+import { listDipValueLedgerForDay } from '@/services/dipValueLedgerService';
 import type {
   DailyFuelStockRow,
   DipKind,
+  DipValueLedgerEntry,
   FuelTankDipReading,
   FuelType,
   TankStockDaySummary,
@@ -90,6 +92,7 @@ async function buildRowForFuel(
   pumpDayIso: string,
   salesByFuel: Record<string, number>,
   allDips: FuelTankDipReading[],
+  ledger?: DipValueLedgerEntry | null,
 ): Promise<DailyFuelStockRow | null> {
   const capacity = fuel.tankCapacityLiters;
   if (capacity == null || capacity <= 0) return null;
@@ -101,19 +104,34 @@ async function buildRowForFuel(
   const closingDip = findDip(fuelDips, pumpDayIso, 'closing');
   const priorClose = priorClosingDip(fuelDips, pumpDayIso);
 
-  const openingStockLiters = roundLiters(
-    openingDip?.dipLiters ?? priorClose?.dipLiters ?? fuel.currentStockLiters ?? 0,
-  );
-  const receiptLiters = roundLiters(await sumFuelReceiptLitersForDay(fuel.id, pumpDayIso));
-  const salesLiters = roundLiters(salesByFuel[fuel.id] ?? 0);
-  const expectedStockLiters = roundLiters(openingStockLiters + receiptLiters - salesLiters);
+  let openingStockLiters: number;
+  let receiptLiters: number;
+  let salesLiters: number;
+  let expectedStockLiters: number;
+
+  if (ledger) {
+    openingStockLiters = roundLiters(ledger.openingStockLiters);
+    receiptLiters = roundLiters(ledger.receiptLiters);
+    salesLiters = roundLiters(ledger.salesLiters);
+    expectedStockLiters = roundLiters(ledger.closingBookLiters);
+  } else {
+    openingStockLiters = roundLiters(
+      openingDip?.dipLiters ?? priorClose?.dipLiters ?? fuel.currentStockLiters ?? 0,
+    );
+    receiptLiters = roundLiters(await sumFuelReceiptLitersForDay(fuel.id, pumpDayIso));
+    salesLiters = roundLiters(salesByFuel[fuel.id] ?? 0);
+    expectedStockLiters = roundLiters(openingStockLiters + receiptLiters - salesLiters);
+  }
 
   const todayIso = format(new Date(), 'yyyy-MM-dd');
   const actualStockLiters =
     closingDip?.dipLiters ??
     (pumpDayIso === todayIso ? (fuel.currentStockLiters ?? null) : null);
-  const variationLiters =
-    actualStockLiters != null ? roundLiters(actualStockLiters - expectedStockLiters) : null;
+  const variationLiters = ledger?.variationLiters != null
+    ? roundLiters(ledger.variationLiters)
+    : actualStockLiters != null
+      ? roundLiters(actualStockLiters - expectedStockLiters)
+      : null;
 
   const currentStockLiters = actualStockLiters ?? expectedStockLiters;
   const currentDipCm = resolveDisplayDipCm({
@@ -130,7 +148,7 @@ async function buildRowForFuel(
   const availablePercent =
     capacity > 0 ? Math.min(100, (currentStockLiters / capacity) * 100) : 0;
 
-  const dipEnteredToday = closingDip != null;
+  const dipEnteredToday = ledger != null || closingDip != null;
   const variationAlert =
     variationLiters != null && Math.abs(variationLiters) > VARIATION_ALERT_LITERS;
   const lowStockAlert = currentStockLiters <= reserve;
@@ -167,7 +185,7 @@ function buildAlerts(rows: DailyFuelStockRow[], pumpDayIso: string): string[] {
 
   for (const row of rows) {
     if (pumpDayIso === todayIso && !row.dipEnteredToday) {
-      messages.push(`${row.shortCode} closing dip not entered for today.`);
+      messages.push(`${row.shortCode} daily dip value not saved for today.`);
     }
     if (row.variationAlert && row.variationLiters != null) {
       const sign = row.variationLiters > 0 ? '+' : '';
@@ -199,15 +217,19 @@ export async function getTankStockDaySummary(pumpDayIso: string): Promise<TankSt
   const tankFuels = fuels.filter((f) => f.tankCapacityLiters != null && f.tankCapacityLiters > 0);
 
   const fromIso = format(addDays(parseISO(`${pumpDayIso}T12:00:00`), -60), 'yyyy-MM-dd');
-  const [salesByFuel, allDips] = await Promise.all([
+  const [salesByFuel, allDips, ledgers] = await Promise.all([
     getMeterSalesLitersByFuelTypeId(pumpDayIso),
     listFuelTankDipsInRange(fromIso, pumpDayIso),
+    listDipValueLedgerForDay(pumpDayIso),
   ]);
+  const ledgerByFuel = new Map(ledgers.map((l) => [l.fuelTypeId, l]));
 
   const rows = sortDailyRows(
     (
       await Promise.all(
-        tankFuels.map((f) => buildRowForFuel(f, pumpDayIso, salesByFuel, allDips)),
+        tankFuels.map((f) =>
+          buildRowForFuel(f, pumpDayIso, salesByFuel, allDips, ledgerByFuel.get(f.id)),
+        ),
       )
     ).filter((r): r is DailyFuelStockRow => r != null),
   );

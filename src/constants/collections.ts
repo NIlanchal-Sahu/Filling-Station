@@ -12,6 +12,7 @@ export const COLLECTIONS = {
   ledgerEntries: 'ledgerEntries',
   fuelTankDips: 'fuelTankDips',
   fuelReceipts: 'fuelReceipts',
+  fuelDipLedger: 'fuelDipLedger',
   lubricants: 'lubricants',
   lubricantStockEntries: 'lubricantStockEntries',
   lubricantSales: 'lubricantSales',

@@ -49,6 +49,9 @@ type StoredUser = {
   photoUrl?: string | null;
   address?: string | null;
   isActive: boolean;
+  staffPayMode?: string | null;
+  shiftPayRateInr?: number | null;
+  monthlySalaryInr?: number | null;
 };
 type StoredFuelType = {
   name: string;
@@ -205,11 +208,25 @@ type StoredLubricantSale = {
   recordedMs: number;
 };
 
+type StoredFuelDipLedger = {
+  fuelTypeId: string;
+  pumpDayIso: string;
+  openingStockLiters: number;
+  receiptLiters: number;
+  totalStockLiters: number;
+  salesLiters: number;
+  closingBookLiters: number;
+  variationLiters?: number | null;
+  updatedMs: number;
+  updatedBy?: string;
+};
+
 type Rows = {
   users: Record<string, StoredUser>;
   fuelTypes: Record<string, StoredFuelType>;
   fuelTankDips: Record<string, StoredFuelTankDip>;
   fuelReceipts: Record<string, StoredFuelReceipt>;
+  fuelDipLedger: Record<string, StoredFuelDipLedger>;
   nozzles: Record<string, StoredNozzle>;
   shifts: Record<string, StoredShift>;
   shiftReadings: Record<string, StoredReading>;
@@ -231,6 +248,7 @@ function emptyRows(): Rows {
     fuelTypes: {},
     fuelTankDips: {},
     fuelReceipts: {},
+    fuelDipLedger: {},
     nozzles: {},
     shifts: {},
     shiftReadings: {},
@@ -462,6 +480,16 @@ function mapUser(id: string, u: StoredUser): User {
     photoUrl: u.photoUrl ?? undefined,
     address: u.address ?? undefined,
     isActive: u.isActive !== false,
+    staffPayMode:
+      u.staffPayMode === 'monthly' ? 'monthly' : u.staffPayMode === 'per_shift' ? 'per_shift' : undefined,
+    shiftPayRateInr:
+      u.shiftPayRateInr != null && Number.isFinite(Number(u.shiftPayRateInr))
+        ? Number(u.shiftPayRateInr)
+        : undefined,
+    monthlySalaryInr:
+      u.monthlySalaryInr != null && Number.isFinite(Number(u.monthlySalaryInr))
+        ? Number(u.monthlySalaryInr)
+        : undefined,
   };
 }
 function mapFt(id: string, f: StoredFuelType): FuelType {
@@ -571,6 +599,15 @@ export async function demoUpsertUser(uid: string, input: Omit<User, 'id'>): Prom
     photoUrl: input.photoUrl ?? null,
     address: input.address ?? null,
     isActive: input.isActive,
+    staffPayMode: input.staffPayMode ?? null,
+    shiftPayRateInr:
+      input.shiftPayRateInr != null && Number.isFinite(input.shiftPayRateInr)
+        ? input.shiftPayRateInr
+        : null,
+    monthlySalaryInr:
+      input.monthlySalaryInr != null && Number.isFinite(input.monthlySalaryInr)
+        ? input.monthlySalaryInr
+        : null,
   };
   persist();
 }
@@ -853,6 +890,112 @@ export async function demoSetNozzleActive(id: string, isActive: boolean): Promis
   ensureLoaded();
   if (!row.nozzles[id]) return;
   row.nozzles[id].isActive = isActive;
+  persist();
+}
+
+export async function demoUpdateNozzle(
+  id: string,
+  patch: { machineNumber?: string; nozzleNumber?: string; fuelTypeId?: string },
+): Promise<void> {
+  ensureLoaded();
+  const n = row.nozzles[id];
+  if (!n) return;
+  if (patch.machineNumber !== undefined) n.machineNumber = patch.machineNumber.trim();
+  if (patch.nozzleNumber !== undefined) n.nozzleNumber = patch.nozzleNumber.trim();
+  if (patch.fuelTypeId !== undefined) n.fuelTypeId = patch.fuelTypeId;
+  persist();
+}
+
+export async function demoDeactivateNozzlesForMachine(machineNumber: string): Promise<void> {
+  ensureLoaded();
+  const key = machineNumber.trim();
+  for (const n of Object.values(row.nozzles)) {
+    if (n.machineNumber.trim() === key && n.isActive) {
+      n.isActive = false;
+    }
+  }
+  persist();
+}
+
+function dipLedgerDocId(fuelTypeId: string, pumpDayIso: string): string {
+  return `${pumpDayIso}_${fuelTypeId}`;
+}
+
+function mapDipLedger(id: string, s: StoredFuelDipLedger): import('@/types/entities').DipValueLedgerEntry {
+  return {
+    id,
+    fuelTypeId: s.fuelTypeId,
+    pumpDayIso: s.pumpDayIso,
+    openingStockLiters: s.openingStockLiters,
+    receiptLiters: s.receiptLiters,
+    totalStockLiters: s.totalStockLiters,
+    salesLiters: s.salesLiters,
+    closingBookLiters: s.closingBookLiters,
+    variationLiters: s.variationLiters ?? null,
+    updatedAt: { toMillis: () => s.updatedMs, toDate: () => new Date(s.updatedMs) } as import('firebase/firestore').Timestamp,
+    updatedBy: s.updatedBy,
+  };
+}
+
+export async function demoGetDipValueLedgerEntry(
+  fuelTypeId: string,
+  pumpDayIso: string,
+): Promise<import('@/types/entities').DipValueLedgerEntry | null> {
+  ensureLoaded();
+  const id = dipLedgerDocId(fuelTypeId, pumpDayIso);
+  const s = row.fuelDipLedger[id];
+  return s ? mapDipLedger(id, s) : null;
+}
+
+export async function demoListDipValueLedgerInRange(
+  fromIso: string,
+  toIso: string,
+  fuelTypeId?: string,
+): Promise<import('@/types/entities').DipValueLedgerEntry[]> {
+  ensureLoaded();
+  return Object.entries(row.fuelDipLedger)
+    .filter(([, s]) => s.pumpDayIso >= fromIso && s.pumpDayIso <= toIso)
+    .filter(([, s]) => !fuelTypeId || s.fuelTypeId === fuelTypeId)
+    .map(([id, s]) => mapDipLedger(id, s))
+    .sort(
+      (a, b) => a.pumpDayIso.localeCompare(b.pumpDayIso) || a.fuelTypeId.localeCompare(b.fuelTypeId),
+    );
+}
+
+export async function demoUpsertDipValueLedgerEntry(input: {
+  fuelTypeId: string;
+  pumpDayIso: string;
+  openingStockLiters: number;
+  receiptLiters: number;
+  salesLiters: number;
+  totalStockLiters: number;
+  closingBookLiters: number;
+  variationLiters?: number | null;
+  updatedBy?: string;
+}): Promise<void> {
+  ensureLoaded();
+  const id = dipLedgerDocId(input.fuelTypeId, input.pumpDayIso);
+  const prev = row.fuelDipLedger[id];
+  row.fuelDipLedger[id] = {
+    fuelTypeId: input.fuelTypeId,
+    pumpDayIso: input.pumpDayIso,
+    openingStockLiters: input.openingStockLiters,
+    receiptLiters: input.receiptLiters,
+    totalStockLiters: input.totalStockLiters,
+    salesLiters: input.salesLiters,
+    closingBookLiters: input.closingBookLiters,
+    variationLiters: input.variationLiters ?? prev?.variationLiters ?? null,
+    updatedMs: Date.now(),
+    updatedBy: input.updatedBy,
+  };
+  persist();
+}
+
+export async function demoSetFuelTypeCurrentStockLiters(fuelTypeId: string, liters: number): Promise<void> {
+  ensureLoaded();
+  const ft = row.fuelTypes[fuelTypeId];
+  if (!ft) return;
+  ft.currentStockLiters = liters;
   persist();
 }
 

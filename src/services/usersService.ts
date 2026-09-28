@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 import { LOCAL_DEMO } from '@/config/appMode';
-import type { User, UserRole } from '@/types/entities';
+import type { StaffPayMode, User, UserRole } from '@/types/entities';
 import { COLLECTIONS, getDb, getStorageInstance } from '@/lib/firebase';
 import {
   demoGetUser,
@@ -29,6 +29,19 @@ function optionalText(value: unknown): string | undefined {
   return s || undefined;
 }
 
+function parseStaffPayMode(raw: unknown): StaffPayMode | undefined {
+  const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (s === 'monthly') return 'monthly';
+  if (s === 'per_shift' || s === 'per shift') return 'per_shift';
+  return undefined;
+}
+
+function optionalPositiveNumber(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 function mapUser(id: string, data: DocumentData): User {
   return {
     id,
@@ -39,6 +52,9 @@ function mapUser(id: string, data: DocumentData): User {
     photoUrl: optionalText(data.photoUrl),
     address: optionalText(data.address),
     isActive: data.isActive !== false,
+    staffPayMode: parseStaffPayMode(data.staffPayMode),
+    shiftPayRateInr: optionalPositiveNumber(data.shiftPayRateInr),
+    monthlySalaryInr: optionalPositiveNumber(data.monthlySalaryInr),
   };
 }
 
@@ -98,6 +114,15 @@ export async function upsertUser(uid: string, input: Omit<User, 'id'>): Promise<
       photoUrl: input.photoUrl?.trim() || null,
       address: input.address?.trim() || null,
       isActive: input.isActive,
+      staffPayMode: input.staffPayMode ?? null,
+      shiftPayRateInr:
+        input.shiftPayRateInr != null && Number.isFinite(input.shiftPayRateInr)
+          ? input.shiftPayRateInr
+          : null,
+      monthlySalaryInr:
+        input.monthlySalaryInr != null && Number.isFinite(input.monthlySalaryInr)
+          ? input.monthlySalaryInr
+          : null,
       updatedAt: serverTimestamp(),
     },
     { merge: true },

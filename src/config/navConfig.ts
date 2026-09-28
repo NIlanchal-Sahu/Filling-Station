@@ -12,6 +12,7 @@ import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
+import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import type { UserRole } from '@/types/entities';
 import { homePathForRole } from '@/utils/roles';
@@ -122,6 +123,12 @@ const NAV_GROUPS: NavGroup[] = [
         permission: 'view:operations',
       },
       {
+        to: '/manager/attendant-sheet',
+        label: 'Attendant sheet',
+        icon: BadgeOutlinedIcon,
+        permission: 'view:reports',
+      },
+      {
         to: '/manager/reports',
         label: 'Reports',
         icon: AssessmentOutlinedIcon,
@@ -137,6 +144,18 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Team',
         icon: GroupsOutlinedIcon,
         permission: 'manage:team',
+      },
+      {
+        to: '/admin/staff-pay',
+        label: 'Staff pay',
+        icon: BadgeOutlinedIcon,
+        permission: 'manage:team',
+      },
+      {
+        to: '/admin/pump-setup',
+        label: 'Pump setup',
+        icon: LocalGasStationOutlinedIcon,
+        permission: 'manage:settings',
       },
       {
         to: '/admin/settings',

@@ -12,8 +12,13 @@ import { listCreditCustomers } from '@/services/creditCustomersService';
 import { listAllCreditPayments } from '@/services/creditPaymentsService';
 import { getUser } from '@/services/usersService';
 import { listAllReconciliations, listReconciliationsInWindow } from '@/services/reportsHelpers';
-import { listAllLedgerForBalance } from '@/services/ledgerService';
-import type { LedgerEntry, Shift } from '@/types/entities';
+import { listAllLedgerForBalance, listExpensesInRange } from '@/services/ledgerService';
+import { listActiveUsers } from '@/services/usersService';
+import { stationOutgoCategoryKey } from '@/utils/expenseReport';
+import { isStaffPayRosterUser } from '@/utils/roles';
+import { proratedMonthlySalaryInRange } from '@/utils/staffPayGross';
+import { effectiveStaffPayMode } from '@/utils/staffPayValidation';
+import type { LedgerEntry, Shift, StaffPayMode } from '@/types/entities';
 import { SHIFT_LABELS } from '@/types/entities';
 import { fuelStockDisplayMeta } from '@/utils/fuelStockDisplay';
 import { latestReconciliationsPerShift } from '@/utils/dailyCashBookVertical';
@@ -343,6 +348,159 @@ export async function getPumpAttendantAttendanceRowsInRange(
   }
 
   return rows;
+}
+
+function normalizeStaffNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+export type AttendantPayrollSummaryRow = {
+  staffName: string;
+  userId: string | null;
+  shiftsWorked: number;
+  staffPayMode: StaffPayMode | null;
+  /** Per-shift rate or full monthly salary amount for display. */
+  payAmountInr: number | null;
+  payRateLabel: '/ shift' | '/ month' | null;
+  grossDueInr: number | null;
+  salaryPaidInr: number;
+  advancePaidInr: number;
+  suggestedBalanceInr: number | null;
+};
+
+export async function getAttendantPayrollSummaryInRange(
+  from: Date,
+  to: Date,
+): Promise<AttendantPayrollSummaryRow[]> {
+  const [attendance, expenses, users] = await Promise.all([
+    getPumpAttendantAttendanceRowsInRange(from, to),
+    listExpensesInRange(from, to),
+    listActiveUsers(),
+  ]);
+
+  const rosterByKey = new Map<
+    string,
+    {
+      userId: string;
+      displayName: string;
+      staffPayMode: StaffPayMode;
+      shiftPayRateInr: number | null;
+      monthlySalaryInr: number | null;
+    }
+  >();
+  for (const u of users.filter(isStaffPayRosterUser)) {
+    const mode = effectiveStaffPayMode(u.staffPayMode);
+    rosterByKey.set(normalizeStaffNameKey(u.name), {
+      userId: u.id,
+      displayName: u.name,
+      staffPayMode: mode,
+      shiftPayRateInr:
+        u.shiftPayRateInr != null && Number.isFinite(u.shiftPayRateInr) ? u.shiftPayRateInr : null,
+      monthlySalaryInr:
+        u.monthlySalaryInr != null && Number.isFinite(u.monthlySalaryInr) ? u.monthlySalaryInr : null,
+    });
+  }
+
+  type Acc = {
+    staffName: string;
+    userId: string | null;
+    shiftsWorked: number;
+    staffPayMode: StaffPayMode | null;
+    shiftPayRateInr: number | null;
+    monthlySalaryInr: number | null;
+    salaryPaidInr: number;
+    advancePaidInr: number;
+  };
+
+  const byKey = new Map<string, Acc>();
+
+  function ensure(key: string, displayName: string): Acc {
+    let acc = byKey.get(key);
+    if (!acc) {
+      const roster = rosterByKey.get(key);
+      acc = {
+        staffName: roster?.displayName ?? displayName,
+        userId: roster?.userId ?? null,
+        shiftsWorked: 0,
+        staffPayMode: roster?.staffPayMode ?? null,
+        shiftPayRateInr: roster?.shiftPayRateInr ?? null,
+        monthlySalaryInr: roster?.monthlySalaryInr ?? null,
+        salaryPaidInr: 0,
+        advancePaidInr: 0,
+      };
+      byKey.set(key, acc);
+    }
+    return acc;
+  }
+
+  for (const row of attendance) {
+    if (row.pumpBoyGirl === '—') continue;
+    const key = normalizeStaffNameKey(row.pumpBoyGirl);
+    const acc = ensure(key, row.pumpBoyGirl);
+    acc.shiftsWorked += 1;
+  }
+
+  for (const e of expenses) {
+    const cat = stationOutgoCategoryKey(e.category);
+    if (cat !== 'SALARY' && cat !== 'ADVANCE SALARY') continue;
+    const raw = e.paidToOrReceivedFrom?.trim();
+    if (!raw || raw === '—') continue;
+    const key = normalizeStaffNameKey(raw);
+    const acc = ensure(key, raw);
+    if (cat === 'SALARY') {
+      acc.salaryPaidInr += e.amount;
+    } else {
+      acc.advancePaidInr += e.amount;
+    }
+  }
+
+  for (const roster of rosterByKey.values()) {
+    ensure(normalizeStaffNameKey(roster.displayName), roster.displayName);
+  }
+
+  const out: AttendantPayrollSummaryRow[] = [];
+  for (const acc of byKey.values()) {
+    const salaryPaidInr = roundMoney2(acc.salaryPaidInr);
+    const advancePaidInr = roundMoney2(acc.advancePaidInr);
+    const mode = acc.staffPayMode ?? 'per_shift';
+    let payAmountInr: number | null = null;
+    let payRateLabel: '/ shift' | '/ month' | null = null;
+    let grossDueInr: number | null = null;
+
+    if (mode === 'monthly') {
+      payRateLabel = '/ month';
+      if (acc.monthlySalaryInr != null) {
+        payAmountInr = acc.monthlySalaryInr;
+        grossDueInr = roundMoney2(proratedMonthlySalaryInRange(acc.monthlySalaryInr, from, to));
+      }
+    } else {
+      payRateLabel = '/ shift';
+      if (acc.shiftPayRateInr != null) {
+        payAmountInr = acc.shiftPayRateInr;
+        grossDueInr = roundMoney2(acc.shiftsWorked * acc.shiftPayRateInr);
+      }
+    }
+
+    const suggestedBalanceInr =
+      grossDueInr != null ? roundMoney2(grossDueInr - salaryPaidInr - advancePaidInr) : null;
+    out.push({
+      staffName: acc.staffName,
+      userId: acc.userId,
+      shiftsWorked: acc.shiftsWorked,
+      staffPayMode: acc.staffPayMode,
+      payAmountInr,
+      payRateLabel,
+      grossDueInr,
+      salaryPaidInr,
+      advancePaidInr,
+      suggestedBalanceInr,
+    });
+  }
+
+  return out.sort((a, b) => {
+    if (b.shiftsWorked !== a.shiftsWorked) return b.shiftsWorked - a.shiftsWorked;
+    return a.staffName.localeCompare(b.staffName, undefined, { sensitivity: 'base' });
+  });
 }
 
 function fuelSalesBucket(name: string): 'petrol' | 'diesel' | 'xp' | 'other' {

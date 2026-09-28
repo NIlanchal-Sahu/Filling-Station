@@ -63,6 +63,7 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
 const OWNER_READ_PATH_PREFIXES = [
   '/owner',
   '/manager/reports',
+  '/manager/attendant-sheet',
   '/manager/reconciliations',
   '/manager/shift-activity',
   '/manager/fuel-stock',
@@ -139,7 +140,7 @@ export function routeRequiresPermission(pathname: string): Permission | null {
   if (path.startsWith('/admin/team') || path.startsWith('/manager/team')) {
     return 'manage:team';
   }
-  if (path.startsWith('/admin/settings')) {
+  if (path.startsWith('/admin/settings') || path.startsWith('/admin/pump-setup')) {
     return 'manage:settings';
   }
   if (path.startsWith('/manager/credit')) {
@@ -154,7 +155,7 @@ export function routeRequiresPermission(pathname: string): Permission | null {
   if (path.startsWith('/manager/fuel-stock')) {
     return 'view:operations';
   }
-  if (path.startsWith('/manager/reports')) {
+  if (path.startsWith('/manager/reports') || path.startsWith('/manager/attendant-sheet')) {
     return 'view:reports';
   }
   return null;

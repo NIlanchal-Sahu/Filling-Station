@@ -14,6 +14,12 @@ const AdminDashboardPage = lazy(() =>
 const AdminSettingsPage = lazy(() =>
   import('@/pages/admin/AdminSettingsPage').then((m) => ({ default: m.AdminSettingsPage })),
 );
+const AdminPumpSetupPage = lazy(() =>
+  import('@/pages/admin/AdminPumpSetupPage').then((m) => ({ default: m.AdminPumpSetupPage })),
+);
+const AdminStaffPayPage = lazy(() =>
+  import('@/pages/admin/AdminStaffPayPage').then((m) => ({ default: m.AdminStaffPayPage })),
+);
 const OwnerDashboardPage = lazy(() =>
   import('@/pages/owner/OwnerDashboardPage').then((m) => ({ default: m.OwnerDashboardPage })),
 );
@@ -52,6 +58,9 @@ const DailyCashSheetPage = lazy(() =>
   import('@/pages/manager/DailyCashSheetPage').then((m) => ({ default: m.DailyCashSheetPage })),
 );
 const ReportsPage = lazy(() => import('@/pages/manager/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const AttendantSheetPage = lazy(() =>
+  import('@/pages/manager/AttendantSheetPage').then((m) => ({ default: m.AttendantSheetPage })),
+);
 const FuelPricesPage = lazy(() =>
   import('@/pages/manager/FuelPricesPage').then((m) => ({ default: m.FuelPricesPage })),
 );
@@ -110,6 +119,8 @@ export default function App() {
             <Route path="admin" element={<Outlet />}>
               <Route index element={<AdminDashboardPage />} />
               <Route path="team" element={<TeamPage />} />
+              <Route path="staff-pay" element={<AdminStaffPayPage />} />
+              <Route path="pump-setup" element={<AdminPumpSetupPage />} />
               <Route path="settings" element={<AdminSettingsPage />} />
             </Route>
           </Route>
@@ -131,6 +142,7 @@ export default function App() {
               <Route path="fuel-stock/purchase" element={<FuelPurchasePage />} />
               <Route path="fuel-stock/:fuelTypeId" element={<FuelStockHistoryPage />} />
               <Route path="reports" element={<ReportsPage />} />
+              <Route path="attendant-sheet" element={<AttendantSheetPage />} />
               <Route path="shift-activity" element={<ShiftActivityPage />} />
               <Route path="reconciliations" element={<ReconciliationReviewPage />} />
               <Route path="lubricants" element={<LubricantPage />} />

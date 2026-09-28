@@ -3,6 +3,9 @@ import type { Timestamp } from 'firebase/firestore';
 /** Auth profile stored in `users/{uid}` (id matches Firebase Auth uid). */
 export type UserRole = 'admin' | 'owner' | 'manager' | 'operator';
 
+/** How pump-floor payroll gross is calculated on Attendant sheet → Pay summary. */
+export type StaffPayMode = 'per_shift' | 'monthly';
+
 export interface User {
   id: string;
   name: string;
@@ -12,6 +15,11 @@ export interface User {
   photoUrl?: string;
   address?: string;
   isActive: boolean;
+  staffPayMode?: StaffPayMode;
+  /** Pay per closed shift (INR) when staffPayMode is per_shift (or unset). */
+  shiftPayRateInr?: number;
+  /** Fixed monthly salary (INR) when staffPayMode is monthly; pro-rated by days in report range. */
+  monthlySalaryInr?: number;
 }
 
 export interface FuelType {
@@ -94,6 +102,22 @@ export interface TankStockDaySummary {
   pumpDayIso: string;
   rows: DailyFuelStockRow[];
   alerts: string[];
+}
+
+/** Spreadsheet-style dip value row (liters only), one per fuel × pump day. */
+export interface DipValueLedgerEntry {
+  id: string;
+  fuelTypeId: string;
+  pumpDayIso: string;
+  openingStockLiters: number;
+  receiptLiters: number;
+  totalStockLiters: number;
+  salesLiters: number;
+  closingBookLiters: number;
+  /** Next day opening − this closing book, when next day is saved */
+  variationLiters?: number | null;
+  updatedAt: Timestamp;
+  updatedBy?: string;
 }
 
 export interface FuelStockItem {

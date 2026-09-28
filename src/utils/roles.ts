@@ -15,6 +15,11 @@ export function isPumpRosterUser(user: { role: UserRole; isActive: boolean }): b
   return user.isActive && user.role === 'operator';
 }
 
+/** Active operators and managers — staff pay rates and Pay summary roster. */
+export function isStaffPayRosterUser(user: { role: UserRole; isActive: boolean }): boolean {
+  return user.isActive && (user.role === 'operator' || user.role === 'manager');
+}
+
 /** Manager or admin with operational write access. */
 export function isManagerLike(role: UserRole | null | undefined): boolean {
   return isOpsWriter(role);

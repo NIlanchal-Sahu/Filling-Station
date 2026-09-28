@@ -27,7 +27,8 @@ import { StaffAvatar } from '@/components/ui/StaffAvatar';
 import { LOCAL_DEMO } from '@/config/appMode';
 import { useAuth } from '@/context/AuthContext';
 import { listUsersForManager, persistStaffPhoto, upsertUser } from '@/services/usersService';
-import type { User, UserRole } from '@/types/entities';
+import type { StaffPayMode, User, UserRole } from '@/types/entities';
+import { effectiveStaffPayMode, parseOperatorStaffPay } from '@/utils/staffPayValidation';
 import { compressStaffPhoto } from '@/utils/staffPhoto';
 import { optionalEmail, requireNonEmpty } from '@/utils/validation';
 import { roleLabel } from '@/utils/roles';
@@ -42,6 +43,9 @@ type TeamForm = {
   photoUrl: string;
   photoDirty: boolean;
   isActive: boolean;
+  staffPayMode: StaffPayMode;
+  shiftPayRateInr: string;
+  monthlySalaryInr: string;
 };
 
 function emptyForm(role: UserRole = 'operator'): TeamForm {
@@ -55,6 +59,9 @@ function emptyForm(role: UserRole = 'operator'): TeamForm {
     photoUrl: '',
     photoDirty: false,
     isActive: true,
+    staffPayMode: 'per_shift',
+    shiftPayRateInr: '',
+    monthlySalaryInr: '',
   };
 }
 
@@ -130,6 +137,11 @@ export function TeamPage() {
       photoUrl: u.photoUrl ?? '',
       photoDirty: false,
       isActive: u.isActive,
+      staffPayMode: effectiveStaffPayMode(u.staffPayMode),
+      shiftPayRateInr:
+        u.shiftPayRateInr != null && Number.isFinite(u.shiftPayRateInr) ? String(u.shiftPayRateInr) : '',
+      monthlySalaryInr:
+        u.monthlySalaryInr != null && Number.isFinite(u.monthlySalaryInr) ? String(u.monthlySalaryInr) : '',
     });
     setFormError(null);
     setDialogOpen(true);
@@ -184,6 +196,37 @@ export function TeamPage() {
       return;
     }
 
+    const formRole = canAssignRoles ? form.role : 'operator';
+    const staffPayEligible = formRole === 'operator' || formRole === 'manager';
+    let staffPayFields: {
+      staffPayMode?: StaffPayMode;
+      shiftPayRateInr?: number;
+      monthlySalaryInr?: number;
+    } = {};
+    if (staffPayEligible) {
+      const parsed = parseOperatorStaffPay(
+        form.staffPayMode,
+        form.shiftPayRateInr,
+        form.monthlySalaryInr,
+      );
+      if (!parsed.ok) {
+        setFormError(parsed.error);
+        return;
+      }
+      const pay = parsed.value;
+      staffPayFields = {
+        staffPayMode: pay.staffPayMode,
+        shiftPayRateInr: pay.staffPayMode === 'per_shift' ? pay.shiftPayRateInr : undefined,
+        monthlySalaryInr: pay.staffPayMode === 'monthly' ? pay.monthlySalaryInr : undefined,
+      };
+    } else {
+      staffPayFields = {
+        staffPayMode: undefined,
+        shiftPayRateInr: undefined,
+        monthlySalaryInr: undefined,
+      };
+    }
+
     setSaving(true);
     try {
       let photoUrl = form.photoUrl.trim() || undefined;
@@ -201,6 +244,7 @@ export function TeamPage() {
         photoUrl,
         address: form.address.trim() || undefined,
         isActive: form.isActive,
+        ...staffPayFields,
       });
       setDialogOpen(false);
       await load();
@@ -348,6 +392,48 @@ export function TeamPage() {
               multiline
               minRows={2}
             />
+            {((canAssignRoles ? form.role : 'operator') === 'operator' ||
+              (canAssignRoles && form.role === 'manager')) ? (
+              <>
+                <FormControl fullWidth size="small">
+                  <InputLabel id="team-pay-mode">Pay mode</InputLabel>
+                  <Select
+                    labelId="team-pay-mode"
+                    label="Pay mode"
+                    value={form.staffPayMode}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, staffPayMode: e.target.value as StaffPayMode }))
+                    }
+                  >
+                    <MenuItem value="per_shift">Per shift</MenuItem>
+                    <MenuItem value="monthly">Monthly salary</MenuItem>
+                  </Select>
+                </FormControl>
+                {form.staffPayMode === 'monthly' ? (
+                  <TextField
+                    label="Monthly salary (₹)"
+                    value={form.monthlySalaryInr}
+                    onChange={(e) => setForm((f) => ({ ...f, monthlySalaryInr: e.target.value }))}
+                    fullWidth
+                    size="small"
+                    type="number"
+                    helperText="Pro-rated by days on Attendant sheet → Pay summary"
+                    slotProps={{ htmlInput: { min: 0, step: '1' } }}
+                  />
+                ) : (
+                  <TextField
+                    label="Pay per shift (₹)"
+                    value={form.shiftPayRateInr}
+                    onChange={(e) => setForm((f) => ({ ...f, shiftPayRateInr: e.target.value }))}
+                    fullWidth
+                    size="small"
+                    type="number"
+                    helperText="Optional — or set rates on Admin → Staff pay"
+                    slotProps={{ htmlInput: { min: 0, step: '1' } }}
+                  />
+                )}
+              </>
+            ) : null}
             <Stack direction="row" spacing={1.5} alignItems="center">
               <StaffAvatar name={form.name || 'Staff'} photoUrl={form.photoUrl || undefined} size={48} />
               <input

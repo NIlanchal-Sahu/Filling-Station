@@ -53,6 +53,10 @@ import {
 } from '@/utils/expenseReport';
 import { downloadExpenseReportCsv, downloadExpenseReportPdf } from '@/utils/expenseReportExport';
 import { getDailyFuelStockReport } from '@/services/fuelStockReconciliationService';
+import { listDipValueLedgerInRange } from '@/services/dipValueLedgerService';
+import { listFuelTypes } from '@/services/fuelTypesService';
+import { groupRegisterByFuel, type DipValueRegisterRow } from '@/utils/dipValueRegister';
+import { fuelStockDisplayMeta } from '@/utils/fuelStockDisplay';
 import { getReconciliationForShift } from '@/services/reconciliationService';
 import {
   getCashBankCollectionDailyRows,
@@ -79,6 +83,20 @@ function fmtRupeesCell(n: number): string {
 
 type TabId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
+type StockReportKind = 'daily' | 'tank' | 'variation' | 'monthly' | 'dipValue';
+
+function parseStockReportKind(raw: string | null): StockReportKind | null {
+  if (raw === 'daily' || raw === 'tank' || raw === 'variation' || raw === 'monthly' || raw === 'dipValue') {
+    return raw;
+  }
+  return null;
+}
+
+function fmtDipRegisterLiters(n: number | null | undefined): string {
+  if (n == null) return '—';
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+}
+
 export function ReportsPage() {
   const { readOnlyOps } = usePermissions();
   const [searchParams] = useSearchParams();
@@ -104,7 +122,9 @@ export function ReportsPage() {
   const [custFilter, setCustFilter] = useState('');
   const [attendanceRows, setAttendanceRows] = useState<PumpAttendantAttendanceRow[]>([]);
   const [stockRows, setStockRows] = useState<DailyFuelStockRow[]>([]);
-  const [stockReportKind, setStockReportKind] = useState<'daily' | 'tank' | 'variation' | 'monthly'>('daily');
+  const [dipRegisterByFuel, setDipRegisterByFuel] = useState<Map<string, DipValueRegisterRow[]>>(new Map());
+  const [dipRegisterFuelLabels, setDipRegisterFuelLabels] = useState<Map<string, string>>(new Map());
+  const [stockReportKind, setStockReportKind] = useState<StockReportKind>('daily');
   const [collectionSummary, setCollectionSummary] = useState<CashBankCollectionSummary | null>(null);
   const [collectionDailyRows, setCollectionDailyRows] = useState<CashBankCollectionDailyRow[]>([]);
   const [collectionShiftDetails, setCollectionShiftDetails] = useState<CashBankCollectionShiftDetailRow[]>([]);
@@ -119,6 +139,10 @@ export function ReportsPage() {
       setTab(5);
     } else if (report === 'meters') {
       setTab(1);
+    } else if (report === 'fuel-stock') {
+      setTab(6);
+      const kind = parseStockReportKind(searchParams.get('kind'));
+      if (kind) setStockReportKind(kind);
     }
     const day = parsePumpDayParam(searchParams.get('day'));
     if (day) {
@@ -140,6 +164,27 @@ export function ReportsPage() {
   const expChips = useMemo(() => expenseCategoryTotals(expVisible), [expVisible]);
   const expTotal = useMemo(() => expenseGrandTotal(expVisible), [expVisible]);
   const expRange = useMemo(() => expenseRangeLabel(from, to), [from, to]);
+
+  const dipRegisterFlatRows = useMemo(() => {
+    const out: { row: DipValueRegisterRow; fuelLabel: string }[] = [];
+    for (const [fuelTypeId, rows] of dipRegisterByFuel) {
+      const fuelLabel = dipRegisterFuelLabels.get(fuelTypeId) ?? fuelTypeId;
+      for (const row of rows) {
+        out.push({ row, fuelLabel });
+      }
+    }
+    return out.sort(
+      (a, b) =>
+        a.row.pumpDayIso.localeCompare(b.row.pumpDayIso) || a.fuelLabel.localeCompare(b.fuelLabel),
+    );
+  }, [dipRegisterByFuel, dipRegisterFuelLabels]);
+
+  async function loadDipRegisterReport(fromIso: string, toIso: string) {
+    const [fuels, ledger] = await Promise.all([listFuelTypes(), listDipValueLedgerInRange(fromIso, toIso)]);
+    setDipRegisterFuelLabels(new Map(fuels.map((f) => [f.id, fuelStockDisplayMeta(f.name).shortCode])));
+    setDipRegisterByFuel(groupRegisterByFuel(ledger));
+    setStockRows([]);
+  }
 
   async function run() {
     setErr(null);
@@ -219,7 +264,13 @@ export function ReportsPage() {
         setExpRows(buildExpenseReportRows(ex));
         setExpRan(true);
       } else if (tab === 6) {
-        setStockRows(await getDailyFuelStockReport(from, to));
+        if (stockReportKind === 'dipValue' || stockReportKind === 'daily') {
+          await loadDipRegisterReport(from, to);
+        } else {
+          setStockRows(await getDailyFuelStockReport(from, to));
+          setDipRegisterByFuel(new Map());
+          setDipRegisterFuelLabels(new Map());
+        }
       } else if (tab === 7) {
         const [summary, daily, shifts] = await Promise.all([
           getCashBankCollectionSummary(from, to),
@@ -239,8 +290,13 @@ export function ReportsPage() {
 
   useEffect(() => {
     const report = searchParams.get('report');
-    const expectedTab = report === 'expenses' ? 5 : report === 'meters' ? 1 : null;
+    const expectedTab =
+      report === 'expenses' ? 5 : report === 'meters' ? 1 : report === 'fuel-stock' ? 6 : null;
     if (expectedTab == null || tab !== expectedTab) return;
+    if (report === 'fuel-stock') {
+      const kind = parseStockReportKind(searchParams.get('kind'));
+      if (kind && stockReportKind !== kind) return;
+    }
     const day = parsePumpDayParam(searchParams.get('day'));
     if (day && (from !== day || to !== day)) return;
     const key = searchParams.toString();
@@ -263,6 +319,12 @@ export function ReportsPage() {
           const rows = await getMeterRegisterRowsInRange(a, b);
           if (cancelled) return;
           setMeterRows(rows);
+        } else if (
+          report === 'fuel-stock' &&
+          (stockReportKind === 'dipValue' || stockReportKind === 'daily')
+        ) {
+          await loadDipRegisterReport(from, to);
+          if (cancelled) return;
         }
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : 'Report failed');
@@ -273,7 +335,7 @@ export function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, tab, from, to]);
+  }, [searchParams, tab, from, to, stockReportKind]);
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
@@ -359,10 +421,11 @@ export function ReportsPage() {
               slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
               sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             >
-              <option value="daily">Daily dip report</option>
+              <option value="daily">Daily dip register</option>
               <option value="tank">Tank stock report</option>
               <option value="variation">Variation report</option>
               <option value="monthly">Monthly reconciliation</option>
+              <option value="dipValue">Dip value register</option>
             </TextField>
           )}
           <Box sx={{ flex: 1 }} />
@@ -968,10 +1031,184 @@ export function ReportsPage() {
         </Box>
       )}
 
-      {tab === 6 && (
+      {tab === 6 && stockReportKind === 'daily' && (
         <Box>
           <Typography variant="subtitle1" gutterBottom>
-            {stockReportKind === 'daily' && 'Daily dip'}
+            Daily dip register (liters)
+          </Typography>
+          {dipRegisterFlatRows.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No dip value entries in this date range.
+            </Typography>
+          ) : (
+            <Paper variant="outlined">
+              <ResponsiveTableContainer stickyFirstColumn>
+                <Table size="small" sx={{ minWidth: 820 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Date</TableCell>
+                      <TableCell>Fuel</TableCell>
+                      <TableCell align="right">Opening (L)</TableCell>
+                      <TableCell align="right">Receipt (L)</TableCell>
+                      <TableCell align="right">Total (L)</TableCell>
+                      <TableCell align="right">Sales (L)</TableCell>
+                      <TableCell align="right">Closing book (L)</TableCell>
+                      <TableCell align="right">Variation (L)</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {dipRegisterFlatRows.map(({ row, fuelLabel }) => (
+                      <TableRow key={`${row.pumpDayIso}-${fuelLabel}`}>
+                        <TableCell>{row.pumpDayIso}</TableCell>
+                        <TableCell>{fuelLabel}</TableCell>
+                        <TableCell align="right">{fmtDipRegisterLiters(row.openingStockLiters)}</TableCell>
+                        <TableCell align="right">{fmtDipRegisterLiters(row.receiptLiters)}</TableCell>
+                        <TableCell align="right">{fmtDipRegisterLiters(row.totalStockLiters)}</TableCell>
+                        <TableCell align="right">{fmtDipRegisterLiters(row.salesLiters)}</TableCell>
+                        <TableCell align="right">{fmtDipRegisterLiters(row.closingBookLiters)}</TableCell>
+                        <TableCell align="right">{fmtDipRegisterLiters(row.variationLiters)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ResponsiveTableContainer>
+            </Paper>
+          )}
+          <Button
+            size="small"
+            sx={{ mt: 1 }}
+            disabled={dipRegisterFlatRows.length === 0}
+            onClick={() =>
+              downloadCsv(
+                `daily_dip_register_${from}_${to}.csv`,
+                [
+                  'Date',
+                  'Fuel',
+                  'Opening_L',
+                  'Receipt_L',
+                  'Total_L',
+                  'Sales_L',
+                  'Closing_book_L',
+                  'Variation_L',
+                ],
+                dipRegisterFlatRows.map(({ row, fuelLabel }) => [
+                  row.pumpDayIso,
+                  fuelLabel,
+                  row.openingStockLiters,
+                  row.receiptLiters,
+                  row.totalStockLiters,
+                  row.salesLiters,
+                  row.closingBookLiters,
+                  row.variationLiters ?? '',
+                ]),
+              )
+            }
+          >
+            Export CSV
+          </Button>
+        </Box>
+      )}
+
+      {tab === 6 && stockReportKind === 'dipValue' && (
+        <Box>
+          <Typography variant="subtitle1" gutterBottom>
+            Dip value register (liters)
+          </Typography>
+          {dipRegisterByFuel.size === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No dip value entries in this date range.
+            </Typography>
+          ) : (
+            <Stack spacing={3}>
+              {[...dipRegisterByFuel.entries()]
+                .sort(([a], [b]) =>
+                  (dipRegisterFuelLabels.get(a) ?? a).localeCompare(dipRegisterFuelLabels.get(b) ?? b),
+                )
+                .map(([fuelTypeId, rows]) => (
+                  <Box key={fuelTypeId}>
+                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+                      {dipRegisterFuelLabels.get(fuelTypeId) ?? fuelTypeId}
+                    </Typography>
+                    <Paper variant="outlined">
+                      <ResponsiveTableContainer>
+                        <Table size="small" sx={{ minWidth: 720 }}>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Date</TableCell>
+                              <TableCell align="right">Opening (L)</TableCell>
+                              <TableCell align="right">Receipt (L)</TableCell>
+                              <TableCell align="right">Total (L)</TableCell>
+                              <TableCell align="right">Sales (L)</TableCell>
+                              <TableCell align="right">Closing book (L)</TableCell>
+                              <TableCell align="right">Variation (L)</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {rows.map((r) => (
+                              <TableRow key={r.pumpDayIso}>
+                                <TableCell>{r.pumpDayIso}</TableCell>
+                                <TableCell align="right">{fmtDipRegisterLiters(r.openingStockLiters)}</TableCell>
+                                <TableCell align="right">{fmtDipRegisterLiters(r.receiptLiters)}</TableCell>
+                                <TableCell align="right">{fmtDipRegisterLiters(r.totalStockLiters)}</TableCell>
+                                <TableCell align="right">{fmtDipRegisterLiters(r.salesLiters)}</TableCell>
+                                <TableCell align="right">{fmtDipRegisterLiters(r.closingBookLiters)}</TableCell>
+                                <TableCell align="right">{fmtDipRegisterLiters(r.variationLiters)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </ResponsiveTableContainer>
+                    </Paper>
+                  </Box>
+                ))}
+            </Stack>
+          )}
+          <Button
+            size="small"
+            sx={{ mt: 2 }}
+            disabled={dipRegisterByFuel.size === 0}
+            onClick={() => {
+              const flat: (string | number)[][] = [];
+              for (const [fuelTypeId, rows] of dipRegisterByFuel) {
+                const label = dipRegisterFuelLabels.get(fuelTypeId) ?? fuelTypeId;
+                for (const r of rows) {
+                  flat.push([
+                    r.pumpDayIso,
+                    label,
+                    r.openingStockLiters,
+                    r.receiptLiters,
+                    r.totalStockLiters,
+                    r.salesLiters,
+                    r.closingBookLiters,
+                    r.variationLiters ?? '',
+                  ]);
+                }
+              }
+              flat.sort((a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1])));
+              downloadCsv(
+                `dip_value_register_${from}_${to}.csv`,
+                [
+                  'Date',
+                  'Fuel',
+                  'Opening_L',
+                  'Receipt_L',
+                  'Total_L',
+                  'Sales_L',
+                  'Closing_book_L',
+                  'Variation_L',
+                ],
+                flat,
+              );
+            }}
+          >
+            Export CSV
+          </Button>
+        </Box>
+      )}
+
+      {tab === 6 && stockReportKind !== 'dipValue' && stockReportKind !== 'daily' && (
+        <Box>
+          <Typography variant="subtitle1" gutterBottom>
             {stockReportKind === 'tank' && 'Tank stock'}
             {stockReportKind === 'variation' && 'Variation'}
             {stockReportKind === 'monthly' && 'Monthly stock'}

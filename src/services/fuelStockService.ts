@@ -229,6 +229,22 @@ export function formatFuelLiters(value: number): string {
   return `${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })} L`;
 }
 
+export async function setFuelTypeCurrentStockLiters(
+  fuelTypeId: string,
+  liters: number,
+): Promise<void> {
+  const rounded = Math.round(liters * 10) / 10;
+  if (LOCAL_DEMO) {
+    const { demoSetFuelTypeCurrentStockLiters } = await import('@/localDemo/demoBackend');
+    await demoSetFuelTypeCurrentStockLiters(fuelTypeId, rounded);
+    notifyFuelStockUpdated();
+    return;
+  }
+  const fuelRef = doc(getDb(), COLLECTIONS.fuelTypes, fuelTypeId);
+  await updateDoc(fuelRef, { currentStockLiters: rounded });
+  notifyFuelStockUpdated();
+}
+
 export function formatFuelPercent(value: number): string {
   return `${value.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }

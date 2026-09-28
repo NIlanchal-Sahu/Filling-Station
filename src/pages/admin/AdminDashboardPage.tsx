@@ -3,6 +3,7 @@ import { Alert, Chip, Paper, Stack, TextField } from '@mui/material';
 import Grid from '@mui/material/Grid2';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
+import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
@@ -230,6 +231,7 @@ export function AdminDashboardPage() {
           label="ADMINISTRATION"
           actions={[
             { to: '/admin/team', label: 'Team', icon: <GroupsOutlinedIcon fontSize="small" /> },
+            { to: '/admin/staff-pay', label: 'Staff pay', icon: <BadgeOutlinedIcon fontSize="small" /> },
             { to: '/admin/settings', label: 'Settings', icon: <SettingsOutlinedIcon fontSize="small" /> },
           ]}
         />

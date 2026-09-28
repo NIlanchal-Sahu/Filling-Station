@@ -36,7 +36,6 @@ import {
   fuelStockHealthEmoji,
   fuelStockHealthLabel,
 } from '@/utils/fuelStockDisplay';
-import { formatDipCm } from '@/utils/fuelTankCalibration';
 import { VARIATION_ALERT_LITERS } from '@/utils/fuelStockConstants';
 import { downloadCsv } from '@/utils/csvExport';
 
@@ -62,7 +61,7 @@ const cellSx = {
 function VariationChip(props: { row: DailyFuelStockRow }) {
   const { row } = props;
   if (row.variationLiters == null) {
-    return <Chip size="small" label="Pending dip" variant="outlined" />;
+    return <Chip size="small" label="Pending" variant="outlined" />;
   }
   const label = `${row.variationLiters > 0 ? '+' : ''}${row.variationLiters.toLocaleString('en-IN')} L`;
   if (row.variationAlert) {
@@ -95,14 +94,11 @@ function exportTankStockSummary(summary: TankStockDaySummary): void {
     [
       'Date',
       'Fuel',
-      'OpeningDipCm',
       'OpeningStockL',
       'ReceiptsL',
       'TotalStockL',
       'SalesL',
-      'ExpectedClosingStockL',
-      'ClosingDipCm',
-      'ActualClosingStockL',
+      'ClosingBookL',
       'VariationL',
       'FillPct',
       'Status',
@@ -110,14 +106,11 @@ function exportTankStockSummary(summary: TankStockDaySummary): void {
     summary.rows.map((r) => [
       summary.pumpDayIso,
       r.shortCode,
-      r.openingDipCm ?? '',
       r.openingStockLiters,
       r.receiptLiters,
       Math.round(r.openingStockLiters + r.receiptLiters),
       r.salesLiters,
       r.expectedStockLiters,
-      r.closingDipCm ?? '',
-      r.actualStockLiters ?? '',
       r.variationLiters ?? '',
       Math.round(r.availablePercent * 10) / 10,
       fuelStockHealthLabel(r.health),
@@ -153,7 +146,7 @@ function GroupedAlerts(props: { summary: TankStockDaySummary }) {
       <Stack spacing={0.25}>
         {missingDip.length > 0 ? (
           <Typography variant="body2">
-            Missing closing dip:{' '}
+            Missing dip value entry:{' '}
             {missingDip.map((code) => (
               <Box component="span" key={code} sx={{ fontWeight: 700, mr: 0.5 }}>
                 {code}
@@ -290,7 +283,7 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
             startIcon={<EditOutlinedIcon />}
             sx={{ borderRadius: 2 }}
           >
-            Daily dip entry
+            Update dip entry
           </Button>
         </Stack>
       </Stack>
@@ -324,7 +317,7 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
               <Table
                 size="small"
                 sx={{
-                  minWidth: 1100,
+                  minWidth: 920,
                   borderCollapse: 'collapse',
                   '& .MuiTableCell-root': {
                     borderRight: '1px solid',
@@ -336,14 +329,11 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
                 <TableHead>
                   <TableRow>
                     <TableCell sx={headSx}>Fuel</TableCell>
-                    <TableCell sx={headSx} align="right">Opening Dip (CM)</TableCell>
-                    <TableCell sx={headSx} align="right">Opening Stock (L)</TableCell>
-                    <TableCell sx={headSx} align="right">Receipts (L)</TableCell>
-                    <TableCell sx={headSx} align="right">Total Stock (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Opening (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Receipt (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Total (L)</TableCell>
                     <TableCell sx={headSx} align="right">Sales (L)</TableCell>
-                    <TableCell sx={headSx} align="right">Expected Closing Stock (L)</TableCell>
-                    <TableCell sx={headSx} align="right">Closing Dip (CM)</TableCell>
-                    <TableCell sx={headSx} align="right">Actual Closing Stock (L)</TableCell>
+                    <TableCell sx={headSx} align="right">Closing book (L)</TableCell>
                     <TableCell sx={headSx} align="right">Variation (L)</TableCell>
                     <TableCell sx={headSx}>Fill %</TableCell>
                     <TableCell sx={headSx}>Status</TableCell>
@@ -370,9 +360,6 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
                         </Typography>
                       </TableCell>
                       <TableCell align="right" sx={cellSx}>
-                        {row.openingDipCm != null ? formatDipCm(row.openingDipCm) : '—'}
-                      </TableCell>
-                      <TableCell align="right" sx={cellSx}>
                         {formatFuelLiters(row.openingStockLiters)}
                       </TableCell>
                       <TableCell align="right" sx={cellSx}>
@@ -384,14 +371,8 @@ export function TankStockDipSummary(props: { pumpDayIso: string; reportLabel?: s
                       <TableCell align="right" sx={cellSx}>
                         {formatFuelLiters(row.salesLiters)}
                       </TableCell>
-                      <TableCell align="right" sx={cellSx}>
-                        {formatFuelLiters(row.expectedStockLiters)}
-                      </TableCell>
-                      <TableCell align="right" sx={cellSx}>
-                        {row.closingDipCm != null ? formatDipCm(row.closingDipCm) : '—'}
-                      </TableCell>
                       <TableCell align="right" sx={{ ...cellSx, fontWeight: 600 }}>
-                        {row.actualStockLiters != null ? formatFuelLiters(row.actualStockLiters) : '—'}
+                        {formatFuelLiters(row.expectedStockLiters)}
                       </TableCell>
                       <TableCell align="right" sx={cellSx}>
                         <VariationChip row={row} />

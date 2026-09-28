@@ -12,6 +12,7 @@ import {
   FormGroup,
   InputLabel,
   MenuItem,
+  Chip,
   Paper,
   Select,
   Stack,
@@ -39,6 +40,7 @@ import {
   todayIso,
 } from '@/utils/dateEntryPolicy';
 import { isPumpRosterUser } from '@/utils/roles';
+import { pairAttendantsToMachines, uniqueMachineNumbersFromNozzles } from '@/utils/attendantPosts';
 import { joinAttendantNames, shiftOptionLabel } from '@/utils/shiftStatusDisplay';
 
 export function StartShiftPage() {
@@ -54,6 +56,7 @@ export function StartShiftPage() {
   const [selectedAttendants, setSelectedAttendants] = useState<User[]>([]);
   const [notes, setNotes] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pickerMachine, setPickerMachine] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -135,6 +138,25 @@ export function StartShiftPage() {
     [selected, nozzles],
   );
 
+  const machineNumbers = useMemo(() => {
+    const nums = [...new Set(nozzles.map((n) => n.machineNumber.trim()).filter(Boolean))];
+    nums.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return nums;
+  }, [nozzles]);
+
+  const nozzlesForPickerMachine = useMemo(() => {
+    if (!pickerMachine) {
+      return [];
+    }
+    return nozzles
+      .filter((n) => n.machineNumber.trim() === pickerMachine)
+      .sort(compareNozzleOrder);
+  }, [nozzles, pickerMachine]);
+
+  function selectedCountForMachine(machineNumber: string): number {
+    return nozzles.filter((n) => n.machineNumber.trim() === machineNumber && selected.has(n.id)).length;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -151,12 +173,17 @@ export function StartShiftPage() {
       assertEntryDateAllowed(profile?.role, day);
       const oid = profile.id;
       const pt = joinAttendantNames(selectedAttendants.map((u) => u.name));
+      const attendantPosts = pairAttendantsToMachines(
+        selectedAttendants.map((u) => u.name),
+        uniqueMachineNumbersFromNozzles(selected, nozzles),
+      );
       const shiftId = await createShift({
         operatorId: oid,
         shiftLabel,
         calendarDate: day,
         notes: notes || undefined,
         pumpAttendants: pt || undefined,
+        attendantPosts: attendantPosts.length > 0 ? attendantPosts : undefined,
       });
       const nozzleIds = Array.from(selected).sort((aId, bId) => {
         const a = nozzles.find((n) => n.id === aId);
@@ -265,7 +292,7 @@ export function StartShiftPage() {
             margin="normal"
             label="Pump attendants"
             placeholder={roster.length === 0 ? 'No active workers' : 'Select staff'}
-            helperText="Optional. Choose who is on the island."
+            helperText="Optional. Staff are paired to selected machines for the attendant sheet."
           />
         )}
       />
@@ -283,18 +310,67 @@ export function StartShiftPage() {
       <Typography variant="subtitle2" sx={{ mt: 2 }}>
         Assigned nozzles
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        Machine: <strong>{selectedMachineLabel}</strong>
-      </Typography>
-      <FormGroup>
-        {nozzles.map((n) => (
-          <FormControlLabel
-            key={n.id}
-            control={<Checkbox checked={selected.has(n.id)} onChange={() => toggleNozzle(n.id)} />}
-            label={`M${n.machineNumber} N${n.nozzleNumber}`}
-          />
-        ))}
-      </FormGroup>
+      {selected.size > 0 ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Selected: <strong>{selectedMachineLabel}</strong>
+        </Typography>
+      ) : (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Choose a machine, then select nozzles for this shift.
+        </Typography>
+      )}
+
+      {pickerMachine == null ? (
+        <Stack spacing={1} sx={{ mt: 0.5 }}>
+          {machineNumbers.map((machineNumber) => {
+            const picked = selectedCountForMachine(machineNumber);
+            return (
+              <Button
+                key={machineNumber}
+                type="button"
+                variant="outlined"
+                fullWidth
+                onClick={() => setPickerMachine(machineNumber)}
+                sx={{
+                  justifyContent: 'space-between',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  py: 1.25,
+                  borderRadius: 1.5,
+                }}
+              >
+                Machine {machineNumber}
+                {picked > 0 ? (
+                  <Chip size="small" label={`${picked} nozzle${picked === 1 ? '' : 's'}`} color="primary" />
+                ) : null}
+              </Button>
+            );
+          })}
+        </Stack>
+      ) : (
+        <Box sx={{ mt: 0.5 }}>
+          <Button
+            type="button"
+            size="small"
+            onClick={() => setPickerMachine(null)}
+            sx={{ mb: 1, textTransform: 'none', fontWeight: 600, px: 0 }}
+          >
+            ← All machines
+          </Button>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Machine: <strong>Machine {pickerMachine}</strong>
+          </Typography>
+          <FormGroup>
+            {nozzlesForPickerMachine.map((n) => (
+              <FormControlLabel
+                key={n.id}
+                control={<Checkbox checked={selected.has(n.id)} onChange={() => toggleNozzle(n.id)} />}
+                label={`M${n.machineNumber} N${n.nozzleNumber}`}
+              />
+            ))}
+          </FormGroup>
+        </Box>
+      )}
       {formError && <Alert severity="error">{formError}</Alert>}
       <Stack direction="row" spacing={2} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
         <MotionButton type="submit" variant="contained" disabled={saving} size="large" sx={{ borderRadius: 1.5, minHeight: 48, width: { xs: '100%', sm: 'auto' } }}>
