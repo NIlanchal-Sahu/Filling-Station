@@ -32,7 +32,7 @@ const panelSx = {
 };
 
 export function FloatingActionPanel({ actions, label = 'Shortcuts' }: Props) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1200 : false));
   const location = useLocation();
 
   if (actions.length === 0) {

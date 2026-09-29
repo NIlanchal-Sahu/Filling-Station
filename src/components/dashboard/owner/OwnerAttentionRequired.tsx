@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { alpha, Box, Stack, Typography } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import { alpha, Box, Button, Collapse, Paper, Stack, Typography } from '@mui/material';
 import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutlineOutlined';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import {
   CREDIT_OVERDUE_DAYS,
   getOverdueCreditSummary,
@@ -10,30 +13,33 @@ import { getCashBankCollectionSummary } from '@/services/collectionSummaryServic
 import { getShiftStatusForPumpDay } from '@/services/shiftStatusService';
 import { getFuelStockOverview } from '@/services/fuelStockService';
 import { getTankStockDaySummary } from '@/services/fuelStockReconciliationService';
-import { SHIFT_STATUS_UPDATED_EVENT, shiftStatusLabel } from '@/utils/shiftStatusDisplay';
+import { SHIFT_STATUS_UPDATED_EVENT } from '@/utils/shiftStatusDisplay';
 import { SHIFT_SALES_UPDATED_EVENT } from '@/utils/shiftSalesDisplay';
 import { FUEL_STOCK_UPDATED_EVENT } from '@/utils/fuelStockDisplay';
 import { VARIATION_ALERT_LITERS } from '@/utils/fuelStockConstants';
-import {
-  fmtInrCompact,
-  OWNER_DASHBOARD_PANEL_MIN_H,
-  panelStretchSx,
-  panelTitleSx,
-} from '@/components/dashboard/owner/ownerPanelStyles';
+import { fmtInrCompact } from '@/components/dashboard/owner/ownerPanelStyles';
 
-type Issue = { id: string; message: string; severity: 'error' | 'warning' | 'info' };
+export type ActionItem = {
+  id: string;
+  title: string;
+  detail?: string;
+  actionText: string;
+  to: string;
+  severity: 'error' | 'warning';
+};
 
 type Props = {
   pumpDayIso: string;
 };
 
 export function OwnerAttentionRequired({ pumpDayIso }: Props) {
-  const [issues, setIssues] = useState<Issue[]>([]);
+  const [items, setItems] = useState<ActionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const next: Issue[] = [];
+    const next: ActionItem[] = [];
     try {
       const [sales, collection, credit, shiftStatus, stockOverview, tankDay] = await Promise.all([
         getPumpDaySalesOverview(pumpDayIso),
@@ -47,7 +53,10 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
       if (sales.shortageAmount > 0.005) {
         next.push({
           id: 'shortage',
-          message: `Cash mismatch / shortage ${fmtInrCompact(sales.shortageAmount, 0)} on this pump day`,
+          title: 'Cash mismatch / shortage',
+          detail: `${fmtInrCompact(sales.shortageAmount, 0)} on this pump day`,
+          actionText: 'Review recon →',
+          to: '/manager/reconciliation',
           severity: 'error',
         });
       }
@@ -55,48 +64,56 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
       if (credit.overdueCount > 0) {
         next.push({
           id: 'credit-overdue',
-          message: `${credit.overdueCount} credit ${credit.overdueCount === 1 ? 'party' : 'parties'} unpaid for ${CREDIT_OVERDUE_DAYS}+ days (${fmtInrCompact(credit.overdueAmount, 0)})`,
-          severity: 'warning',
-        });
-      }
-
-      for (const msg of collection.alerts) {
-        const lower = msg.toLowerCase();
-        next.push({
-          id: `coll-${msg}`,
-          message: msg,
-          severity: lower.includes('mismatch') || lower.includes('short') ? 'error' : 'warning',
-        });
-      }
-
-      if (collection.pendingReconciliationShifts.length > 0) {
-        next.push({
-          id: 'pending-recon',
-          message: `${collection.pendingReconciliationShifts.length} shift(s) pending reconciliation`,
-          severity: 'warning',
+          title: `${credit.overdueCount} credit ${credit.overdueCount === 1 ? 'party' : 'parties'} overdue`,
+          detail: `${fmtInrCompact(credit.overdueAmount, 0)} • ${CREDIT_OVERDUE_DAYS}+ days`,
+          actionText: 'Review credit →',
+          to: '/manager/credit',
+          severity: 'error',
         });
       }
 
       for (const row of shiftStatus.rows) {
-        if (row.status === 'not_started' || row.status === 'overdue') {
+        if (row.status === 'overdue') {
           next.push({
-            id: `shift-${row.slot}`,
-            message: `${row.displayName}: ${shiftStatusLabel(row.status)}`,
-            severity: row.status === 'overdue' ? 'error' : 'warning',
+            id: `shift-overdue-${row.slot}`,
+            title: `${row.displayName} overdue`,
+            detail: 'Shift closing meters pending',
+            actionText: 'View shift →',
+            to: '/manager/shift-activity',
+            severity: 'warning',
           });
         } else if (row.status === 'reconciliation_pending') {
           next.push({
             id: `recon-${row.slot}`,
-            message: `${row.displayName}: reconciliation pending`,
+            title: `${row.displayName} reconciliation pending`,
+            detail: 'Closed shift awaits manager review',
+            actionText: 'Review recon →',
+            to: '/manager/reconciliation',
             severity: 'warning',
           });
         }
       }
 
+      for (const msg of collection.alerts) {
+        const lower = msg.toLowerCase();
+        const isCritical = lower.includes('mismatch') || lower.includes('short');
+        next.push({
+          id: `coll-${msg}`,
+          title: isCritical ? 'Collection mismatch' : 'Collection alert',
+          detail: msg,
+          actionText: 'Daily sheet →',
+          to: '/manager/daily-sheet',
+          severity: isCritical ? 'error' : 'warning',
+        });
+      }
+
       for (const t of stockOverview.items.filter((i) => i.health === 'low' || i.health === 'critical')) {
         next.push({
           id: `low-${t.fuelTypeId}`,
-          message: `Low ${t.shortCode} stock (${Math.round(t.availablePercent)}% of capacity)`,
+          title: `Low ${t.shortCode} stock`,
+          detail: `${Math.round(t.availablePercent)}% capacity (${Math.round(t.currentStockLiters).toLocaleString('en-IN')} L)`,
+          actionText: 'View stock →',
+          to: '/manager/fuel-stock',
           severity: t.health === 'critical' ? 'error' : 'warning',
         });
       }
@@ -106,7 +123,10 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
           if (row.variationAlert && row.variationLiters != null && Math.abs(row.variationLiters) >= VARIATION_ALERT_LITERS) {
             next.push({
               id: `var-${row.shortCode}`,
-              message: `${row.shortCode} dip variation ${row.variationLiters > 0 ? '+' : ''}${row.variationLiters.toLocaleString('en-IN')} L`,
+              title: `${row.shortCode} dip variation`,
+              detail: `${row.variationLiters > 0 ? '+' : ''}${row.variationLiters.toLocaleString('en-IN')} L variance`,
+              actionText: 'View dip →',
+              to: '/manager/daily-dip',
               severity: 'warning',
             });
           }
@@ -115,7 +135,9 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
     } catch {
       /* empty */
     } finally {
-      setIssues(next);
+      // Sort error (critical) first, then warning
+      next.sort((a, b) => (a.severity === 'error' ? -1 : 1) - (b.severity === 'error' ? -1 : 1));
+      setItems(next);
       setLoading(false);
     }
   }, [pumpDayIso]);
@@ -133,74 +155,227 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
     };
   }, [load]);
 
-  const unique = useMemo(() => {
+  const uniqueItems = useMemo(() => {
     const seen = new Set<string>();
-    return issues.filter((i) => {
+    return items.filter((i) => {
       if (seen.has(i.id)) return false;
       seen.add(i.id);
       return true;
     });
-  }, [issues]);
+  }, [items]);
 
   if (loading) {
     return (
-      <Box sx={{ ...panelStretchSx, minHeight: OWNER_DASHBOARD_PANEL_MIN_H, justifyContent: 'center', py: 2 }}>
-        <Typography variant="body2" color="text.secondary">
-          Reviewing exceptions…
-        </Typography>
-      </Box>
-    );
-  }
-
-  if (unique.length === 0) {
-    return (
-      <Box
-        id="attention"
+      <Paper
+        elevation={0}
         sx={{
-          ...panelStretchSx,
-          py: 1.5,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          bgcolor: (t) => alpha(t.palette.success.main, t.palette.mode === 'dark' ? 0.12 : 0.06),
-          borderColor: (t) => alpha(t.palette.success.main, 0.35),
+          p: 2,
+          borderRadius: 3.5,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
         }}
       >
-        <CheckCircleOutlineOutlinedIcon color="success" fontSize="small" />
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-          All operations are on track
+        <Typography variant="body2" color="text.secondary">
+          Checking operational exceptions…
         </Typography>
-      </Box>
+      </Paper>
     );
   }
 
-  return (
-    <Box id="attention" sx={panelStretchSx}>
-      <Typography sx={{ ...panelTitleSx, mb: 1.25 }}>Attention required</Typography>
-      <Stack spacing={0.75} sx={{ flex: 1 }}>
-        {unique.slice(0, 8).map((issue) => (
-          <Stack key={issue.id} direction="row" spacing={1} alignItems="flex-start">
-            <Box
+  if (uniqueItems.length === 0) {
+    return (
+      <Paper
+        elevation={0}
+        sx={{
+          py: 1.5,
+          px: 2,
+          borderRadius: 3.5,
+          border: '1px solid',
+          borderColor: (t) => alpha(t.palette.success.main, 0.3),
+          bgcolor: (t) => alpha(t.palette.success.main, t.palette.mode === 'dark' ? 0.08 : 0.04),
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.25,
+        }}
+      >
+        <CheckCircleOutlineOutlinedIcon color="success" sx={{ fontSize: 20 }} />
+        <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+          All operations on track · No critical alerts
+        </Typography>
+      </Paper>
+    );
+  }
+
+  const initialItems = uniqueItems.slice(0, 3);
+  const remainingItems = uniqueItems.slice(3);
+
+  const renderItemRow = (item: ActionItem) => {
+    const isError = item.severity === 'error';
+    return (
+      <Stack
+        key={item.id}
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1.5}
+        sx={{
+          py: 1,
+          px: 1.25,
+          borderRadius: 2,
+          bgcolor: (t) =>
+            alpha(isError ? t.palette.error.main : t.palette.warning.main, t.palette.mode === 'dark' ? 0.08 : 0.04),
+          border: '1px solid',
+          borderColor: (t) =>
+            alpha(isError ? t.palette.error.main : t.palette.warning.main, 0.2),
+          transition: 'background-color 0.15s ease',
+          '&:hover': {
+            bgcolor: (t) =>
+              alpha(isError ? t.palette.error.main : t.palette.warning.main, t.palette.mode === 'dark' ? 0.14 : 0.08),
+          },
+        }}
+      >
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+          <Box
+            sx={{
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              flexShrink: 0,
+              bgcolor: isError ? 'error.main' : 'warning.main',
+              boxShadow: (t) =>
+                `0 0 0 2px ${alpha(isError ? t.palette.error.main : t.palette.warning.main, 0.2)}`,
+            }}
+          />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              variant="body2"
               sx={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                mt: 0.65,
-                flexShrink: 0,
-                bgcolor:
-                  issue.severity === 'error'
-                    ? 'error.main'
-                    : issue.severity === 'warning'
-                      ? 'warning.main'
-                      : 'info.main',
+                fontWeight: 700,
+                color: 'text.primary',
+                fontSize: { xs: '0.82rem', sm: '0.875rem' },
+                lineHeight: 1.25,
               }}
-            />
-            <Typography variant="body2" sx={{ flex: 1, minWidth: 0, lineHeight: 1.45 }}>
-              {issue.message}
+              noWrap
+            >
+              {item.title}
             </Typography>
-          </Stack>
-        ))}
+            {item.detail ? (
+              <Typography
+                variant="caption"
+                sx={{
+                  color: 'text.secondary',
+                  fontSize: '0.72rem',
+                  display: 'block',
+                  mt: 0.2,
+                }}
+                noWrap
+              >
+                {item.detail}
+              </Typography>
+            ) : null}
+          </Box>
+        </Stack>
+
+        <Button
+          component={RouterLink}
+          to={item.to}
+          size="small"
+          variant="text"
+          sx={{
+            flexShrink: 0,
+            textTransform: 'none',
+            fontWeight: 700,
+            fontSize: '0.78rem',
+            py: 0.25,
+            px: 1,
+            color: isError ? 'error.main' : 'warning.dark',
+            borderRadius: 1.5,
+            whiteSpace: 'nowrap',
+            '&:hover': {
+              bgcolor: (t) =>
+                alpha(isError ? t.palette.error.main : t.palette.warning.main, 0.12),
+            },
+          }}
+        >
+          {item.actionText}
+        </Button>
       </Stack>
-    </Box>
+    );
+  };
+
+  return (
+    <Paper
+      id="attention"
+      elevation={0}
+      sx={{
+        p: { xs: 1.75, sm: 2 },
+        borderRadius: 3.5,
+        border: '1px solid',
+        borderColor: (t) => alpha(t.palette.warning.main, 0.4),
+        bgcolor: 'background.paper',
+        boxShadow: (t) =>
+          t.palette.mode === 'dark' ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.03)',
+      }}
+    >
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
+        <Box>
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: 'text.secondary',
+              display: 'block',
+              fontSize: '0.68rem',
+            }}
+          >
+            ATTENTION REQUIRED
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              fontWeight: 700,
+              color: 'warning.main',
+              fontSize: '0.85rem',
+              mt: 0.15,
+            }}
+          >
+            {uniqueItems.length} {uniqueItems.length === 1 ? 'item needs' : 'items need'} attention
+          </Typography>
+        </Box>
+      </Stack>
+
+      <Stack spacing={1}>
+        {initialItems.map(renderItemRow)}
+
+        {remainingItems.length > 0 ? (
+          <>
+            <Collapse in={showAll} unmountOnExit>
+              <Stack spacing={1} sx={{ mt: 1 }}>
+                {remainingItems.map(renderItemRow)}
+              </Stack>
+            </Collapse>
+            <Button
+              size="small"
+              onClick={() => setShowAll((prev) => !prev)}
+              endIcon={showAll ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                color: 'text.secondary',
+                alignSelf: 'flex-start',
+                mt: 0.5,
+                p: 0.5,
+              }}
+            >
+              {showAll ? 'Show less' : `View all (${uniqueItems.length}) →`}
+            </Button>
+          </>
+        ) : null}
+      </Stack>
+    </Paper>
   );
 }

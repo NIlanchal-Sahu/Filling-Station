@@ -5,7 +5,11 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
+  FormControl,
+  MenuItem,
   Paper,
+  Select,
   Stack,
   Table,
   TableBody,
@@ -15,14 +19,34 @@ import {
   Tabs,
   Tab,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import { FilterToolbar } from '@/components/ui/FilterToolbar';
+import Grid from '@mui/material/Grid2';
+import type { SvgIconComponent } from '@mui/icons-material';
+import PointOfSaleOutlinedIcon from '@mui/icons-material/PointOfSaleOutlined';
+import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
+import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
+import CreditCardOutlinedIcon from '@mui/icons-material/CreditCardOutlined';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import OpacityOutlinedIcon from '@mui/icons-material/OpacityOutlined';
+import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
+import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
+import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutlineOutlined';
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
+import FolderOffOutlinedIcon from '@mui/icons-material/FolderOffOutlined';
+
 import { PageHeader } from '@/components/ui/PageHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { usePermissions } from '@/hooks/usePermissions';
-import { format } from 'date-fns';
+import { format, subDays, startOfWeek, startOfMonth } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
 import { listClosedShiftsByPumpDayRange } from '@/services/shiftsService';
 import {
@@ -72,7 +96,7 @@ import type { DailyFuelStockRow } from '@/types/entities';
 function fmtInr(n: number): string {
   return n.toLocaleString('en-IN', {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -97,21 +121,245 @@ function fmtDipRegisterLiters(n: number | null | undefined): string {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
 
+type DatePreset = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
+
+type ReportTabConfig = {
+  id: TabId;
+  label: string;
+  icon: SvgIconComponent;
+  description: string;
+};
+
+const REPORT_TABS: ReportTabConfig[] = [
+  {
+    id: 0,
+    label: 'Daily Sales',
+    icon: PointOfSaleOutlinedIcon,
+    description: 'Fuel-wise daily sales, rates, and turnover',
+  },
+  {
+    id: 1,
+    label: 'Meter Register',
+    icon: SpeedOutlinedIcon,
+    description: 'Opening & closing nozzle meter readings and volume',
+  },
+  {
+    id: 2,
+    label: 'Employee',
+    icon: BadgeOutlinedIcon,
+    description: 'Operator volume, sales, and cash short/over',
+  },
+  {
+    id: 3,
+    label: 'Shift',
+    icon: AccessTimeOutlinedIcon,
+    description: 'Shift attendants, duty rosters, and machine assignments',
+  },
+  {
+    id: 4,
+    label: 'Credit',
+    icon: CreditCardOutlinedIcon,
+    description: 'Customer credit sales, repayments, and balances',
+  },
+  {
+    id: 5,
+    label: 'Expense',
+    icon: ReceiptLongOutlinedIcon,
+    description: 'Station operational outgo and category breakdown',
+  },
+  {
+    id: 6,
+    label: 'Inventory/Dip',
+    icon: OpacityOutlinedIcon,
+    description: 'Daily tank dips, book stock, receipts, and variations',
+  },
+  {
+    id: 7,
+    label: 'Collection',
+    icon: AccountBalanceWalletOutlinedIcon,
+    description: 'Cash and digital collection reconciliation and bank deposits',
+  },
+];
+
+function formatDateRangeLabel(fromIso: string, toIso: string): string {
+  try {
+    const fromDate = new Date(`${fromIso}T00:00:00`);
+    const toDate = new Date(`${toIso}T00:00:00`);
+    if (!Number.isFinite(fromDate.getTime()) || !Number.isFinite(toDate.getTime())) {
+      return `${fromIso} — ${toIso}`;
+    }
+    if (fromIso === toIso) {
+      return format(fromDate, 'dd MMM yyyy');
+    }
+    return `${format(fromDate, 'dd MMM yyyy')} — ${format(toDate, 'dd MMM yyyy')}`;
+  } catch {
+    return `${fromIso} — ${toIso}`;
+  }
+}
+
+function getPresetDates(preset: DatePreset): { from: string; to: string } | null {
+  const now = new Date();
+  const todayStr = format(now, 'yyyy-MM-dd');
+  switch (preset) {
+    case 'today':
+      return { from: todayStr, to: todayStr };
+    case 'yesterday': {
+      const yStr = format(subDays(now, 1), 'yyyy-MM-dd');
+      return { from: yStr, to: yStr };
+    }
+    case 'this_week': {
+      const wStr = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      return { from: wStr, to: todayStr };
+    }
+    case 'this_month': {
+      const mStr = format(startOfMonth(now), 'yyyy-MM-dd');
+      return { from: mStr, to: todayStr };
+    }
+    case 'custom':
+    default:
+      return null;
+  }
+}
+
+function detectPreset(fromIso: string, toIso: string): DatePreset {
+  const now = new Date();
+  const todayStr = format(now, 'yyyy-MM-dd');
+  if (fromIso === todayStr && toIso === todayStr) return 'today';
+  const yStr = format(subDays(now, 1), 'yyyy-MM-dd');
+  if (fromIso === yStr && toIso === yStr) return 'yesterday';
+  const wStr = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  if (fromIso === wStr && toIso === todayStr) return 'this_week';
+  const mStr = format(startOfMonth(now), 'yyyy-MM-dd');
+  if (fromIso === mStr && toIso === todayStr) return 'this_month';
+  return 'custom';
+}
+
+function ReportKpiCard(props: {
+  label: string;
+  value: string | number;
+  subtitle?: string;
+  icon?: SvgIconComponent;
+  color?: 'primary' | 'secondary' | 'success' | 'warning' | 'info';
+}) {
+  const { label, value, subtitle, icon: Icon, color = 'primary' } = props;
+  const isAccent = color === 'success' || color === 'warning';
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: { xs: 1.5, sm: 2 },
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: isAccent ? (t) => alpha(t.palette[color].main, 0.4) : 'divider',
+        height: '100%',
+        bgcolor: isAccent
+          ? (t) => alpha(t.palette[color].main, t.palette.mode === 'dark' ? 0.12 : 0.04)
+          : 'background.paper',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+        '&:hover': {
+          borderColor: (t) => alpha(t.palette[color === 'secondary' ? 'primary' : color].main, 0.5),
+        },
+      }}
+    >
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+        <Typography
+          variant="caption"
+          sx={{
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: 'text.secondary',
+            fontSize: { xs: '0.65rem', sm: '0.7rem' },
+          }}
+        >
+          {label}
+        </Typography>
+        {Icon ? (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 28,
+              height: 28,
+              borderRadius: 1.5,
+              bgcolor: (t) => alpha(t.palette[color === 'secondary' ? 'primary' : color].main, 0.1),
+              color: `${color === 'secondary' ? 'primary' : color}.main`,
+            }}
+          >
+            <Icon sx={{ fontSize: 16 }} />
+          </Box>
+        ) : null}
+      </Stack>
+      <Box sx={{ mt: 1.25 }}>
+        <Typography
+          variant="h6"
+          sx={{
+            fontWeight: 700,
+            fontVariantNumeric: 'tabular-nums',
+            fontSize: { xs: '1.05rem', sm: '1.2rem', md: '1.25rem' },
+            letterSpacing: '-0.02em',
+            color:
+              color === 'success'
+                ? 'success.main'
+                : color === 'warning'
+                  ? 'warning.main'
+                  : 'text.primary',
+            wordBreak: 'break-word',
+          }}
+        >
+          {value}
+        </Typography>
+        {subtitle ? (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mt: 0.25, fontSize: '0.7rem' }}
+          >
+            {subtitle}
+          </Typography>
+        ) : null}
+      </Box>
+    </Paper>
+  );
+}
+
+const tableHeadRowSx = {
+  bgcolor: (t: { palette: { primary: { main: string }; mode: string } }) =>
+    alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.16 : 0.06),
+  '& th': {
+    fontWeight: 700,
+    fontSize: '0.72rem',
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase' as const,
+    color: 'text.secondary',
+    borderBottom: '1px solid',
+    borderColor: 'divider',
+    whiteSpace: 'nowrap' as const,
+  },
+};
+
 export function ReportsPage() {
   const { readOnlyOps } = usePermissions();
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<TabId>(0);
   const [from, setFrom] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [to, setTo] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [preset, setPreset] = useState<DatePreset>('today');
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hasRun, setHasRun] = useState(false);
 
   const [dailyPivot, setDailyPivot] = useState<DailySalesPivotRow[]>([]);
   const [dailyCredit, setDailyCredit] = useState(0);
   const [dailyExp, setDailyExp] = useState(0);
   const [dailyNet, setDailyNet] = useState(0);
-  const [meterRows, setMeterRows] = useState<MeterRegisterRow[]>([]);
+  const [dailyShiftCount, setDailyShiftCount] = useState(0);
 
+  const [meterRows, setMeterRows] = useState<MeterRegisterRow[]>([]);
   const [op, setOp] = useState<OperatorPerf[]>([]);
   const [creditRows, setCreditRows] = useState<
     { name: string; bal: number; sales: number; pay: number }[]
@@ -130,6 +378,7 @@ export function ReportsPage() {
   const [collectionShiftDetails, setCollectionShiftDetails] = useState<CashBankCollectionShiftDetailRow[]>([]);
 
   const reportDeepLinkKey = useRef<string | null>(null);
+  const hasMounted = useRef(false);
 
   useEffect(() => {
     const report = searchParams.get('report');
@@ -148,6 +397,7 @@ export function ReportsPage() {
     if (day) {
       setFrom(day);
       setTo(day);
+      setPreset(detectPreset(day, day));
     }
   }, [searchParams]);
 
@@ -187,6 +437,7 @@ export function ReportsPage() {
   }
 
   async function run() {
+    if (loading) return;
     setErr(null);
     setLoading(true);
     try {
@@ -195,6 +446,7 @@ export function ReportsPage() {
       if (tab === 0) {
         setDailyPivot(await getDailySalesFuelPivot(a, b));
         const closed = await listClosedShiftsByPumpDayRange(a, b);
+        setDailyShiftCount(closed.length);
         let cr = 0;
         for (const sh of closed) {
           const recon = await getReconciliationForShift(sh.id);
@@ -281,6 +533,7 @@ export function ReportsPage() {
         setCollectionDailyRows(daily);
         setCollectionShiftDetails(shifts);
       }
+      setHasRun(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Report failed');
     } finally {
@@ -288,6 +541,7 @@ export function ReportsPage() {
     }
   }
 
+  // Deep-link auto-run handler
   useEffect(() => {
     const report = searchParams.get('report');
     const expectedTab =
@@ -326,6 +580,7 @@ export function ReportsPage() {
           await loadDipRegisterReport(from, to);
           if (cancelled) return;
         }
+        if (!cancelled) setHasRun(true);
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : 'Report failed');
       } finally {
@@ -337,311 +592,860 @@ export function ReportsPage() {
     };
   }, [searchParams, tab, from, to, stockReportKind]);
 
+  // Initial mount auto-run for default Today report
+  useEffect(() => {
+    if (hasMounted.current) return;
+    hasMounted.current = true;
+    const report = searchParams.get('report');
+    if (!report) {
+      void run();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handlePresetChange(p: DatePreset) {
+    setPreset(p);
+    if (p !== 'custom') {
+      const dates = getPresetDates(p);
+      if (dates) {
+        setFrom(dates.from);
+        setTo(dates.to);
+      }
+    }
+  }
+
+  // Summary calculations
+  const dailyTotalSales = useMemo(
+    () => dailyPivot.reduce((s, r) => s + r.totalAmount, 0),
+    [dailyPivot],
+  );
+
+  const meterTotalAmount = useMemo(
+    () => meterRows.reduce((a, r) => a + r.amount, 0),
+    [meterRows],
+  );
+  const meterTotalVolume = useMemo(
+    () => meterRows.reduce((a, r) => a + r.sales, 0),
+    [meterRows],
+  );
+  const meterTotalTas = useMemo(
+    () => meterRows.reduce((a, r) => a + r.tas, 0),
+    [meterRows],
+  );
+
+  const opTotalVolume = useMemo(
+    () => op.reduce((a, r) => a + r.totalLiters, 0),
+    [op],
+  );
+  const opTotalAmount = useMemo(
+    () => op.reduce((a, r) => a + r.totalAmount, 0),
+    [op],
+  );
+  const opShortOverSum = useMemo(
+    () => op.reduce((a, r) => a + r.shortOverSum, 0),
+    [op],
+  );
+
+  const creditTotalSales = useMemo(
+    () => creditRows.reduce((a, r) => a + r.sales, 0),
+    [creditRows],
+  );
+  const creditTotalPaid = useMemo(
+    () => creditRows.reduce((a, r) => a + r.pay, 0),
+    [creditRows],
+  );
+  const creditTotalBalance = useMemo(
+    () => creditRows.reduce((a, r) => a + r.bal, 0),
+    [creditRows],
+  );
+
+  // Check whether active report tab has records
+  const hasData = useMemo(() => {
+    if (!hasRun) return true;
+    switch (tab) {
+      case 0:
+        return dailyPivot.length > 0;
+      case 1:
+        return meterRows.length > 0;
+      case 2:
+        return op.length > 0;
+      case 3:
+        return attendanceRows.length > 0;
+      case 4:
+        return creditRows.length > 0;
+      case 5:
+        return expVisible.length > 0;
+      case 6:
+        if (stockReportKind === 'daily') return dipRegisterFlatRows.length > 0;
+        if (stockReportKind === 'dipValue') return dipRegisterByFuel.size > 0;
+        return stockRows.length > 0;
+      case 7:
+        return collectionSummary != null || collectionDailyRows.length > 0;
+      default:
+        return true;
+    }
+  }, [
+    hasRun,
+    tab,
+    dailyPivot,
+    meterRows,
+    op,
+    attendanceRows,
+    creditRows,
+    expVisible,
+    stockReportKind,
+    dipRegisterFlatRows,
+    dipRegisterByFuel,
+    stockRows,
+    collectionSummary,
+    collectionDailyRows,
+  ]);
+
+  const activeTabConfig = REPORT_TABS[tab];
+
   return (
-    <Stack spacing={3} sx={{ pb: 4 }}>
+    <Stack spacing={{ xs: 2, sm: 2.5, md: 3 }} sx={{ pb: { xs: 12, sm: 8, md: 6 } }}>
       {readOnlyOps ? <ReadOnlyBanner /> : null}
-      <PageHeader title="Reports" />
 
-      {err && <Alert severity="error">{err}</Alert>}
+      {/* HEADER */}
+      <PageHeader
+        title="Reports & Analytics"
+        subtitle="View and generate business reports"
+        action={
+          hasRun && !loading && !err ? (
+            <Chip
+              size="small"
+              icon={<CheckCircleOutlineOutlinedIcon sx={{ fontSize: '15px !important' }} />}
+              label="✓ Report generated"
+              color="success"
+              variant="outlined"
+              sx={{ fontWeight: 600, fontSize: '0.75rem', borderRadius: 1.5 }}
+            />
+          ) : null
+        }
+      />
 
-      <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-        <Box sx={{ bgcolor: (t) => alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.1 : 0.05), px: 1, pt: 0.5 }}>
+      {err ? <Alert severity="error">{err}</Alert> : null}
+
+      {/* REPORT SELECTOR */}
+      <Paper
+        variant="outlined"
+        sx={{
+          borderRadius: 2.5,
+          overflow: 'hidden',
+          bgcolor: 'background.paper',
+          border: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        {/* Mobile Dropdown Selector (xs only - ensures 0 clipping and touch target) */}
+        <Box sx={{ display: { xs: 'block', sm: 'none' }, p: 1.5 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: 'text.secondary',
+              mb: 0.75,
+              display: 'block',
+              fontSize: '0.7rem',
+            }}
+          >
+            Report Type
+          </Typography>
+          <FormControl fullWidth size="small">
+            <Select
+              value={tab}
+              onChange={(e) => setTab(e.target.value as TabId)}
+              sx={{
+                borderRadius: 1.5,
+                bgcolor: 'background.paper',
+                fontWeight: 600,
+                '& .MuiSelect-select': { py: 1.25 },
+              }}
+            >
+              {REPORT_TABS.map((r) => {
+                const Icon = r.icon;
+                return (
+                  <MenuItem key={r.id} value={r.id}>
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Icon fontSize="small" color={tab === r.id ? 'primary' : 'action'} />
+                      <Typography variant="body2" sx={{ fontWeight: tab === r.id ? 700 : 500 }}>
+                        {r.label}
+                      </Typography>
+                    </Stack>
+                  </MenuItem>
+                );
+              })}
+            </Select>
+          </FormControl>
+        </Box>
+
+        {/* Desktop / Tablet Scrollable Tabs (sm and above) */}
+        <Box
+          sx={{
+            display: { xs: 'none', sm: 'block' },
+            bgcolor: (t) => alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.08 : 0.03),
+            px: 1,
+            pt: 0.5,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
           <Tabs
             value={tab}
             onChange={(_, v) => setTab(v as TabId)}
             variant="scrollable"
             scrollButtons="auto"
+            allowScrollButtonsMobile
             sx={{
               minHeight: 48,
-              '& .MuiTab-root': { fontWeight: 600, textTransform: 'none', minHeight: 48 },
+              '& .MuiTab-root': {
+                fontWeight: 600,
+                textTransform: 'none',
+                minHeight: 48,
+                fontSize: '0.85rem',
+                gap: 0.75,
+                px: { sm: 1.5, md: 2 },
+              },
             }}
           >
-            <Tab label="Daily sales" />
-            <Tab label="Meter register" />
-            <Tab label="Employee" />
-            <Tab label="Pump boys / girls" />
-            <Tab label="Credit" />
-            <Tab label="Expenses" />
-            <Tab label="Fuel stock" />
-            <Tab label="Cash & bank" />
+            {REPORT_TABS.map((r) => {
+              const Icon = r.icon;
+              return (
+                <Tab
+                  key={r.id}
+                  value={r.id}
+                  icon={<Icon sx={{ fontSize: 18 }} />}
+                  iconPosition="start"
+                  label={r.label}
+                />
+              );
+            })}
           </Tabs>
         </Box>
-        <FilterToolbar sx={{ p: 2 }}>
-          <TextField
-            type="date"
-            label="From"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            size="small"
-            slotProps={{ inputLabel: { shrink: true } }}
-            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-          />
-          <TextField
-            type="date"
-            label="To"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            size="small"
-            slotProps={{ inputLabel: { shrink: true } }}
-            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-          />
-          {tab === 4 && (
-            <TextField
-              size="small"
-              label="Customer name filter"
-              value={custFilter}
-              onChange={(e) => setCustFilter(e.target.value)}
-              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-            />
-          )}
-          {tab === 5 && (
-            <TextField
-              select
-              size="small"
-              label="Category"
-              value={expFilter}
-              onChange={(e) => setExpFilter(e.target.value as ExpenseReportFilter)}
-              slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
-              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+
+        {/* DATE RANGE PRESETS & CONTROLS */}
+        <Box sx={{ p: { xs: 1.75, sm: 2 } }}>
+          <Stack spacing={2}>
+            {/* Presets Row */}
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              justifyContent="space-between"
+              alignItems={{ xs: 'flex-start', md: 'center' }}
+              spacing={1.5}
             >
-              {EXPENSE_REPORT_FILTERS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </TextField>
-          )}
-          {tab === 6 && (
-            <TextField
-              select
-              size="small"
-              label="Report type"
-              value={stockReportKind}
-              onChange={(e) => setStockReportKind(e.target.value as typeof stockReportKind)}
-              slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
-              sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'text.secondary',
+                    fontSize: '0.7rem',
+                    mr: 0.5,
+                  }}
+                >
+                  Period
+                </Typography>
+                <ToggleButtonGroup
+                  value={preset}
+                  exclusive
+                  onChange={(_, p) => {
+                    if (p) handlePresetChange(p as DatePreset);
+                  }}
+                  size="small"
+                  sx={{
+                    flexWrap: 'wrap',
+                    gap: 0.75,
+                    '& .MuiToggleButtonGroup-grouped': {
+                      border: '1px solid !important',
+                      borderColor: 'divider !important',
+                      borderRadius: '8px !important',
+                      px: { xs: 1.25, sm: 1.5 },
+                      py: 0.5,
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      color: 'text.primary',
+                      '&.Mui-selected': {
+                        bgcolor: (t) => alpha(t.palette.primary.main, 0.12),
+                        color: 'primary.main',
+                        borderColor: 'primary.main !important',
+                        fontWeight: 700,
+                      },
+                    },
+                  }}
+                >
+                  <ToggleButton value="today">Today</ToggleButton>
+                  <ToggleButton value="yesterday">Yesterday</ToggleButton>
+                  <ToggleButton value="this_week">This Week</ToggleButton>
+                  <ToggleButton value="this_month">This Month</ToggleButton>
+                  <ToggleButton value="custom">Custom</ToggleButton>
+                </ToggleButtonGroup>
+              </Stack>
+
+              {/* Active period indicator badge */}
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.75,
+                    bgcolor: (t) => alpha(t.palette.grey[500], 0.08),
+                    px: 1.25,
+                    py: 0.5,
+                    borderRadius: 1.5,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  <CalendarTodayOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                    {formatDateRangeLabel(from, to)}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Stack>
+
+            {/* Custom Dates & Sub-filters area */}
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1.5}
+              alignItems={{ xs: 'stretch', md: 'center' }}
             >
-              <option value="daily">Daily dip register</option>
-              <option value="tank">Tank stock report</option>
-              <option value="variation">Variation report</option>
-              <option value="monthly">Monthly reconciliation</option>
-              <option value="dipValue">Dip value register</option>
-            </TextField>
-          )}
-          <Box sx={{ flex: 1 }} />
-          <Chip
-            size="small"
-            label={loading ? 'Loading…' : 'Ready'}
-            color={loading ? 'default' : 'success'}
-            variant="outlined"
-            sx={{ fontWeight: 600, display: { xs: 'none', sm: 'flex' } }}
-          />
-          <Button variant="contained" color="secondary" onClick={run} disabled={loading} sx={{ borderRadius: 1.5, px: 2.5, minHeight: 48 }}>
-            {loading ? 'Loading…' : 'Run report'}
-          </Button>
-        </FilterToolbar>
+              {preset === 'custom' ? (
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ flex: 1 }}>
+                  <TextField
+                    type="date"
+                    label="From"
+                    value={from}
+                    onChange={(e) => {
+                      setFrom(e.target.value);
+                      setPreset('custom');
+                    }}
+                    size="small"
+                    fullWidth
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                  />
+                  <TextField
+                    type="date"
+                    label="To"
+                    value={to}
+                    onChange={(e) => {
+                      setTo(e.target.value);
+                      setPreset('custom');
+                    }}
+                    size="small"
+                    fullWidth
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                  />
+                </Stack>
+              ) : null}
+
+              {/* Tab 4: Customer filter */}
+              {tab === 4 && (
+                <TextField
+                  size="small"
+                  label="Customer name filter"
+                  value={custFilter}
+                  onChange={(e) => setCustFilter(e.target.value)}
+                  placeholder="Search customer…"
+                  sx={{ minWidth: { xs: '100%', sm: 220 }, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                />
+              )}
+
+              {/* Tab 5: Expense category filter */}
+              {tab === 5 && (
+                <TextField
+                  select
+                  size="small"
+                  label="Category"
+                  value={expFilter}
+                  onChange={(e) => setExpFilter(e.target.value as ExpenseReportFilter)}
+                  slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+                  sx={{ minWidth: { xs: '100%', sm: 200 }, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                >
+                  {EXPENSE_REPORT_FILTERS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </TextField>
+              )}
+
+              {/* Tab 6: Fuel Stock report type */}
+              {tab === 6 && (
+                <TextField
+                  select
+                  size="small"
+                  label="Inventory Report Kind"
+                  value={stockReportKind}
+                  onChange={(e) => setStockReportKind(e.target.value as typeof stockReportKind)}
+                  slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+                  sx={{ minWidth: { xs: '100%', sm: 220 }, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                >
+                  <option value="daily">Daily dip register</option>
+                  <option value="tank">Tank stock report</option>
+                  <option value="variation">Variation report</option>
+                  <option value="monthly">Monthly reconciliation</option>
+                  <option value="dipValue">Dip value register</option>
+                </TextField>
+              )}
+
+              {/* Primary Action Button: Brand primary color, no red */}
+              <Box sx={{ ml: { md: 'auto' }, pt: { xs: 0.5, md: 0 } }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => void run()}
+                  disabled={loading}
+                  startIcon={
+                    loading ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : (
+                      <PlayArrowOutlinedIcon />
+                    )
+                  }
+                  sx={{
+                    minWidth: { xs: '100%', sm: 180 },
+                    height: 42,
+                    borderRadius: 1.5,
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    boxShadow: (t) => `0 4px 12px ${alpha(t.palette.primary.main, 0.25)}`,
+                  }}
+                >
+                  {loading ? 'Generating report…' : 'Generate Report'}
+                </Button>
+              </Box>
+            </Stack>
+          </Stack>
+        </Box>
       </Paper>
 
-      {tab === 0 && (
-        <Box>
-          <Typography variant="subtitle1" gutterBottom>
-            Daily sales
+      {/* REPORT CONTENT AREA */}
+      {loading ? (
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 6,
+            borderRadius: 2.5,
+            textAlign: 'center',
+            bgcolor: 'background.paper',
+          }}
+        >
+          <CircularProgress size={36} thickness={4} color="primary" />
+          <Typography variant="body1" sx={{ mt: 2, fontWeight: 600 }}>
+            Generating {activeTabConfig.label} report…
           </Typography>
-          <Paper variant="outlined">
-            <ResponsiveTableContainer stickyFirstColumn>
-            <Table
-              size="small"
-              sx={{
-                borderCollapse: 'collapse',
-                minWidth: showOtherFuelCol ? 1240 : 1080,
-                '& th, & td': { border: '1px solid', borderColor: 'divider' },
+          <Typography variant="caption" color="text.secondary">
+            Querying books and shift records for {formatDateRangeLabel(from, to)}
+          </Typography>
+        </Paper>
+      ) : !hasData ? (
+        <EmptyState
+          icon={<FolderOffOutlinedIcon sx={{ fontSize: 44, color: 'text.secondary' }} />}
+          title="No records found"
+          description={`No records were found for ${formatDateRangeLabel(from, to)}. Try selecting another date range or quick preset.`}
+          action={
+            <Button
+              variant="outlined"
+              color="primary"
+              startIcon={<CalendarTodayOutlinedIcon />}
+              onClick={() => {
+                setPreset('custom');
               }}
+              sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600 }}
             >
-              <TableHead>
-                <TableRow sx={{ bgcolor: (t) => alpha(t.palette.grey[300], 0.45) }}>
-                  <TableCell sx={{ fontWeight: 700 }}>DATE</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    PETROL
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    RATE
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    AMOUNTS
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    DIESEL
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    RATE2
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    AMOUNTS2
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    XP
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    RATE3
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    AMOUNTS3
-                  </TableCell>
-                  {showOtherFuelCol ? (
-                    <>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>
-                        OTHER
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>
-                        RATE4
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700 }}>
-                        AMOUNTS4
-                      </TableCell>
-                    </>
-                  ) : null}
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>
-                    TOTAL AMOUNTS
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {dailyPivot.map((r, idx) => (
-                  <TableRow
-                    key={r.dateIso}
+              Change Date Range
+            </Button>
+          }
+        />
+      ) : (
+        <Stack spacing={{ xs: 2.5, sm: 3 }}>
+          {/* TAB 0: DAILY SALES */}
+          {tab === 0 && (
+            <>
+              {/* COMPACT SUMMARY BEFORE DETAILED REPORT */}
+              <Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'text.secondary',
+                    mb: 1,
+                    display: 'block',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  Daily Sales Summary
+                </Typography>
+                <Grid container spacing={1.5}>
+                  <Grid size={{ xs: 6, sm: 4, md: 2.4 }}>
+                    <ReportKpiCard
+                      label="Total Sales"
+                      value={fmtRupeesCell(dailyTotalSales)}
+                      subtitle={`${dailyPivot.length} days recorded`}
+                      icon={TrendingUpOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 4, md: 2.4 }}>
+                    <ReportKpiCard
+                      label="Transactions"
+                      value={
+                        dailyShiftCount > 0
+                          ? `${dailyShiftCount} shifts`
+                          : `${dailyPivot.length} days`
+                      }
+                      subtitle="Closed shift records"
+                      icon={PointOfSaleOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 4, md: 2.4 }}>
+                    <ReportKpiCard
+                      label="Credit"
+                      value={fmtRupeesCell(dailyCredit)}
+                      subtitle="Shift credit issued"
+                      icon={CreditCardOutlinedIcon}
+                      color="warning"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 4, md: 2.4 }}>
+                    <ReportKpiCard
+                      label="Expenses"
+                      value={fmtRupeesCell(dailyExp)}
+                      subtitle="Station outgo"
+                      icon={ReceiptLongOutlinedIcon}
+                      color="secondary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 8, md: 2.4 }}>
+                    <ReportKpiCard
+                      label="Net"
+                      value={fmtRupeesCell(dailyNet)}
+                      subtitle="Income minus expenses"
+                      icon={AccountBalanceWalletOutlinedIcon}
+                      color={dailyNet >= 0 ? 'success' : 'secondary'}
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
+
+              {/* DETAILED REPORT TABLE */}
+              <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+                <Box
+                  sx={{
+                    p: { xs: 1.5, sm: 2 },
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    spacing={1.5}
+                  >
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        Daily Sales Breakdown
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDateRangeLabel(from, to)} · Fuel meter sales &amp; rate history
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<FileDownloadOutlinedIcon />}
+                      onClick={() => {
+                        const baseCols = [
+                          'DATE',
+                          'PETROL_L',
+                          'RATE_PETROL',
+                          'AMOUNTS_PETROL_RS',
+                          'DIESEL_L',
+                          'RATE2_DIESEL',
+                          'AMOUNTS2_DIESEL_RS',
+                          'XP_L',
+                          'RATE3_XP',
+                          'AMOUNTS3_XP_RS',
+                        ];
+                        const extraCols = showOtherFuelCol
+                          ? ['OTHER_L', 'RATE4_OTHER', 'AMOUNTS4_OTHER_RS']
+                          : [];
+                        const tail = ['TOTAL_AMOUNTS_RS'];
+                        const hdr = [...baseCols, ...extraCols, ...tail];
+                        const rows = dailyPivot.map((r) => {
+                          const b = [
+                            r.dateLabel,
+                            r.petrolLiters,
+                            r.petrolRate,
+                            r.petrolAmount,
+                            r.dieselLiters,
+                            r.dieselRate,
+                            r.dieselAmount,
+                            r.xpLiters,
+                            r.xpRate,
+                            r.xpAmount,
+                          ];
+                          const o = showOtherFuelCol ? [r.otherLiters, r.otherRate, r.otherAmount] : [];
+                          return [...b, ...o, r.totalAmount];
+                        });
+                        downloadCsv('daily_sales_pivot.csv', hdr, rows);
+                      }}
+                      sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                    >
+                      Export CSV
+                    </Button>
+                  </Stack>
+                </Box>
+                <ResponsiveTableContainer stickyFirstColumn>
+                  <Table
+                    size="small"
                     sx={{
-                      bgcolor:
-                        idx % 2 === 1 ? (t) => alpha(t.palette.grey[500], 0.06) : 'background.paper',
+                      minWidth: showOtherFuelCol ? 1240 : 1080,
+                      '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
                     }}
                   >
-                    <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{r.dateLabel}</TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {r.petrolLiters.toFixed(2)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {r.petrolRate.toFixed(2)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtRupeesCell(r.petrolAmount)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {r.dieselLiters.toFixed(2)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {r.dieselRate.toFixed(2)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtRupeesCell(r.dieselAmount)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {r.xpLiters.toFixed(2)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {r.xpRate.toFixed(2)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtRupeesCell(r.xpAmount)}
-                    </TableCell>
-                    {showOtherFuelCol ? (
-                      <>
-                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {r.otherLiters.toFixed(2)}
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {r.otherRate.toFixed(2)}
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {fmtRupeesCell(r.otherAmount)}
-                        </TableCell>
-                      </>
-                    ) : null}
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
-                      {fmtRupeesCell(r.totalAmount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            </ResponsiveTableContainer>
-          </Paper>
-          <Typography variant="body2" sx={{ mt: 1 }}>
-            Credit: ₹{dailyCredit.toFixed(2)} · Expenses: ₹{dailyExp.toFixed(2)} · Net: ₹{dailyNet.toFixed(2)}
-          </Typography>
-          <Button
-            size="small"
-            sx={{ mt: 1 }}
-            onClick={() => {
-              const baseCols = [
-                'DATE',
-                'PETROL_L',
-                'RATE_PETROL',
-                'AMOUNTS_PETROL_RS',
-                'DIESEL_L',
-                'RATE2_DIESEL',
-                'AMOUNTS2_DIESEL_RS',
-                'XP_L',
-                'RATE3_XP',
-                'AMOUNTS3_XP_RS',
-              ];
-              const extraCols = showOtherFuelCol ? ['OTHER_L', 'RATE4_OTHER', 'AMOUNTS4_OTHER_RS'] : [];
-              const tail = ['TOTAL_AMOUNTS_RS'];
-              const hdr = [...baseCols, ...extraCols, ...tail];
-              const rows = dailyPivot.map((r) => {
-                const b = [
-                  r.dateLabel,
-                  r.petrolLiters,
-                  r.petrolRate,
-                  r.petrolAmount,
-                  r.dieselLiters,
-                  r.dieselRate,
-                  r.dieselAmount,
-                  r.xpLiters,
-                  r.xpRate,
-                  r.xpAmount,
-                ];
-                const o = showOtherFuelCol ? [r.otherLiters, r.otherRate, r.otherAmount] : [];
-                return [...b, ...o, r.totalAmount];
-              });
-              downloadCsv('daily_sales_pivot.csv', hdr, rows);
-            }}
-          >
-            Export CSV
-          </Button>
-        </Box>
-      )}
+                    <TableHead>
+                      <TableRow sx={tableHeadRowSx}>
+                        <TableCell>Date</TableCell>
+                        <TableCell align="right">Petrol (L)</TableCell>
+                        <TableCell align="right">Rate (₹)</TableCell>
+                        <TableCell align="right">Petrol (₹)</TableCell>
+                        <TableCell align="right">Diesel (L)</TableCell>
+                        <TableCell align="right">Rate (₹)</TableCell>
+                        <TableCell align="right">Diesel (₹)</TableCell>
+                        <TableCell align="right">XP (L)</TableCell>
+                        <TableCell align="right">Rate (₹)</TableCell>
+                        <TableCell align="right">XP (₹)</TableCell>
+                        {showOtherFuelCol ? (
+                          <>
+                            <TableCell align="right">Other (L)</TableCell>
+                            <TableCell align="right">Rate (₹)</TableCell>
+                            <TableCell align="right">Other (₹)</TableCell>
+                          </>
+                        ) : null}
+                        <TableCell align="right">Total (₹)</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {dailyPivot.map((r, idx) => (
+                        <TableRow
+                          key={r.dateIso}
+                          sx={{
+                            bgcolor:
+                              idx % 2 === 1
+                                ? (t) => alpha(t.palette.action.hover, 0.4)
+                                : 'background.paper',
+                            '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
+                          }}
+                        >
+                          <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
+                            {r.dateLabel}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.petrolLiters.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.petrolRate.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtRupeesCell(r.petrolAmount)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.dieselLiters.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.dieselRate.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtRupeesCell(r.dieselAmount)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.xpLiters.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.xpRate.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtRupeesCell(r.xpAmount)}
+                          </TableCell>
+                          {showOtherFuelCol ? (
+                            <>
+                              <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                {r.otherLiters.toFixed(2)}
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                {r.otherRate.toFixed(2)}
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                {fmtRupeesCell(r.otherAmount)}
+                              </TableCell>
+                            </>
+                          ) : null}
+                          <TableCell
+                            align="right"
+                            sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}
+                          >
+                            {fmtRupeesCell(r.totalAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ResponsiveTableContainer>
+              </Paper>
+            </>
+          )}
 
-      {tab === 1 && (
-        <Box>
-          {meterRows.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              No rows for this range.
-            </Typography>
-          ) : (
+          {/* TAB 1: METER REGISTER */}
+          {tab === 1 && (
             <>
-              <Paper variant="outlined">
+              <Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'text.secondary',
+                    mb: 1,
+                    display: 'block',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  Meter Register Summary
+                </Typography>
+                <Grid container spacing={1.5}>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Total Amount"
+                      value={fmtRupeesCell(meterTotalAmount)}
+                      subtitle="Sales across meters"
+                      icon={TrendingUpOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Volume Sold"
+                      value={`${meterTotalVolume.toLocaleString('en-IN', { maximumFractionDigits: 1 })} L`}
+                      subtitle="Net volume delivered"
+                      icon={SpeedOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Nozzle Testing (TAS)"
+                      value={`${meterTotalTas.toLocaleString('en-IN', { maximumFractionDigits: 1 })} L`}
+                      subtitle="Test return volume"
+                      icon={OpacityOutlinedIcon}
+                      color="info"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Meter Readings"
+                      value={meterRows.length}
+                      subtitle="Total recorded intervals"
+                      icon={PointOfSaleOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
+
+              <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+                <Box
+                  sx={{
+                    p: { xs: 1.5, sm: 2 },
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    spacing={1.5}
+                  >
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        Meter Register
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDateRangeLabel(from, to)} · Per-nozzle shift opening, closing and TAS
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<FileDownloadOutlinedIcon />}
+                      onClick={() =>
+                        downloadCsv(
+                          'meter_register.csv',
+                          [
+                            'Date',
+                            'Machine',
+                            'Nozzle',
+                            'Pump boy/girls',
+                            'Time in & out',
+                            'Fuel type',
+                            'Opening',
+                            'Closing',
+                            'Total',
+                            'TAS',
+                            'Sales',
+                            'Rate',
+                            'Amount',
+                          ],
+                          meterRows.map((r) => [
+                            r.dateLabel,
+                            r.machine,
+                            r.nozzle,
+                            r.pumpBoyGirls,
+                            r.timeInOut,
+                            r.fuelType,
+                            r.opening,
+                            r.closing,
+                            r.total,
+                            r.tas,
+                            r.sales,
+                            r.rate,
+                            r.amount,
+                          ]),
+                        )
+                      }
+                      sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                    >
+                      Export CSV
+                    </Button>
+                  </Stack>
+                </Box>
                 <ResponsiveTableContainer stickyFirstColumn>
                   <Table
                     size="small"
                     sx={{
                       minWidth: 1100,
-                      borderCollapse: 'collapse',
-                      '& th, & td': { border: '1px solid', borderColor: 'divider' },
+                      '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
                     }}
                   >
                     <TableHead>
-                      <TableRow
-                        sx={{
-                          bgcolor: (t) => alpha(t.palette.grey[300], 0.45),
-                          '& th': {
-                            fontWeight: 700,
-                            fontSize: '0.7rem',
-                            letterSpacing: '0.06em',
-                            textTransform: 'uppercase',
-                            color: 'text.secondary',
-                            whiteSpace: 'nowrap',
-                          },
-                        }}
-                      >
+                      <TableRow sx={tableHeadRowSx}>
                         <TableCell>Date</TableCell>
                         <TableCell align="right">Machine</TableCell>
                         <TableCell align="right">Nozzle</TableCell>
@@ -652,9 +1456,9 @@ export function ReportsPage() {
                         <TableCell align="right">Closing</TableCell>
                         <TableCell align="right">Total</TableCell>
                         <TableCell align="right">TAS</TableCell>
-                        <TableCell align="right">Sales</TableCell>
-                        <TableCell align="right">Rate</TableCell>
-                        <TableCell align="right">Amount</TableCell>
+                        <TableCell align="right">Sales (L)</TableCell>
+                        <TableCell align="right">Rate (₹)</TableCell>
+                        <TableCell align="right">Amount (₹)</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -663,10 +1467,19 @@ export function ReportsPage() {
                           key={`${r.dateIso}-${r.machine}-${r.nozzle}-${r.timeInOut}-${idx}`}
                           sx={{
                             bgcolor:
-                              idx % 2 === 1 ? (t) => alpha(t.palette.grey[500], 0.06) : 'background.paper',
+                              idx % 2 === 1
+                                ? (t) => alpha(t.palette.action.hover, 0.4)
+                                : 'background.paper',
+                            '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
                           }}
                         >
-                          <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                          <TableCell
+                            sx={{
+                              whiteSpace: 'nowrap',
+                              fontWeight: 600,
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
                             {r.dateLabel}
                           </TableCell>
                           <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -677,7 +1490,9 @@ export function ReportsPage() {
                           </TableCell>
                           <TableCell sx={{ fontWeight: 500 }}>{r.pumpBoyGirls}</TableCell>
                           <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.timeInOut}</TableCell>
-                          <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{r.fuelType}</TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
+                            {r.fuelType}
+                          </TableCell>
                           <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                             {r.opening.toFixed(2)}
                           </TableCell>
@@ -696,7 +1511,10 @@ export function ReportsPage() {
                           <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                             {r.rate.toFixed(2)}
                           </TableCell>
-                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
+                          <TableCell
+                            align="right"
+                            sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}
+                          >
                             {r.amount.toFixed(2)}
                           </TableCell>
                         </TableRow>
@@ -705,347 +1523,749 @@ export function ReportsPage() {
                   </Table>
                 </ResponsiveTableContainer>
               </Paper>
-              <Button
-                size="small"
-                sx={{ mt: 1 }}
-                onClick={() =>
-                  downloadCsv(
-                    'meter_register.csv',
-                    [
-                      'Date',
-                      'Machine',
-                      'Nozzle',
-                      'Pump boy/girls',
-                      'Time in & out',
-                      'Fuel type',
-                      'Opening',
-                      'Closing',
-                      'Total',
-                      'TAS',
-                      'Sales',
-                      'Rate',
-                      'Amount',
-                    ],
-                    meterRows.map((r) => [
-                      r.dateLabel,
-                      r.machine,
-                      r.nozzle,
-                      r.pumpBoyGirls,
-                      r.timeInOut,
-                      r.fuelType,
-                      r.opening,
-                      r.closing,
-                      r.total,
-                      r.tas,
-                      r.sales,
-                      r.rate,
-                      r.amount,
-                    ]),
-                  )
-                }
-              >
-                Download CSV
-              </Button>
             </>
           )}
-        </Box>
-      )}
 
-      {tab === 2 && (
-        <Box>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Operator</TableCell>
-                <TableCell align="right">Liters</TableCell>
-                <TableCell align="right">₹</TableCell>
-                <TableCell>Short/Over (count)</TableCell>
-                <TableCell align="right">Short/Over (sum diff ₹)</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {op.map((r) => (
-                <TableRow key={r.operatorId}>
-                  <TableCell>{r.operatorName}</TableCell>
-                  <TableCell align="right">{r.totalLiters.toFixed(2)}</TableCell>
-                  <TableCell align="right">{r.totalAmount.toFixed(2)}</TableCell>
-                  <TableCell>
-                    S {r.shortOverCount.short} / O {r.shortOverCount.over} / ={' '}
-                    {r.shortOverCount.zero}
-                  </TableCell>
-                  <TableCell align="right">{r.shortOverSum.toFixed(2)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <Button
-            size="small"
-            onClick={() =>
-              downloadCsv(
-                'employee_perf.csv',
-                ['Operator', 'Liters', 'Amount', 'ShortOverSum'],
-                op.map((r) => [r.operatorName, r.totalLiters, r.totalAmount, r.shortOverSum]),
-              )
-            }
-          >
-            Export
-          </Button>
-        </Box>
-      )}
-
-      {tab === 3 && (
-        <Box>
-          {attendanceRows.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              No rows for this range.
-            </Typography>
-          ) : (
+          {/* TAB 2: EMPLOYEE PERFORMANCE */}
+          {tab === 2 && (
             <>
-              <Paper variant="outlined" sx={{ borderRadius: 1 }}>
-                <ResponsiveTableContainer stickyFirstColumn>
-                <Table size="small" sx={{ minWidth: 820 }}>
-                  <TableHead>
-                    <TableRow
-                      sx={{
-                        bgcolor: (t) => alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.16 : 0.06),
-                        '& th': {
-                          fontWeight: 700,
-                          fontSize: '0.7rem',
-                          letterSpacing: '0.06em',
-                          textTransform: 'uppercase',
-                          color: 'text.secondary',
-                        },
-                      }}
+              <Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'text.secondary',
+                    mb: 1,
+                    display: 'block',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  Employee Performance Summary
+                </Typography>
+                <Grid container spacing={1.5}>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Active Staff"
+                      value={op.length}
+                      subtitle="Operators evaluated"
+                      icon={BadgeOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Total Volume"
+                      value={`${opTotalVolume.toLocaleString('en-IN', { maximumFractionDigits: 1 })} L`}
+                      subtitle="Delivered by staff"
+                      icon={SpeedOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Total Amount"
+                      value={fmtRupeesCell(opTotalAmount)}
+                      subtitle="Gross sales turnover"
+                      icon={TrendingUpOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Short / Over Sum"
+                      value={fmtRupeesCell(opShortOverSum)}
+                      subtitle="Net cash discrepancy"
+                      icon={AccountBalanceWalletOutlinedIcon}
+                      color={opShortOverSum >= 0 ? 'success' : 'secondary'}
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
+
+              <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+                <Box
+                  sx={{
+                    p: { xs: 1.5, sm: 2 },
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    spacing={1.5}
+                  >
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        Operator Performance
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDateRangeLabel(from, to)} · Sales volumes and reconciliation short/over
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<FileDownloadOutlinedIcon />}
+                      onClick={() =>
+                        downloadCsv(
+                          'employee_perf.csv',
+                          ['Operator', 'Liters', 'Amount', 'ShortOverSum'],
+                          op.map((r) => [r.operatorName, r.totalLiters, r.totalAmount, r.shortOverSum]),
+                        )
+                      }
+                      sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
                     >
-                      <TableCell>Date</TableCell>
-                      <TableCell>Pump boy / girl</TableCell>
-                      <TableCell>Shift</TableCell>
-                      <TableCell>Machine</TableCell>
-                      <TableCell>Operator</TableCell>
-                      <TableCell>Start</TableCell>
-                      <TableCell>End</TableCell>
-                      <TableCell>Remarks</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {attendanceRows.map((r, i) => (
-                      <TableRow
-                        key={`${r.pumpDayIso}-${r.startAt}-${r.pumpBoyGirl}-${i}`}
-                        sx={{
-                          '&:nth-of-type(even)': { bgcolor: (t) => alpha(t.palette.action.hover, 0.35) },
-                        }}
-                      >
-                        <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{r.dateLabel}</TableCell>
-                        <TableCell sx={{ fontWeight: 500 }}>{r.pumpBoyGirl}</TableCell>
-                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.shiftLabel}</TableCell>
-                        <TableCell sx={{ fontWeight: 600 }}>{r.machineLabel}</TableCell>
-                        <TableCell>{r.operatorName}</TableCell>
-                        <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{r.startAt}</TableCell>
-                        <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{r.endAt}</TableCell>
-                        <TableCell sx={{ maxWidth: 280, whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                          {r.remarks || '—'}
-                        </TableCell>
+                      Export CSV
+                    </Button>
+                  </Stack>
+                </Box>
+                <ResponsiveTableContainer>
+                  <Table
+                    size="small"
+                    sx={{
+                      minWidth: 640,
+                      '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
+                    }}
+                  >
+                    <TableHead>
+                      <TableRow sx={tableHeadRowSx}>
+                        <TableCell>Operator</TableCell>
+                        <TableCell align="right">Liters Sold</TableCell>
+                        <TableCell align="right">Amount (₹)</TableCell>
+                        <TableCell>Short / Over (Count)</TableCell>
+                        <TableCell align="right">Short / Over (Diff ₹)</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHead>
+                    <TableBody>
+                      {op.map((r, idx) => (
+                        <TableRow
+                          key={r.operatorId}
+                          sx={{
+                            bgcolor:
+                              idx % 2 === 1
+                                ? (t) => alpha(t.palette.action.hover, 0.4)
+                                : 'background.paper',
+                            '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
+                          }}
+                        >
+                          <TableCell sx={{ fontWeight: 600 }}>{r.operatorName}</TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.totalLiters.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.totalAmount.toFixed(2)}
+                          </TableCell>
+                          <TableCell>
+                            S {r.shortOverCount.short} / O {r.shortOverCount.over} / ={' '}
+                            {r.shortOverCount.zero}
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{
+                              fontVariantNumeric: 'tabular-nums',
+                              fontWeight: 700,
+                              color:
+                                r.shortOverSum < 0
+                                  ? 'error.main'
+                                  : r.shortOverSum > 0
+                                    ? 'success.main'
+                                    : 'text.secondary',
+                            }}
+                          >
+                            {r.shortOverSum.toFixed(2)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </ResponsiveTableContainer>
               </Paper>
-              <Button
-                size="small"
-                sx={{ mt: 1 }}
-                onClick={() =>
-                  downloadCsv(
-                    'pump_boys_girls_attendants_sheet.csv',
-                    [
-                      'PumpDay_ISO',
-                      'Date_DDMMYYYY',
-                      'Pump_boy_girl',
-                      'Shift',
-                      'Machine',
-                      'Operator',
-                      'Start_local',
-                      'End_local',
-                      'Remarks',
-                    ],
-                    attendanceRows.map((r) => [
-                      r.pumpDayIso,
-                      r.dateLabel,
-                      r.pumpBoyGirl,
-                      r.shiftLabel,
-                      r.machineLabel,
-                      r.operatorName,
-                      r.startAt,
-                      r.endAt,
-                      r.remarks,
-                    ]),
-                  )
-                }
-              >
-                Export CSV
-              </Button>
             </>
           )}
-        </Box>
-      )}
 
-      {tab === 4 && (
-        <Box>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Customer</TableCell>
-                <TableCell align="right">Total sales</TableCell>
-                <TableCell align="right">Total paid</TableCell>
-                <TableCell align="right">Balance</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {creditRows.map((r) => (
-                <TableRow key={r.name + r.bal}>
-                  <TableCell>{r.name}</TableCell>
-                  <TableCell align="right">{r.sales.toFixed(2)}</TableCell>
-                  <TableCell align="right">{r.pay.toFixed(2)}</TableCell>
-                  <TableCell align="right">{r.bal.toFixed(2)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <Button
-            size="small"
-            onClick={() =>
-              downloadCsv(
-                'credit_report.csv',
-                ['Name', 'TotalSales', 'TotalPaid', 'Balance'],
-                creditRows.map((r) => [r.name, r.sales, r.pay, r.bal]),
-              )
-            }
-          >
-            Export
-          </Button>
-        </Box>
-      )}
+          {/* TAB 3: SHIFT ATTENDANCE */}
+          {tab === 3 && (
+            <>
+              <Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'text.secondary',
+                    mb: 1,
+                    display: 'block',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  Shift Attendance Summary
+                </Typography>
+                <Grid container spacing={1.5}>
+                  <Grid size={{ xs: 6, sm: 4 }}>
+                    <ReportKpiCard
+                      label="Attendance Logs"
+                      value={attendanceRows.length}
+                      subtitle="Attendant-shift assignments"
+                      icon={AccessTimeOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 4 }}>
+                    <ReportKpiCard
+                      label="Active Staff"
+                      value={
+                        new Set(
+                          attendanceRows
+                            .map((r) => r.pumpBoyGirl)
+                            .filter((n) => n && n !== '—'),
+                        ).size
+                      }
+                      subtitle="Unique attendants on duty"
+                      icon={BadgeOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 4 }}>
+                    <ReportKpiCard
+                      label="Shifts Covered"
+                      value={new Set(attendanceRows.map((r) => `${r.pumpDayIso}-${r.shiftLabel}`)).size}
+                      subtitle="Operational shifts recorded"
+                      icon={PointOfSaleOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
 
-      {tab === 5 && (
-        <Box>
-          <Typography variant="subtitle1" gutterBottom>
-            Expenses
-          </Typography>
-          {expRan && expVisible.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              No station expenses in this range.
-            </Typography>
-          ) : null}
-          {expVisible.length > 0 ? (
-            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 1.5 }}>
-              {expChips.map((c) => (
-                <Chip
-                  key={c.key}
-                  size="small"
-                  variant="outlined"
-                  label={`${c.key}: ${fmtRupeesCell(c.amount)}`}
-                  sx={{ fontWeight: 600 }}
-                />
-              ))}
-              <Chip
-                size="small"
-                color="primary"
-                label={`Grand total: ${fmtRupeesCell(expTotal)}`}
-                sx={{ fontWeight: 700 }}
-              />
-            </Stack>
-          ) : null}
-          <Paper variant="outlined">
-            <ResponsiveTableContainer>
-              <Table
-                size="small"
+              <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+                <Box
+                  sx={{
+                    p: { xs: 1.5, sm: 2 },
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    spacing={1.5}
+                  >
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        Shift Attendance Register
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDateRangeLabel(from, to)} · Attendant shift appearances and dispenser posts
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<FileDownloadOutlinedIcon />}
+                      onClick={() =>
+                        downloadCsv(
+                          'pump_boys_girls_attendants_sheet.csv',
+                          [
+                            'PumpDay_ISO',
+                            'Date_DDMMYYYY',
+                            'Pump_boy_girl',
+                            'Shift',
+                            'Machine',
+                            'Operator',
+                            'Start_local',
+                            'End_local',
+                            'Remarks',
+                          ],
+                          attendanceRows.map((r) => [
+                            r.pumpDayIso,
+                            r.dateLabel,
+                            r.pumpBoyGirl,
+                            r.shiftLabel,
+                            r.machineLabel,
+                            r.operatorName,
+                            r.startAt,
+                            r.endAt,
+                            r.remarks,
+                          ]),
+                        )
+                      }
+                      sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                    >
+                      Export CSV
+                    </Button>
+                  </Stack>
+                </Box>
+                <ResponsiveTableContainer stickyFirstColumn>
+                  <Table
+                    size="small"
+                    sx={{
+                      minWidth: 820,
+                      '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
+                    }}
+                  >
+                    <TableHead>
+                      <TableRow sx={tableHeadRowSx}>
+                        <TableCell>Date</TableCell>
+                        <TableCell>Pump boy / girl</TableCell>
+                        <TableCell>Shift</TableCell>
+                        <TableCell>Machine</TableCell>
+                        <TableCell>Operator</TableCell>
+                        <TableCell>Start</TableCell>
+                        <TableCell>End</TableCell>
+                        <TableCell>Remarks</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {attendanceRows.map((r, i) => (
+                        <TableRow
+                          key={`${r.pumpDayIso}-${r.startAt}-${r.pumpBoyGirl}-${i}`}
+                          sx={{
+                            '&:nth-of-type(even)': {
+                              bgcolor: (t) => alpha(t.palette.action.hover, 0.4),
+                            },
+                            '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
+                          }}
+                        >
+                          <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            {r.dateLabel}
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>{r.pumpBoyGirl}</TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.shiftLabel}</TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>{r.machineLabel}</TableCell>
+                          <TableCell>{r.operatorName}</TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            {r.startAt}
+                          </TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            {r.endAt}
+                          </TableCell>
+                          <TableCell sx={{ maxWidth: 280, whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                            {r.remarks || '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ResponsiveTableContainer>
+              </Paper>
+            </>
+          )}
+
+          {/* TAB 4: CREDIT */}
+          {tab === 4 && (
+            <>
+              <Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'text.secondary',
+                    mb: 1,
+                    display: 'block',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  Credit Report Summary
+                </Typography>
+                <Grid container spacing={1.5}>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Customers"
+                      value={creditRows.length}
+                      subtitle="Active with movements"
+                      icon={CreditCardOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Total Credit Sales"
+                      value={fmtRupeesCell(creditTotalSales)}
+                      subtitle="Cumulative sales in range"
+                      icon={TrendingUpOutlinedIcon}
+                      color="warning"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Total Paid"
+                      value={fmtRupeesCell(creditTotalPaid)}
+                      subtitle="Payments received"
+                      icon={CheckCircleOutlineOutlinedIcon}
+                      color="success"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <ReportKpiCard
+                      label="Outstanding Balance"
+                      value={fmtRupeesCell(creditTotalBalance)}
+                      subtitle="Current net receivable"
+                      icon={AccountBalanceWalletOutlinedIcon}
+                      color={creditTotalBalance > 0 ? 'warning' : 'primary'}
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
+
+              <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+                <Box
+                  sx={{
+                    p: { xs: 1.5, sm: 2 },
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    spacing={1.5}
+                  >
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        Credit Report
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDateRangeLabel(from, to)} · Customer credit sales, collections and current balances
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<FileDownloadOutlinedIcon />}
+                      onClick={() =>
+                        downloadCsv(
+                          'credit_report.csv',
+                          ['Name', 'TotalSales', 'TotalPaid', 'Balance'],
+                          creditRows.map((r) => [r.name, r.sales, r.pay, r.bal]),
+                        )
+                      }
+                      sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                    >
+                      Export CSV
+                    </Button>
+                  </Stack>
+                </Box>
+                <ResponsiveTableContainer>
+                  <Table
+                    size="small"
+                    sx={{
+                      minWidth: 600,
+                      '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
+                    }}
+                  >
+                    <TableHead>
+                      <TableRow sx={tableHeadRowSx}>
+                        <TableCell>Customer</TableCell>
+                        <TableCell align="right">Total Sales (₹)</TableCell>
+                        <TableCell align="right">Total Paid (₹)</TableCell>
+                        <TableCell align="right">Current Balance (₹)</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {creditRows.map((r, idx) => (
+                        <TableRow
+                          key={r.name + r.bal}
+                          sx={{
+                            bgcolor:
+                              idx % 2 === 1
+                                ? (t) => alpha(t.palette.action.hover, 0.4)
+                                : 'background.paper',
+                            '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
+                          }}
+                        >
+                          <TableCell sx={{ fontWeight: 600 }}>{r.name}</TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.sales.toFixed(2)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.pay.toFixed(2)}
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{
+                              fontVariantNumeric: 'tabular-nums',
+                              fontWeight: 700,
+                              color: r.bal > 0 ? 'warning.main' : 'text.primary',
+                            }}
+                          >
+                            {r.bal.toFixed(2)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ResponsiveTableContainer>
+              </Paper>
+            </>
+          )}
+
+          {/* TAB 5: EXPENSES */}
+          {tab === 5 && (
+            <>
+              <Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'text.secondary',
+                    mb: 1,
+                    display: 'block',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  Expenses Summary
+                </Typography>
+                <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
+                  <Grid size={{ xs: 6, sm: 4 }}>
+                    <ReportKpiCard
+                      label="Grand Total"
+                      value={fmtRupeesCell(expTotal)}
+                      subtitle="Total station outgo"
+                      icon={ReceiptLongOutlinedIcon}
+                      color="secondary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 4 }}>
+                    <ReportKpiCard
+                      label="Entries"
+                      value={expVisible.length}
+                      subtitle="Recorded vouchers"
+                      icon={PointOfSaleOutlinedIcon}
+                      color="primary"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 4 }}>
+                    <ReportKpiCard
+                      label="Categories Active"
+                      value={expChips.length}
+                      subtitle="Expense categories"
+                      icon={AccountBalanceWalletOutlinedIcon}
+                      color="info"
+                    />
+                  </Grid>
+                </Grid>
+
+                {expChips.length > 0 ? (
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    {expChips.map((c) => (
+                      <Chip
+                        key={c.key}
+                        size="small"
+                        variant="outlined"
+                        label={`${c.key}: ${fmtRupeesCell(c.amount)}`}
+                        sx={{ fontWeight: 600, borderRadius: 1.5 }}
+                      />
+                    ))}
+                  </Stack>
+                ) : null}
+              </Box>
+
+              <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+                <Box
+                  sx={{
+                    p: { xs: 1.5, sm: 2 },
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    spacing={1.5}
+                  >
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        Expenses Report
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDateRangeLabel(from, to)} · Station expenditure vouchers and ledger debits
+                      </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FileDownloadOutlinedIcon />}
+                        disabled={!expRan || expVisible.length === 0}
+                        onClick={() => downloadExpenseReportCsv(expRange, expVisible, expTotal)}
+                        sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                      >
+                        Export CSV
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<PictureAsPdfOutlinedIcon />}
+                        disabled={!expRan || expVisible.length === 0}
+                        onClick={() => downloadExpenseReportPdf(expRange, expVisible, expTotal)}
+                        sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                      >
+                        PDF
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Box>
+                <ResponsiveTableContainer>
+                  <Table
+                    size="small"
+                    sx={{
+                      minWidth: 720,
+                      '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
+                    }}
+                  >
+                    <TableHead>
+                      <TableRow sx={tableHeadRowSx}>
+                        <TableCell>Date</TableCell>
+                        <TableCell>Paid To / Received From</TableCell>
+                        <TableCell>Particular</TableCell>
+                        <TableCell>Category</TableCell>
+                        <TableCell align="right">Amount</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {expVisible.map((r, idx) => (
+                        <TableRow
+                          key={r.id}
+                          sx={{
+                            bgcolor:
+                              idx % 2 === 1
+                                ? (t) => alpha(t.palette.action.hover, 0.4)
+                                : 'background.paper',
+                            '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
+                          }}
+                        >
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.dateLabel}</TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>{r.name}</TableCell>
+                          <TableCell>{r.particular}</TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={r.category}
+                              sx={{ fontSize: '0.72rem', height: 22 }}
+                            />
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', fontWeight: 600 }}
+                          >
+                            {fmtRupeesCell(r.amount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {expVisible.length > 0 ? (
+                        <TableRow sx={{ bgcolor: (t) => alpha(t.palette.primary.main, 0.05) }}>
+                          <TableCell colSpan={4} sx={{ fontWeight: 700 }}>
+                            Grand Total
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{
+                              fontWeight: 700,
+                              fontVariantNumeric: 'tabular-nums',
+                              whiteSpace: 'nowrap',
+                              color: 'primary.main',
+                              fontSize: '0.95rem',
+                            }}
+                          >
+                            {fmtRupeesCell(expTotal)}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                </ResponsiveTableContainer>
+              </Paper>
+            </>
+          )}
+
+          {/* TAB 6: INVENTORY / DIP */}
+          {tab === 6 && stockReportKind === 'daily' && (
+            <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+              <Box
                 sx={{
-                  borderCollapse: 'collapse',
-                  minWidth: 720,
-                  '& th, & td': { border: '1px solid', borderColor: 'divider' },
+                  p: { xs: 1.5, sm: 2 },
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
                 }}
               >
-                <TableHead>
-                  <TableRow sx={{ bgcolor: (t) => alpha(t.palette.grey[300], 0.45) }}>
-                    <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Particular</TableCell>
-                    <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>
-                      Amount
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {expVisible.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.dateLabel}</TableCell>
-                      <TableCell>{r.name}</TableCell>
-                      <TableCell>{r.particular}</TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{r.category}</TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
-                      >
-                        {fmtRupeesCell(r.amount)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {expVisible.length > 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} sx={{ fontWeight: 700 }}>
-                        Grand total
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
-                      >
-                        {fmtRupeesCell(expTotal)}
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                </TableBody>
-              </Table>
-            </ResponsiveTableContainer>
-          </Paper>
-          <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
-            <Button
-              size="small"
-              variant="outlined"
-              disabled={!expRan || expVisible.length === 0}
-              onClick={() => downloadExpenseReportCsv(expRange, expVisible, expTotal)}
-              sx={{ borderRadius: 1.5 }}
-            >
-              CSV
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              disabled={!expRan || expVisible.length === 0}
-              onClick={() => downloadExpenseReportPdf(expRange, expVisible, expTotal)}
-              sx={{ borderRadius: 1.5 }}
-            >
-              PDF
-            </Button>
-          </Stack>
-        </Box>
-      )}
-
-      {tab === 6 && stockReportKind === 'daily' && (
-        <Box>
-          <Typography variant="subtitle1" gutterBottom>
-            Daily dip register (liters)
-          </Typography>
-          {dipRegisterFlatRows.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              No dip value entries in this date range.
-            </Typography>
-          ) : (
-            <Paper variant="outlined">
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  justifyContent="space-between"
+                  alignItems={{ xs: 'flex-start', sm: 'center' }}
+                  spacing={1.5}
+                >
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                      Daily Dip Register (Liters)
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatDateRangeLabel(from, to)} · Opening, receipts, sales and book balances
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<FileDownloadOutlinedIcon />}
+                    disabled={dipRegisterFlatRows.length === 0}
+                    onClick={() =>
+                      downloadCsv(
+                        `daily_dip_register_${from}_${to}.csv`,
+                        [
+                          'Date',
+                          'Fuel',
+                          'Opening_L',
+                          'Receipt_L',
+                          'Total_L',
+                          'Sales_L',
+                          'Closing_book_L',
+                          'Variation_L',
+                        ],
+                        dipRegisterFlatRows.map(({ row, fuelLabel }) => [
+                          row.pumpDayIso,
+                          fuelLabel,
+                          row.openingStockLiters,
+                          row.receiptLiters,
+                          row.totalStockLiters,
+                          row.salesLiters,
+                          row.closingBookLiters,
+                          row.variationLiters ?? '',
+                        ]),
+                      )
+                    }
+                    sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                  >
+                    Export CSV
+                  </Button>
+                </Stack>
+              </Box>
               <ResponsiveTableContainer stickyFirstColumn>
-                <Table size="small" sx={{ minWidth: 820 }}>
+                <Table
+                  size="small"
+                  sx={{
+                    minWidth: 820,
+                    '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
+                  }}
+                >
                   <TableHead>
-                    <TableRow>
+                    <TableRow sx={tableHeadRowSx}>
                       <TableCell>Date</TableCell>
                       <TableCell>Fuel</TableCell>
                       <TableCell align="right">Opening (L)</TableCell>
@@ -1057,16 +2277,51 @@ export function ReportsPage() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {dipRegisterFlatRows.map(({ row, fuelLabel }) => (
-                      <TableRow key={`${row.pumpDayIso}-${fuelLabel}`}>
-                        <TableCell>{row.pumpDayIso}</TableCell>
-                        <TableCell>{fuelLabel}</TableCell>
-                        <TableCell align="right">{fmtDipRegisterLiters(row.openingStockLiters)}</TableCell>
-                        <TableCell align="right">{fmtDipRegisterLiters(row.receiptLiters)}</TableCell>
-                        <TableCell align="right">{fmtDipRegisterLiters(row.totalStockLiters)}</TableCell>
-                        <TableCell align="right">{fmtDipRegisterLiters(row.salesLiters)}</TableCell>
-                        <TableCell align="right">{fmtDipRegisterLiters(row.closingBookLiters)}</TableCell>
-                        <TableCell align="right">{fmtDipRegisterLiters(row.variationLiters)}</TableCell>
+                    {dipRegisterFlatRows.map(({ row, fuelLabel }, idx) => (
+                      <TableRow
+                        key={`${row.pumpDayIso}-${fuelLabel}`}
+                        sx={{
+                          bgcolor:
+                            idx % 2 === 1
+                              ? (t) => alpha(t.palette.action.hover, 0.4)
+                              : 'background.paper',
+                          '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
+                        }}
+                      >
+                        <TableCell sx={{ fontWeight: 600 }}>{row.pumpDayIso}</TableCell>
+                        <TableCell>
+                          <Chip size="small" label={fuelLabel} sx={{ fontWeight: 700, height: 22 }} />
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtDipRegisterLiters(row.openingStockLiters)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtDipRegisterLiters(row.receiptLiters)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtDipRegisterLiters(row.totalStockLiters)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtDipRegisterLiters(row.salesLiters)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                          {fmtDipRegisterLiters(row.closingBookLiters)}
+                        </TableCell>
+                        <TableCell
+                          align="right"
+                          sx={{
+                            fontVariantNumeric: 'tabular-nums',
+                            fontWeight: 700,
+                            color:
+                              row.variationLiters != null && row.variationLiters < 0
+                                ? 'error.main'
+                                : row.variationLiters != null && row.variationLiters > 0
+                                  ? 'success.main'
+                                  : 'text.secondary',
+                          }}
+                        >
+                          {fmtDipRegisterLiters(row.variationLiters)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1074,66 +2329,97 @@ export function ReportsPage() {
               </ResponsiveTableContainer>
             </Paper>
           )}
-          <Button
-            size="small"
-            sx={{ mt: 1 }}
-            disabled={dipRegisterFlatRows.length === 0}
-            onClick={() =>
-              downloadCsv(
-                `daily_dip_register_${from}_${to}.csv`,
-                [
-                  'Date',
-                  'Fuel',
-                  'Opening_L',
-                  'Receipt_L',
-                  'Total_L',
-                  'Sales_L',
-                  'Closing_book_L',
-                  'Variation_L',
-                ],
-                dipRegisterFlatRows.map(({ row, fuelLabel }) => [
-                  row.pumpDayIso,
-                  fuelLabel,
-                  row.openingStockLiters,
-                  row.receiptLiters,
-                  row.totalStockLiters,
-                  row.salesLiters,
-                  row.closingBookLiters,
-                  row.variationLiters ?? '',
-                ]),
-              )
-            }
-          >
-            Export CSV
-          </Button>
-        </Box>
-      )}
 
-      {tab === 6 && stockReportKind === 'dipValue' && (
-        <Box>
-          <Typography variant="subtitle1" gutterBottom>
-            Dip value register (liters)
-          </Typography>
-          {dipRegisterByFuel.size === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              No dip value entries in this date range.
-            </Typography>
-          ) : (
-            <Stack spacing={3}>
-              {[...dipRegisterByFuel.entries()]
-                .sort(([a], [b]) =>
-                  (dipRegisterFuelLabels.get(a) ?? a).localeCompare(dipRegisterFuelLabels.get(b) ?? b),
-                )
-                .map(([fuelTypeId, rows]) => (
-                  <Box key={fuelTypeId}>
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
-                      {dipRegisterFuelLabels.get(fuelTypeId) ?? fuelTypeId}
-                    </Typography>
-                    <Paper variant="outlined">
+          {tab === 6 && stockReportKind === 'dipValue' && (
+            <Box>
+              <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden', mb: 2 }}>
+                <Box
+                  sx={{
+                    p: { xs: 1.5, sm: 2 },
+                    bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
+                  }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
+                    spacing={1.5}
+                  >
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        Dip Value Register (Liters)
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDateRangeLabel(from, to)} · Fuel-wise tank dip values and reconciliation
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<FileDownloadOutlinedIcon />}
+                      disabled={dipRegisterByFuel.size === 0}
+                      onClick={() => {
+                        const flat: (string | number)[][] = [];
+                        for (const [fuelTypeId, rows] of dipRegisterByFuel) {
+                          const label = dipRegisterFuelLabels.get(fuelTypeId) ?? fuelTypeId;
+                          for (const r of rows) {
+                            flat.push([
+                              r.pumpDayIso,
+                              label,
+                              r.openingStockLiters,
+                              r.receiptLiters,
+                              r.totalStockLiters,
+                              r.salesLiters,
+                              r.closingBookLiters,
+                              r.variationLiters ?? '',
+                            ]);
+                          }
+                        }
+                        flat.sort((a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1])));
+                        downloadCsv(
+                          `dip_value_register_${from}_${to}.csv`,
+                          [
+                            'Date',
+                            'Fuel',
+                            'Opening_L',
+                            'Receipt_L',
+                            'Total_L',
+                            'Sales_L',
+                            'Closing_book_L',
+                            'Variation_L',
+                          ],
+                          flat,
+                        );
+                      }}
+                      sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                    >
+                      Export CSV
+                    </Button>
+                  </Stack>
+                </Box>
+              </Paper>
+              <Stack spacing={2.5}>
+                {[...dipRegisterByFuel.entries()]
+                  .sort(([a], [b]) =>
+                    (dipRegisterFuelLabels.get(a) ?? a).localeCompare(dipRegisterFuelLabels.get(b) ?? b),
+                  )
+                  .map(([fuelTypeId, rows]) => (
+                    <Paper key={fuelTypeId} variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+                      <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider', bgcolor: (t) => alpha(t.palette.primary.main, 0.04) }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                          {dipRegisterFuelLabels.get(fuelTypeId) ?? fuelTypeId}
+                        </Typography>
+                      </Box>
                       <ResponsiveTableContainer>
-                        <Table size="small" sx={{ minWidth: 720 }}>
+                        <Table
+                          size="small"
+                          sx={{
+                            minWidth: 720,
+                            '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
+                          }}
+                        >
                           <TableHead>
-                            <TableRow>
+                            <TableRow sx={tableHeadRowSx}>
                               <TableCell>Date</TableCell>
                               <TableCell align="right">Opening (L)</TableCell>
                               <TableCell align="right">Receipt (L)</TableCell>
@@ -1144,153 +2430,211 @@ export function ReportsPage() {
                             </TableRow>
                           </TableHead>
                           <TableBody>
-                            {rows.map((r) => (
-                              <TableRow key={r.pumpDayIso}>
-                                <TableCell>{r.pumpDayIso}</TableCell>
-                                <TableCell align="right">{fmtDipRegisterLiters(r.openingStockLiters)}</TableCell>
-                                <TableCell align="right">{fmtDipRegisterLiters(r.receiptLiters)}</TableCell>
-                                <TableCell align="right">{fmtDipRegisterLiters(r.totalStockLiters)}</TableCell>
-                                <TableCell align="right">{fmtDipRegisterLiters(r.salesLiters)}</TableCell>
-                                <TableCell align="right">{fmtDipRegisterLiters(r.closingBookLiters)}</TableCell>
-                                <TableCell align="right">{fmtDipRegisterLiters(r.variationLiters)}</TableCell>
+                            {rows.map((r, idx) => (
+                              <TableRow
+                                key={r.pumpDayIso}
+                                sx={{
+                                  bgcolor:
+                                    idx % 2 === 1
+                                      ? (t) => alpha(t.palette.action.hover, 0.4)
+                                      : 'background.paper',
+                                  '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
+                                }}
+                              >
+                                <TableCell sx={{ fontWeight: 600 }}>{r.pumpDayIso}</TableCell>
+                                <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  {fmtDipRegisterLiters(r.openingStockLiters)}
+                                </TableCell>
+                                <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  {fmtDipRegisterLiters(r.receiptLiters)}
+                                </TableCell>
+                                <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  {fmtDipRegisterLiters(r.totalStockLiters)}
+                                </TableCell>
+                                <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  {fmtDipRegisterLiters(r.salesLiters)}
+                                </TableCell>
+                                <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                                  {fmtDipRegisterLiters(r.closingBookLiters)}
+                                </TableCell>
+                                <TableCell
+                                  align="right"
+                                  sx={{
+                                    fontVariantNumeric: 'tabular-nums',
+                                    fontWeight: 700,
+                                    color:
+                                      r.variationLiters != null && r.variationLiters < 0
+                                        ? 'error.main'
+                                        : r.variationLiters != null && r.variationLiters > 0
+                                          ? 'success.main'
+                                          : 'text.secondary',
+                                  }}
+                                >
+                                  {fmtDipRegisterLiters(r.variationLiters)}
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
                         </Table>
                       </ResponsiveTableContainer>
                     </Paper>
-                  </Box>
-                ))}
-            </Stack>
-          )}
-          <Button
-            size="small"
-            sx={{ mt: 2 }}
-            disabled={dipRegisterByFuel.size === 0}
-            onClick={() => {
-              const flat: (string | number)[][] = [];
-              for (const [fuelTypeId, rows] of dipRegisterByFuel) {
-                const label = dipRegisterFuelLabels.get(fuelTypeId) ?? fuelTypeId;
-                for (const r of rows) {
-                  flat.push([
-                    r.pumpDayIso,
-                    label,
-                    r.openingStockLiters,
-                    r.receiptLiters,
-                    r.totalStockLiters,
-                    r.salesLiters,
-                    r.closingBookLiters,
-                    r.variationLiters ?? '',
-                  ]);
-                }
-              }
-              flat.sort((a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1])));
-              downloadCsv(
-                `dip_value_register_${from}_${to}.csv`,
-                [
-                  'Date',
-                  'Fuel',
-                  'Opening_L',
-                  'Receipt_L',
-                  'Total_L',
-                  'Sales_L',
-                  'Closing_book_L',
-                  'Variation_L',
-                ],
-                flat,
-              );
-            }}
-          >
-            Export CSV
-          </Button>
-        </Box>
-      )}
-
-      {tab === 6 && stockReportKind !== 'dipValue' && stockReportKind !== 'daily' && (
-        <Box>
-          <Typography variant="subtitle1" gutterBottom>
-            {stockReportKind === 'tank' && 'Tank stock'}
-            {stockReportKind === 'variation' && 'Variation'}
-            {stockReportKind === 'monthly' && 'Monthly stock'}
-          </Typography>
-          <Paper variant="outlined">
-            <ResponsiveTableContainer stickyFirstColumn>
-            <Table size="small" sx={{ minWidth: 900 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Fuel</TableCell>
-                  <TableCell align="right">Dip (cm)</TableCell>
-                  <TableCell align="right">Opening (L)</TableCell>
-                  <TableCell align="right">Sales (L)</TableCell>
-                  <TableCell align="right">Purchase (L)</TableCell>
-                  <TableCell align="right">Expected (L)</TableCell>
-                  <TableCell align="right">Actual (L)</TableCell>
-                  <TableCell align="right">Variation (L)</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {stockRows
-                  .filter((r) => {
-                    if (stockReportKind === 'variation') {
-                      return r.variationAlert || !r.dipEnteredToday;
-                    }
-                    return true;
-                  })
-                  .map((r) => (
-                    <TableRow key={`${r.pumpDayIso}-${r.fuelTypeId}`}>
-                      <TableCell>{r.pumpDayIso}</TableCell>
-                      <TableCell>{r.shortCode}</TableCell>
-                      <TableCell align="right">{r.closingDipCm ?? r.currentDipCm ?? '—'}</TableCell>
-                      <TableCell align="right">{r.openingStockLiters.toLocaleString('en-IN')}</TableCell>
-                      <TableCell align="right">{r.salesLiters.toLocaleString('en-IN')}</TableCell>
-                      <TableCell align="right">{r.receiptLiters.toLocaleString('en-IN')}</TableCell>
-                      <TableCell align="right">{r.expectedStockLiters.toLocaleString('en-IN')}</TableCell>
-                      <TableCell align="right">
-                        {r.actualStockLiters != null ? r.actualStockLiters.toLocaleString('en-IN') : '—'}
-                      </TableCell>
-                      <TableCell align="right">
-                        {r.variationLiters != null ? r.variationLiters.toLocaleString('en-IN') : '—'}
-                      </TableCell>
-                    </TableRow>
                   ))}
-              </TableBody>
-            </Table>
-            </ResponsiveTableContainer>
-          </Paper>
-          <Button
-            size="small"
-            sx={{ mt: 1 }}
-            onClick={() =>
-              downloadCsv(
-                `fuel_stock_${stockReportKind}.csv`,
-                ['Date', 'Fuel', 'DipCm', 'Opening', 'Sales', 'Purchase', 'Expected', 'Actual', 'Variation'],
-                stockRows.map((r) => [
-                  r.pumpDayIso,
-                  r.shortCode,
-                  r.closingDipCm ?? r.currentDipCm ?? '',
-                  r.openingStockLiters,
-                  r.salesLiters,
-                  r.receiptLiters,
-                  r.expectedStockLiters,
-                  r.actualStockLiters ?? '',
-                  r.variationLiters ?? '',
-                ]),
-              )
-            }
-          >
-            Export CSV
-          </Button>
-        </Box>
-      )}
-      {tab === 7 && (
-        <CashBankCollectionReportPanel
-          fromIso={from}
-          toIso={to}
-          summary={collectionSummary}
-          dailyRows={collectionDailyRows}
-          shiftDetails={collectionShiftDetails}
-        />
+              </Stack>
+            </Box>
+          )}
+
+          {tab === 6 && stockReportKind !== 'dipValue' && stockReportKind !== 'daily' && (
+            <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+              <Box
+                sx={{
+                  p: { xs: 1.5, sm: 2 },
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: (t) => alpha(t.palette.grey[500], 0.03),
+                }}
+              >
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  justifyContent="space-between"
+                  alignItems={{ xs: 'flex-start', sm: 'center' }}
+                  spacing={1.5}
+                >
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                      {stockReportKind === 'tank' && 'Tank Stock Report'}
+                      {stockReportKind === 'variation' && 'Tank Variation Report'}
+                      {stockReportKind === 'monthly' && 'Monthly Stock Report'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatDateRangeLabel(from, to)} · Physical dip cm, expected vs actual stock liters
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<FileDownloadOutlinedIcon />}
+                    onClick={() =>
+                      downloadCsv(
+                        `fuel_stock_${stockReportKind}.csv`,
+                        ['Date', 'Fuel', 'DipCm', 'Opening', 'Sales', 'Purchase', 'Expected', 'Actual', 'Variation'],
+                        stockRows.map((r) => [
+                          r.pumpDayIso,
+                          r.shortCode,
+                          r.closingDipCm ?? r.currentDipCm ?? '',
+                          r.openingStockLiters,
+                          r.salesLiters,
+                          r.receiptLiters,
+                          r.expectedStockLiters,
+                          r.actualStockLiters ?? '',
+                          r.variationLiters ?? '',
+                        ]),
+                      )
+                    }
+                    sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
+                  >
+                    Export CSV
+                  </Button>
+                </Stack>
+              </Box>
+              <ResponsiveTableContainer stickyFirstColumn>
+                <Table
+                  size="small"
+                  sx={{
+                    minWidth: 900,
+                    '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
+                  }}
+                >
+                  <TableHead>
+                    <TableRow sx={tableHeadRowSx}>
+                      <TableCell>Date</TableCell>
+                      <TableCell>Fuel</TableCell>
+                      <TableCell align="right">Dip (cm)</TableCell>
+                      <TableCell align="right">Opening (L)</TableCell>
+                      <TableCell align="right">Sales (L)</TableCell>
+                      <TableCell align="right">Purchase (L)</TableCell>
+                      <TableCell align="right">Expected (L)</TableCell>
+                      <TableCell align="right">Actual (L)</TableCell>
+                      <TableCell align="right">Variation (L)</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {stockRows
+                      .filter((r) => {
+                        if (stockReportKind === 'variation') {
+                          return r.variationAlert || !r.dipEnteredToday;
+                        }
+                        return true;
+                      })
+                      .map((r, idx) => (
+                        <TableRow
+                          key={`${r.pumpDayIso}-${r.fuelTypeId}`}
+                          sx={{
+                            bgcolor:
+                              idx % 2 === 1
+                                ? (t) => alpha(t.palette.action.hover, 0.4)
+                                : 'background.paper',
+                            '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
+                          }}
+                        >
+                          <TableCell sx={{ fontWeight: 600 }}>{r.pumpDayIso}</TableCell>
+                          <TableCell>
+                            <Chip size="small" label={r.shortCode} sx={{ fontWeight: 700, height: 22 }} />
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.closingDipCm ?? r.currentDipCm ?? '—'}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.openingStockLiters.toLocaleString('en-IN')}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.salesLiters.toLocaleString('en-IN')}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.receiptLiters.toLocaleString('en-IN')}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {r.expectedStockLiters.toLocaleString('en-IN')}
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}
+                          >
+                            {r.actualStockLiters != null ? r.actualStockLiters.toLocaleString('en-IN') : '—'}
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{
+                              fontVariantNumeric: 'tabular-nums',
+                              fontWeight: 700,
+                              color:
+                                r.variationLiters != null && r.variationLiters < 0
+                                  ? 'error.main'
+                                  : r.variationLiters != null && r.variationLiters > 0
+                                    ? 'success.main'
+                                    : 'text.secondary',
+                            }}
+                          >
+                            {r.variationLiters != null ? r.variationLiters.toLocaleString('en-IN') : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </ResponsiveTableContainer>
+            </Paper>
+          )}
+
+          {/* TAB 7: COLLECTION (CASH & BANK) */}
+          {tab === 7 && (
+            <CashBankCollectionReportPanel
+              fromIso={from}
+              toIso={to}
+              summary={collectionSummary}
+              dailyRows={collectionDailyRows}
+              shiftDetails={collectionShiftDetails}
+            />
+          )}
+        </Stack>
       )}
     </Stack>
   );
