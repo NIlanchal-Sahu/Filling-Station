@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Alert,
   alpha,
@@ -36,6 +36,10 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import NoteAddOutlinedIcon from '@mui/icons-material/NoteAddOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
+import { LedgerListSettingsEditor } from '@/components/admin/LedgerListSettingsEditor';
+import { useLedgerListSettings } from '@/hooks/useLedgerListSettings';
+import { DEFAULT_LEDGER_CATEGORIES } from '@/utils/ledgerListDefaults';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
@@ -48,7 +52,11 @@ import { getCashInHandAfterReconciliations } from '@/services/aggregatesService'
 import { requireNonEmpty, requirePositiveNumber } from '@/utils/validation';
 import { downloadCsv } from '@/utils/csvExport';
 import type { LedgerEntry, LedgerPaymentChannel, LedgerType } from '@/types/entities';
-import { ledgerTxnTypeChoices, ledgerTxnTypeLabel } from '@/types/entities';
+import {
+  ledgerTxnTypeChoicesFromSettings,
+  ledgerTxnTypeLabelFromSettings,
+  paymentChannelForSave,
+} from '@/types/entities';
 import { format } from 'date-fns';
 import {
   assertEntryDateAllowed,
@@ -59,29 +67,9 @@ import {
   todayIso,
 } from '@/utils/dateEntryPolicy';
 
-/** Categories aligned with typical pump cash book (like your Excel ledger). */
-const LEDGER_SHEET_CATEGORIES = [
-  'EXPENSES',
-  'SALES',
-  'TRANSFER',
-  'RECEIVED',
-  'LOCKER',
-  'ODD BALANCE',
-  'SALARY',
-  'ADVANCE SALARY',
-  'MAINTENANCE',
-  'MISC',
-  'LOAN',
-  'OTHER',
-] as const;
-
-const CATEGORY_NAME_HINT_BLOCKLIST = new Set(
-  LEDGER_SHEET_CATEGORIES.map((c) => c.toUpperCase()),
-);
-
-function isPartyNameHint(name: string): boolean {
+function isPartyNameHint(name: string, categoryBlocklist: Set<string>): boolean {
   const key = name.trim().toUpperCase().replace(/\s+/g, ' ');
-  return Boolean(key) && !CATEGORY_NAME_HINT_BLOCKLIST.has(key);
+  return Boolean(key) && !categoryBlocklist.has(key);
 }
 
 /** Paid/Received pairs: EXPENSES↔SALES, TRANSFER↔RECEIVED. Leave LOCKER and others. */
@@ -97,11 +85,6 @@ function fmtDateSheet(d: Date): string {
   return format(d, 'dd-MM-yyyy');
 }
 
-/** TRANSACTION TYPE column. Missing channel infers CASH for Paid, BANK for Received. */
-function txnTypeSheetLabel(row: LedgerEntry): string {
-  return ledgerTxnTypeLabel(row.paymentChannel, row.type);
-}
-
 function fmtPaidCell(row: LedgerEntry): string {
   return row.type === 'expense' ? row.amount.toFixed(2) : '';
 }
@@ -114,8 +97,10 @@ function defaultEditChannel(row: LedgerEntry): LedgerPaymentChannel {
   return row.paymentChannel ?? (row.type === 'expense' ? 'cash' : 'bank');
 }
 
-function coerceLedgerCategory(c: string): string {
-  return (LEDGER_SHEET_CATEGORIES as readonly string[]).includes(c) ? c : 'OTHER';
+function coerceLedgerCategory(c: string, categories: readonly string[]): string {
+  if (categories.includes(c)) return c;
+  if (categories.includes('OTHER')) return 'OTHER';
+  return categories[0] ?? 'OTHER';
 }
 
 function fmtRs(n: number): string {
@@ -167,6 +152,18 @@ function txnTypeSelectSlotProps(openUpward?: boolean) {
 
 export function LedgerPage() {
   const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
+  const { settings: ledgerListSettings, categories: listCategories, txnTypes, reload: reloadLists } =
+    useLedgerListSettings();
+  const categoryOptions = listCategories.length > 0 ? listCategories : [...DEFAULT_LEDGER_CATEGORIES];
+  const categoryBlocklist = useMemo(
+    () => new Set(categoryOptions.map((c) => c.toUpperCase())),
+    [categoryOptions],
+  );
+  const txnTypeSheetLabel = useCallback(
+    (row: LedgerEntry) => ledgerTxnTypeLabelFromSettings(row.paymentChannel, txnTypes, row.type),
+    [txnTypes],
+  );
   const { readOnlyOps } = usePermissions();
   const theme = useTheme();
   const stackedEntry = useMediaQuery(theme.breakpoints.down('md'));
@@ -185,7 +182,7 @@ export function LedgerPage() {
   const [entryDate, setEntryDate] = useState(() => todayIso());
   const [entryNames, setEntryNames] = useState('');
   const [entryParticular, setEntryParticular] = useState('');
-  const [entryCategory, setEntryCategory] = useState<string>(LEDGER_SHEET_CATEGORIES[0]!);
+  const [entryCategory, setEntryCategory] = useState<string>(DEFAULT_LEDGER_CATEGORIES[0]!);
   const [entryPaidOut, setEntryPaidOut] = useState(true);
   const [entryChannel, setEntryChannel] = useState<LedgerPaymentChannel>('cash');
   const [entryAmount, setEntryAmount] = useState('');
@@ -195,7 +192,8 @@ export function LedgerPage() {
   const [dlgDate, setDlgDate] = useState('');
   const [dlgNames, setDlgNames] = useState('');
   const [dlgParticular, setDlgParticular] = useState('');
-  const [dlgCategory, setDlgCategory] = useState<string>(LEDGER_SHEET_CATEGORIES[0]!);
+  const [dlgCategory, setDlgCategory] = useState<string>(DEFAULT_LEDGER_CATEGORIES[0]!);
+  const [listsDlgOpen, setListsDlgOpen] = useState(false);
   const [dlgPaidOut, setDlgPaidOut] = useState(true);
   const [dlgChannel, setDlgChannel] = useState<LedgerPaymentChannel>('cash');
   const [dlgAmount, setDlgAmount] = useState('');
@@ -265,11 +263,11 @@ export function LedgerPage() {
     setNameHints((prev) => {
       const next = new Set<string>();
       for (const n of prev) {
-        if (isPartyNameHint(n)) next.add(n);
+        if (isPartyNameHint(n, categoryBlocklist)) next.add(n);
       }
       for (const r of rows) {
         const n = (r.paidToOrReceivedFrom ?? '').trim();
-        if (n && isPartyNameHint(n)) next.add(n);
+        if (n && isPartyNameHint(n, categoryBlocklist)) next.add(n);
       }
       const list = [...next].sort((a, b) => a.localeCompare(b));
       if (list.length === prev.length && list.every((v, i) => v === prev[i])) {
@@ -277,7 +275,11 @@ export function LedgerPage() {
       }
       return list;
     });
-  }, [rows]);
+  }, [rows, categoryBlocklist]);
+
+  useEffect(() => {
+    setEntryCategory((c) => (categoryOptions.includes(c) ? c : categoryOptions[0] ?? 'OTHER'));
+  }, [categoryOptions]);
 
   function applyEntryPaidOut(paid: boolean) {
     setEntryPaidOut(paid);
@@ -310,7 +312,7 @@ export function LedgerPage() {
       await createLedgerEntry({
         date: new Date(day + 'T12:00:00'),
         type: entryPaidOut ? 'expense' : 'income',
-        paymentChannel: entryChannel,
+        paymentChannel: paymentChannelForSave(entryChannel),
         paidToOrReceivedFrom: entryNames.trim(),
         particulars: entryParticular.trim(),
         category: entryCategory,
@@ -334,7 +336,7 @@ export function LedgerPage() {
     setDlgDate(clampEntryDateForRole(profile?.role, format(entry.date.toDate(), 'yyyy-MM-dd')));
     setDlgNames(entry.paidToOrReceivedFrom);
     setDlgParticular(entry.particulars);
-    setDlgCategory(coerceLedgerCategory(entry.category));
+    setDlgCategory(coerceLedgerCategory(entry.category, categoryOptions));
     setDlgPaidOut(entry.type === 'expense');
     setDlgChannel(defaultEditChannel(entry));
     setDlgAmount(String(entry.amount));
@@ -372,7 +374,7 @@ export function LedgerPage() {
       await updateLedgerEntry(dlgRow.id, {
         date: new Date(day + 'T12:00:00'),
         type: dlgPaidOut ? 'expense' : 'income',
-        paymentChannel: dlgChannel,
+        paymentChannel: paymentChannelForSave(dlgChannel),
         paidToOrReceivedFrom: dlgNames.trim(),
         particulars: dlgParticular.trim(),
         category: dlgCategory,
@@ -415,7 +417,22 @@ export function LedgerPage() {
       {readOnlyOps ? (
         <ReadOnlyBanner message="You can review the cash book. Staff post paid/received lines." />
       ) : null}
-      <PageHeader title="Cash & expense ledger" />
+      <PageHeader
+        title="Cash & expense ledger"
+        action={
+          isAdmin ? (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<TuneOutlinedIcon />}
+              onClick={() => setListsDlgOpen(true)}
+              sx={{ borderRadius: 1.5, fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Manage lists
+            </Button>
+          ) : undefined
+        }
+      />
 
       <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ maxWidth: 720 }}>
@@ -525,7 +542,7 @@ export function LedgerPage() {
               fullWidth
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             >
-              {LEDGER_SHEET_CATEGORIES.map((c) => (
+              {categoryOptions.map((c) => (
                 <MenuItem key={c} value={c}>
                   {c}
                 </MenuItem>
@@ -541,9 +558,9 @@ export function LedgerPage() {
               slotProps={txnTypeSelectSlotProps(true)}
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             >
-              {ledgerTxnTypeChoices(entryChannel).map((c) => (
+              {ledgerTxnTypeChoicesFromSettings(txnTypes, entryChannel).map((c) => (
                 <MenuItem key={c} value={c}>
-                  {ledgerTxnTypeLabel(c, 'expense')}
+                  {ledgerTxnTypeLabelFromSettings(c, txnTypes, entryPaidOut ? 'expense' : 'income')}
                 </MenuItem>
               ))}
             </TextField>
@@ -651,7 +668,7 @@ export function LedgerPage() {
                         fullWidth
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
                       >
-                        {LEDGER_SHEET_CATEGORIES.map((c) => (
+                        {categoryOptions.map((c) => (
                           <MenuItem key={c} value={c}>
                             {c}
                           </MenuItem>
@@ -668,11 +685,11 @@ export function LedgerPage() {
                         slotProps={txnTypeSelectSlotProps()}
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
                       >
-                        {ledgerTxnTypeChoices(entryChannel).map((c) => (
-                <MenuItem key={c} value={c}>
-                  {ledgerTxnTypeLabel(c, 'expense')}
-                </MenuItem>
-              ))}
+                        {ledgerTxnTypeChoicesFromSettings(txnTypes, entryChannel).map((c) => (
+                          <MenuItem key={c} value={c}>
+                            {ledgerTxnTypeLabelFromSettings(c, txnTypes, entryPaidOut ? 'expense' : 'income')}
+                          </MenuItem>
+                        ))}
                       </TextField>
                     </TableCell>
                     <TableCell sx={sheetCellSx} align="right">
@@ -1013,7 +1030,7 @@ export function LedgerPage() {
               fullWidth
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             >
-              {LEDGER_SHEET_CATEGORIES.map((c) => (
+              {categoryOptions.map((c) => (
                 <MenuItem key={c} value={c}>
                   {c}
                 </MenuItem>
@@ -1045,9 +1062,9 @@ export function LedgerPage() {
               slotProps={txnTypeSelectSlotProps()}
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             >
-              {ledgerTxnTypeChoices(dlgChannel).map((c) => (
+              {ledgerTxnTypeChoicesFromSettings(txnTypes, dlgChannel).map((c) => (
                 <MenuItem key={c} value={c}>
-                  {ledgerTxnTypeLabel(c, 'expense')}
+                  {ledgerTxnTypeLabelFromSettings(c, txnTypes, dlgPaidOut ? 'expense' : 'income')}
                 </MenuItem>
               ))}
             </TextField>
@@ -1069,6 +1086,31 @@ export function LedgerPage() {
           </Button>
           <Button variant="contained" onClick={() => void submitEditDialog()} disabled={dlgSaving} sx={{ borderRadius: 1.5 }}>
             {dlgSaving ? 'Saving…' : 'Save changes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={listsDlgOpen}
+        onClose={() => setListsDlgOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        fullScreen={stackedEntry}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Ledger categories &amp; txn types</DialogTitle>
+        <DialogContent dividers>
+          <LedgerListSettingsEditor
+            initial={ledgerListSettings}
+            updatedBy={profile.id}
+            compact
+            onSaved={() => {
+              void reloadLists();
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setListsDlgOpen(false)} sx={{ borderRadius: 1.5 }}>
+            Close
           </Button>
         </DialogActions>
       </Dialog>

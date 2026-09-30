@@ -16,4 +16,5 @@ export const COLLECTIONS = {
   lubricants: 'lubricants',
   lubricantStockEntries: 'lubricantStockEntries',
   lubricantSales: 'lubricantSales',
+  stationSettings: 'stationSettings',
 } as const;

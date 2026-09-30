@@ -122,16 +122,19 @@ export function OwnerDashboardHeader(props: Props) {
         </Stack>
       </Box>
 
-      {/* Priority 3: Compact Date Selector */}
       <Box
         component="label"
         sx={{
+          flexShrink: 0,
+          width: 'fit-content',
+          maxWidth: '100%',
+          alignSelf: { xs: 'flex-start', sm: 'center' },
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 1.25,
-          px: 1.75,
-          py: 0.75,
-          borderRadius: 2.5,
+          gap: 1,
+          px: 1.25,
+          py: 0.625,
+          borderRadius: 1.5,
           border: '1px solid',
           borderColor: 'divider',
           bgcolor: 'background.paper',
@@ -146,7 +149,7 @@ export function OwnerDashboardHeader(props: Props) {
           },
         }}
       >
-        <Box>
+        <Box sx={{ minWidth: 0 }}>
           <Typography
             variant="caption"
             sx={{
@@ -159,7 +162,7 @@ export function OwnerDashboardHeader(props: Props) {
               lineHeight: 1,
             }}
           >
-            PUMP DAY
+            Pump day
           </Typography>
           <Typography
             variant="body2"
@@ -174,34 +177,25 @@ export function OwnerDashboardHeader(props: Props) {
             {reportLabel}
           </Typography>
         </Box>
-
-        <CalendarMonthOutlinedIcon
-          sx={{
-            fontSize: 18,
-            color: 'primary.main',
-            ml: 0.5,
-          }}
-        />
-
-        {/* Hidden native date input that triggers on clicking the pill */}
+        <CalendarMonthOutlinedIcon sx={{ fontSize: 18, color: 'primary.main', ml: 0.5, flexShrink: 0 }} />
         <input
           type="date"
           aria-label="Select pump day"
           max={maxSelectableIso}
           value={reportIso}
           onChange={(e) => {
-            if (e.target.value) {
-              onReportIsoChange(e.target.value);
-            }
+            const next = e.target.value;
+            if (next && next <= maxSelectableIso) onReportIsoChange(next);
           }}
           style={{
             position: 'absolute',
-            top: 0,
-            left: 0,
+            inset: 0,
             width: '100%',
             height: '100%',
             opacity: 0,
             cursor: 'pointer',
+            border: 'none',
+            margin: 0,
           }}
         />
       </Box>

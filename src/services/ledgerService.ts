@@ -2,7 +2,7 @@ import { addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where, t
 import { serverTimestamp, Timestamp } from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
 import type { LedgerEntry, LedgerPaymentChannel, LedgerType } from '@/types/entities';
-import { parseLedgerPaymentChannel } from '@/types/entities';
+import { resolveLedgerPaymentChannel } from '@/types/entities';
 import { COLLECTIONS, getDb } from '@/lib/firebase';
 import {
   demoCreateLedgerEntry,
@@ -14,7 +14,7 @@ import {
 } from '@/localDemo/demoBackend';
 
 function parsePaymentChannel(data: DocumentData): LedgerPaymentChannel | undefined {
-  return parseLedgerPaymentChannel(data.paymentChannel ?? data.paymentMode);
+  return resolveLedgerPaymentChannel(data.paymentChannel ?? data.paymentMode);
 }
 
 function mapLedger(id: string, data: DocumentData): LedgerEntry {

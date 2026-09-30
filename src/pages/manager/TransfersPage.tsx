@@ -14,17 +14,17 @@ import {
   TableCell,
   TableHead,
   TableRow,
-  TextField,
   Typography,
   useMediaQuery,
   useTheme,
 } from '@mui/material';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import { format } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
-import { FilterToolbar } from '@/components/ui/FilterToolbar';
+import { DateRangePeriodControls } from '@/components/ui/DateRangePeriodControls';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -33,10 +33,16 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { listLedgerInRange } from '@/services/ledgerService';
 import type { LedgerEntry } from '@/types/entities';
 import {
+  applyPeriodPreset,
+  detectPreset,
+  formatDateRangeLabel,
+  getPresetDates,
+  type DatePreset,
+} from '@/utils/dateRangePeriodPresets';
+import {
   clampEntryDateForRole,
   parsePumpDayParam,
   recalledAdminPumpDay,
-  todayIso,
 } from '@/utils/dateEntryPolicy';
 import { summarizeTransferNames, transferBookLines } from '@/utils/transferBook';
 import {
@@ -68,8 +74,6 @@ const exportMenuPaperSx = {
   opacity: 1,
 } as const;
 
-const fieldSx = { '& .MuiOutlinedInput-root': { borderRadius: 1.5 } };
-
 function BookField({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="baseline">
@@ -97,8 +101,10 @@ export function TransfersPage() {
   const compact = useMediaQuery(theme.breakpoints.down('md'));
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [from, setFrom] = useState(() => todayIso());
-  const [to, setTo] = useState(() => todayIso());
+  const monthDefault = getPresetDates('this_month')!;
+  const [from, setFrom] = useState(monthDefault.from);
+  const [to, setTo] = useState(monthDefault.to);
+  const [preset, setPreset] = useState<DatePreset>('this_month');
   const [rows, setRows] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -158,16 +164,19 @@ export function TransfersPage() {
     }
   }
 
-  function submitRange(e?: { preventDefault: () => void }) {
-    e?.preventDefault();
-    void load(from, to);
+  function handlePresetChange(p: DatePreset) {
+    const next = applyPeriodPreset(p, { from, to });
+    setPreset(next.preset);
+    setFrom(next.from);
+    setTo(next.to);
+    setRangeErr(null);
   }
 
   useEffect(() => {
     queueMicrotask(() => {
       void load();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- first load for today's range
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- first load for default range
   }, []);
 
   useEffect(() => {
@@ -178,6 +187,7 @@ export function TransfersPage() {
       const clamped = clampEntryDateForRole(profile?.role, pumpDay);
       setFrom(clamped);
       setTo(clamped);
+      setPreset(detectPreset(clamped, clamped));
       void load(clamped, clamped);
     }
   }, [dayParam, profile?.role]);
@@ -264,50 +274,34 @@ export function TransfersPage() {
 
       {err ? <Alert severity="error">{err}</Alert> : null}
 
-      <Paper variant="outlined" component="form" onSubmit={submitRange} sx={{ borderRadius: 2, p: 2 }}>
-        <FilterToolbar>
-          <TextField
-            type="date"
-            label="From"
-            value={from}
-            onChange={(e) => {
-              setFrom(e.target.value);
+      <Paper variant="outlined" sx={{ borderRadius: 2.5, overflow: 'hidden' }}>
+        <Box sx={{ p: { xs: 1.75, sm: 2 } }}>
+          <DateRangePeriodControls
+            from={from}
+            to={to}
+            preset={preset}
+            onPresetChange={handlePresetChange}
+            onFromChange={(f) => {
+              setFrom(f);
+              setPreset('custom');
               setRangeErr(null);
             }}
-            size="small"
-            required
-            error={Boolean(rangeErr)}
-            slotProps={{ inputLabel: { shrink: true } }}
-            sx={fieldSx}
-          />
-          <TextField
-            type="date"
-            label="To"
-            value={to}
-            onChange={(e) => {
-              setTo(e.target.value);
+            onToChange={(t) => {
+              setTo(t);
+              setPreset('custom');
               setRangeErr(null);
             }}
-            size="small"
-            required
-            error={Boolean(rangeErr)}
-            slotProps={{ inputLabel: { shrink: true } }}
-            sx={fieldSx}
+            loading={loading}
+            onSubmit={() => void load(from, to)}
+            submitLabel="Submit"
+            submitLoadingLabel="Loading…"
           />
-          <Button
-            type="submit"
-            variant="contained"
-            disabled={loading}
-            sx={{ borderRadius: 1.5, minHeight: 44, px: 3 }}
-          >
-            Submit
-          </Button>
-        </FilterToolbar>
-        {rangeErr ? (
-          <Alert severity="warning" sx={{ mt: 1.5 }}>
-            {rangeErr}
-          </Alert>
-        ) : null}
+          {rangeErr ? (
+            <Alert severity="warning" sx={{ mt: 1.5 }}>
+              {rangeErr}
+            </Alert>
+          ) : null}
+        </Box>
       </Paper>
 
       {selectedKey ? (
@@ -419,7 +413,23 @@ export function TransfersPage() {
       ) : loading ? (
         <Typography color="text.secondary">Loading…</Typography>
       ) : names.length === 0 ? (
-        <EmptyState title="No transfer names in this range" />
+        <Paper variant="outlined" sx={{ borderRadius: 2.5, p: { xs: 3, sm: 4 } }}>
+          <EmptyState
+            title="No transfer names in this range"
+            description={`No transfer names for ${formatDateRangeLabel(from, to)}. Try another period or choose Custom dates.`}
+            action={
+              <Button
+                variant="outlined"
+                color="primary"
+                startIcon={<CalendarTodayOutlinedIcon />}
+                onClick={() => handlePresetChange('custom')}
+                sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600 }}
+              >
+                Change Date Range
+              </Button>
+            }
+          />
+        </Paper>
       ) : (
         <Stack spacing={1}>
           {names.map((n) => (

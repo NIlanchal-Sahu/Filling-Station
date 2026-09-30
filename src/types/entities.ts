@@ -385,6 +385,16 @@ export function parseLedgerPaymentChannel(raw: unknown): LedgerPaymentChannel | 
   return LEDGER_CHANNEL_ALIASES[s];
 }
 
+/** Built-in alias match, or preserve custom admin txn type slug from Firestore. */
+export function resolveLedgerPaymentChannel(raw: unknown): LedgerPaymentChannel | undefined {
+  const parsed = parseLedgerPaymentChannel(raw);
+  if (parsed) return parsed;
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.trim().toLowerCase().replace(/\s+/g, '_') as LedgerPaymentChannel;
+  }
+  return undefined;
+}
+
 export function ledgerTxnTypeLabel(
   channel: LedgerPaymentChannel | undefined,
   type: LedgerType,
@@ -400,6 +410,46 @@ export function ledgerTxnTypeChoices(current?: LedgerPaymentChannel): LedgerPaym
     return [...LEDGER_TXN_TYPE_ORDER, 'bank'];
   }
   return [...LEDGER_TXN_TYPE_ORDER];
+}
+
+export type LedgerTxnTypeOption = { id: string; label: string };
+
+export function ledgerTxnTypeLabelFromSettings(
+  channel: string | undefined,
+  txnTypes: readonly LedgerTxnTypeOption[],
+  type: LedgerType,
+): string {
+  const id = (channel ?? '').trim().toLowerCase();
+  if (id) {
+    const hit = txnTypes.find((t) => t.id === id);
+    if (hit) return hit.label;
+    if (LEDGER_TXN_TYPE_LABELS[id as LedgerPaymentChannel]) {
+      return LEDGER_TXN_TYPE_LABELS[id as LedgerPaymentChannel];
+    }
+  }
+  return ledgerTxnTypeLabel(channel as LedgerPaymentChannel | undefined, type);
+}
+
+export function ledgerTxnTypeChoicesFromSettings(
+  txnTypes: readonly LedgerTxnTypeOption[],
+  current?: string,
+): string[] {
+  const ids = txnTypes.map((t) => t.id);
+  const cur = current?.trim().toLowerCase();
+  if (cur && !ids.includes(cur)) {
+    return [...ids, cur];
+  }
+  if (cur === 'bank' && !ids.includes('bank')) {
+    return [...ids, 'bank'];
+  }
+  return ids;
+}
+
+export function paymentChannelForSave(raw: string): LedgerPaymentChannel {
+  const id = raw.trim().toLowerCase();
+  const known = parseLedgerPaymentChannel(id);
+  if (known) return known;
+  return id as LedgerPaymentChannel;
 }
 
 /** Map credit receive mode → stored ledger txn type (not collapsed to BANK). */

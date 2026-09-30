@@ -4,11 +4,13 @@ import { TableContainer, type TableContainerProps } from '@mui/material';
 type Props = TableContainerProps & {
   children: ReactNode;
   stickyFirstColumn?: boolean;
+  stickyLastColumn?: boolean;
 };
 
 export function ResponsiveTableContainer({
   children,
   stickyFirstColumn = false,
+  stickyLastColumn = false,
   sx,
   ...rest
 }: Props) {
@@ -31,6 +33,21 @@ export function ResponsiveTableContainer({
                 boxShadow: '2px 0 4px -2px rgba(0,0,0,0.18)',
               },
               '& thead th:first-of-type': {
+                zIndex: 3,
+                bgcolor: 'background.paper',
+              },
+            }
+          : {}),
+        ...(stickyLastColumn
+          ? {
+              '& tbody td:last-of-type, & thead th:last-of-type': {
+                position: 'sticky',
+                right: 0,
+                zIndex: 1,
+                bgcolor: 'background.paper',
+                boxShadow: '-2px 0 4px -2px rgba(0,0,0,0.18)',
+              },
+              '& thead th:last-of-type': {
                 zIndex: 3,
                 bgcolor: 'background.paper',
               },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   alpha,
   Alert,
@@ -50,14 +50,17 @@ const REGISTER_CSV_HEADERS = [
 
 const PAY_CSV_HEADERS = [
   'Staff',
+  'Base_salary_INR',
   'Shifts_worked',
-  'Pay_mode',
-  'Pay_amount_INR',
-  'Pay_unit',
+  'Absent_days',
+  'Allowed_paid_leaves',
+  'Total_paid_days',
+  'Daily_rate_INR',
   'Gross_due_INR',
   'Salary_paid_INR',
   'Advance_paid_INR',
-  'Suggested_balance_INR',
+  'Short_INR',
+  'Net_balance_INR',
 ] as const;
 
 function rowsToRegisterCsv(rows: PumpAttendantAttendanceRow[]): (string | number)[][] {
@@ -77,20 +80,38 @@ function rowsToRegisterCsv(rows: PumpAttendantAttendanceRow[]): (string | number
 function rowsToPayCsv(rows: AttendantPayrollSummaryRow[]): (string | number)[][] {
   return rows.map((r) => [
     r.staffName,
+    r.baseSalaryInr ?? '',
     r.shiftsWorked,
-    r.staffPayMode ?? '',
-    r.payAmountInr ?? '',
-    r.payRateLabel ?? '',
+    r.absentDays,
+    r.allowedPaidLeaves,
+    r.totalPaidDays,
+    r.dailyRateInr ?? '',
     r.grossDueInr ?? '',
     r.salaryPaidInr,
     r.advancePaidInr,
-    r.suggestedBalanceInr ?? '',
+    r.shortAmountInr,
+    r.netBalanceInr ?? '',
   ]);
 }
 
 function fmtInr(n: number | null | undefined): string {
   if (n == null) return '—';
-  return n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtInrTotal(n: number): string {
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const payMoneyCellSx = {
+  fontVariantNumeric: 'tabular-nums' as const,
+  whiteSpace: 'nowrap' as const,
+  fontSize: { xs: '0.75rem', sm: '0.8125rem' },
+  px: { xs: 0.5, sm: 1 },
+};
+
+function sumPayField(rows: AttendantPayrollSummaryRow[], pick: (r: AttendantPayrollSummaryRow) => number): number {
+  return rows.reduce((s, r) => s + pick(r), 0);
 }
 
 const tableHeadRowSx = {
@@ -165,8 +186,26 @@ export function AttendantSheetPage() {
     downloadCsv(basename, [...REGISTER_CSV_HEADERS], rowsToRegisterCsv(rows));
   }
 
+  const payTotals = useMemo(() => {
+    const gross = sumPayField(payRows, (r) => r.grossDueInr ?? 0);
+    const salary = sumPayField(payRows, (r) => r.salaryPaidInr);
+    const advance = sumPayField(payRows, (r) => r.advancePaidInr);
+    const short = sumPayField(payRows, (r) => r.shortAmountInr);
+    const net = sumPayField(payRows, (r) => r.netBalanceInr ?? 0);
+    return { gross, salary, advance, short, net };
+  }, [payRows]);
+
   const activeEmpty =
-    viewTab === 'register' ? rows.length === 0 : payRows.every((r) => r.shiftsWorked === 0 && r.salaryPaidInr === 0 && r.advancePaidInr === 0);
+    viewTab === 'register'
+      ? rows.length === 0
+      : payRows.every(
+          (r) =>
+            r.shiftsWorked === 0 &&
+            r.salaryPaidInr === 0 &&
+            r.advancePaidInr === 0 &&
+            r.shortAmountInr === 0 &&
+            (r.grossDueInr ?? 0) === 0,
+        );
 
   return (
     <Stack
@@ -184,7 +223,7 @@ export function AttendantSheetPage() {
       <Box className="no-print">
         <PageHeader
           title="Attendant sheet"
-          subtitle="Shift register and pay summary (shifts × rate − salary/advance from ledger). Set pay rates on Team for workers."
+          subtitle="Shift register and staff pay summary (30-day month, +2 paid leaves, net balance after short). Set base salary on Team or Staff pay."
         />
       </Box>
 
@@ -344,21 +383,27 @@ export function AttendantSheetPage() {
             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
               Pay summary
             </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {from === to ? from : `${from} — ${to}`} · One row per staff · Shifts = closed shift appearances
+            <Typography variant="caption" color="text.secondary" display="block">
+              {from === to ? from : `${from} — ${to}`} · Gross = (shifts + 2 paid leaves) × (base ÷ 30) · Net = gross −
+              paid − short
             </Typography>
           </Box>
-          <ResponsiveTableContainer stickyFirstColumn>
-            <Table size="small" sx={{ minWidth: 720 }}>
+          <ResponsiveTableContainer stickyFirstColumn stickyLastColumn>
+            <Table size="small" sx={{ minWidth: 1100 }}>
               <TableHead>
                 <TableRow sx={tableHeadRowSx}>
-                  <TableCell>Staff</TableCell>
-                  <TableCell align="right">Shifts</TableCell>
-                  <TableCell align="right">Pay (₹)</TableCell>
+                  <TableCell>Staff name</TableCell>
+                  <TableCell align="right">Base salary (₹)</TableCell>
+                  <TableCell align="right">Shifts worked</TableCell>
+                  <TableCell align="right">Absent days</TableCell>
+                  <TableCell align="right">Paid leaves (+2)</TableCell>
+                  <TableCell align="right">Total paid days</TableCell>
+                  <TableCell align="right">Daily rate (₹)</TableCell>
                   <TableCell align="right">Gross due (₹)</TableCell>
                   <TableCell align="right">Salary paid (₹)</TableCell>
                   <TableCell align="right">Advance paid (₹)</TableCell>
-                  <TableCell align="right">Balance (₹)</TableCell>
+                  <TableCell align="right">Short (₹)</TableCell>
+                  <TableCell align="right">Net balance (₹)</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -370,47 +415,95 @@ export function AttendantSheetPage() {
                     }}
                   >
                     <TableCell sx={{ fontWeight: 600 }}>{r.staffName}</TableCell>
+                    <TableCell align="right" sx={payMoneyCellSx}>
+                      {fmtInr(r.baseSalaryInr)}
+                    </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {r.shiftsWorked}
                     </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {r.payAmountInr != null ? (
-                        <>
-                          {fmtInr(r.payAmountInr)}
-                          {r.payRateLabel ? (
-                            <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                              {r.payRateLabel}
-                            </Typography>
-                          ) : null}
-                        </>
-                      ) : (
-                        '—'
-                      )}
+                      {r.absentDays}
                     </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      +{r.allowedPaidLeaves}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                      {r.totalPaidDays}
+                    </TableCell>
+                    <TableCell align="right" sx={payMoneyCellSx}>
+                      {fmtInr(r.dailyRateInr)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ ...payMoneyCellSx, fontWeight: 600 }}>
                       {fmtInr(r.grossDueInr)}
                     </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <TableCell align="right" sx={payMoneyCellSx}>
                       {fmtInr(r.salaryPaidInr)}
                     </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <TableCell align="right" sx={payMoneyCellSx}>
                       {fmtInr(r.advancePaidInr)}
                     </TableCell>
                     <TableCell
                       align="right"
                       sx={{
-                        fontVariantNumeric: 'tabular-nums',
-                        fontWeight: 700,
-                        color:
-                          r.suggestedBalanceInr != null && r.suggestedBalanceInr > 0
-                            ? 'warning.main'
-                            : undefined,
+                        ...payMoneyCellSx,
+                        color: r.shortAmountInr > 0.005 ? 'error.main' : undefined,
                       }}
                     >
-                      {fmtInr(r.suggestedBalanceInr)}
+                      {fmtInr(r.shortAmountInr)}
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        ...payMoneyCellSx,
+                        fontWeight: 700,
+                        color:
+                          r.netBalanceInr != null && r.netBalanceInr < -0.005
+                            ? 'error.main'
+                            : r.netBalanceInr != null && r.netBalanceInr > 0.005
+                              ? 'warning.main'
+                              : undefined,
+                      }}
+                    >
+                      {fmtInr(r.netBalanceInr)}
                     </TableCell>
                   </TableRow>
                 ))}
+                <TableRow
+                  sx={{
+                    bgcolor: (t) => alpha(t.palette.primary.main, t.palette.mode === 'dark' ? 0.12 : 0.05),
+                    '& td': { borderTop: 2, borderColor: 'divider', fontWeight: 700 },
+                  }}
+                >
+                  <TableCell colSpan={7} sx={{ fontWeight: 800 }}>
+                    Totals
+                  </TableCell>
+                  <TableCell align="right" sx={payMoneyCellSx}>
+                    {fmtInrTotal(payTotals.gross)}
+                  </TableCell>
+                  <TableCell align="right" sx={payMoneyCellSx}>
+                    {fmtInrTotal(payTotals.salary)}
+                  </TableCell>
+                  <TableCell align="right" sx={payMoneyCellSx}>
+                    {fmtInrTotal(payTotals.advance)}
+                  </TableCell>
+                  <TableCell align="right" sx={{ ...payMoneyCellSx, color: 'error.main' }}>
+                    {fmtInrTotal(payTotals.short)}
+                  </TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{
+                      ...payMoneyCellSx,
+                      color:
+                        payTotals.net < -0.005
+                          ? 'error.main'
+                          : payTotals.net > 0.005
+                            ? 'warning.main'
+                            : undefined,
+                    }}
+                  >
+                    {fmtInrTotal(payTotals.net)}
+                  </TableCell>
+                </TableRow>
               </TableBody>
             </Table>
           </ResponsiveTableContainer>

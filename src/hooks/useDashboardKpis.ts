@@ -25,7 +25,7 @@ const EMPTY: DashboardKpiData = {
   cashInHand: 0,
 };
 
-export function useDashboardKpis(pumpDayIso: string) {
+export function useDashboardKpis(pumpDayIso: string, refreshKey = 0) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardKpiData>(EMPTY);
 
@@ -65,7 +65,7 @@ export function useDashboardKpis(pumpDayIso: string) {
     return () => {
       ok = false;
     };
-  }, [pumpDayIso]);
+  }, [pumpDayIso, refreshKey]);
 
   return { loading, data };
 }

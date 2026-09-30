@@ -19,8 +19,6 @@ import {
   Tabs,
   Tab,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import Grid from '@mui/material/Grid2';
@@ -41,22 +39,29 @@ import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutli
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import FolderOffOutlinedIcon from '@mui/icons-material/FolderOffOutlined';
 
+import { DateRangePeriodControls } from '@/components/ui/DateRangePeriodControls';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { usePermissions } from '@/hooks/usePermissions';
-import { format, subDays, startOfWeek, startOfMonth } from 'date-fns';
+import { format } from 'date-fns';
+import {
+  applyPeriodPreset,
+  detectPreset,
+  formatDateRangeLabel,
+  type DatePreset,
+} from '@/utils/dateRangePeriodPresets';
 import { useSearchParams } from 'react-router-dom';
 import { listClosedShiftsByPumpDayRange } from '@/services/shiftsService';
 import {
   getDailySalesFuelPivot,
   getMeterRegisterRowsInRange,
-  getOperatorPerformanceInRange,
+  getOperatorPerformanceDailyInRange,
   getPumpAttendantAttendanceRowsInRange,
   type DailySalesPivotRow,
   type MeterRegisterRow,
-  type OperatorPerf,
+  type OperatorPerformanceDailyRow,
   type PumpAttendantAttendanceRow,
 } from '@/services/aggregatesService';
 import { listCreditCustomers } from '@/services/creditCustomersService';
@@ -105,6 +110,14 @@ function fmtRupeesCell(n: number): string {
   return `₹ ${t}`;
 }
 
+/** Operator performance money cells: always 20,000.00 style, slightly compact type */
+const opAmountCellSx = {
+  fontVariantNumeric: 'tabular-nums' as const,
+  whiteSpace: 'nowrap' as const,
+  fontSize: { xs: '0.75rem', sm: '0.8125rem' },
+  px: { xs: 0.5, sm: 1 },
+};
+
 type TabId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 type StockReportKind = 'daily' | 'tank' | 'variation' | 'monthly' | 'dipValue';
@@ -120,8 +133,6 @@ function fmtDipRegisterLiters(n: number | null | undefined): string {
   if (n == null) return '—';
   return n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
-
-type DatePreset = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
 
 type ReportTabConfig = {
   id: TabId;
@@ -180,59 +191,6 @@ const REPORT_TABS: ReportTabConfig[] = [
     description: 'Cash and digital collection reconciliation and bank deposits',
   },
 ];
-
-function formatDateRangeLabel(fromIso: string, toIso: string): string {
-  try {
-    const fromDate = new Date(`${fromIso}T00:00:00`);
-    const toDate = new Date(`${toIso}T00:00:00`);
-    if (!Number.isFinite(fromDate.getTime()) || !Number.isFinite(toDate.getTime())) {
-      return `${fromIso} — ${toIso}`;
-    }
-    if (fromIso === toIso) {
-      return format(fromDate, 'dd MMM yyyy');
-    }
-    return `${format(fromDate, 'dd MMM yyyy')} — ${format(toDate, 'dd MMM yyyy')}`;
-  } catch {
-    return `${fromIso} — ${toIso}`;
-  }
-}
-
-function getPresetDates(preset: DatePreset): { from: string; to: string } | null {
-  const now = new Date();
-  const todayStr = format(now, 'yyyy-MM-dd');
-  switch (preset) {
-    case 'today':
-      return { from: todayStr, to: todayStr };
-    case 'yesterday': {
-      const yStr = format(subDays(now, 1), 'yyyy-MM-dd');
-      return { from: yStr, to: yStr };
-    }
-    case 'this_week': {
-      const wStr = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-      return { from: wStr, to: todayStr };
-    }
-    case 'this_month': {
-      const mStr = format(startOfMonth(now), 'yyyy-MM-dd');
-      return { from: mStr, to: todayStr };
-    }
-    case 'custom':
-    default:
-      return null;
-  }
-}
-
-function detectPreset(fromIso: string, toIso: string): DatePreset {
-  const now = new Date();
-  const todayStr = format(now, 'yyyy-MM-dd');
-  if (fromIso === todayStr && toIso === todayStr) return 'today';
-  const yStr = format(subDays(now, 1), 'yyyy-MM-dd');
-  if (fromIso === yStr && toIso === yStr) return 'yesterday';
-  const wStr = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-  if (fromIso === wStr && toIso === todayStr) return 'this_week';
-  const mStr = format(startOfMonth(now), 'yyyy-MM-dd');
-  if (fromIso === mStr && toIso === todayStr) return 'this_month';
-  return 'custom';
-}
 
 function ReportKpiCard(props: {
   label: string;
@@ -360,7 +318,7 @@ export function ReportsPage() {
   const [dailyShiftCount, setDailyShiftCount] = useState(0);
 
   const [meterRows, setMeterRows] = useState<MeterRegisterRow[]>([]);
-  const [op, setOp] = useState<OperatorPerf[]>([]);
+  const [op, setOp] = useState<OperatorPerformanceDailyRow[]>([]);
   const [creditRows, setCreditRows] = useState<
     { name: string; bal: number; sales: number; pay: number }[]
   >([]);
@@ -466,7 +424,7 @@ export function ReportsPage() {
       } else if (tab === 1) {
         setMeterRows(await getMeterRegisterRowsInRange(a, b));
       } else if (tab === 2) {
-        setOp(await getOperatorPerformanceInRange(a, b));
+        setOp(await getOperatorPerformanceDailyInRange(a, b));
       } else if (tab === 3) {
         setAttendanceRows(await getPumpAttendantAttendanceRowsInRange(a, b));
       } else if (tab === 4) {
@@ -604,14 +562,10 @@ export function ReportsPage() {
   }, []);
 
   function handlePresetChange(p: DatePreset) {
-    setPreset(p);
-    if (p !== 'custom') {
-      const dates = getPresetDates(p);
-      if (dates) {
-        setFrom(dates.from);
-        setTo(dates.to);
-      }
-    }
+    const next = applyPeriodPreset(p, { from, to });
+    setPreset(next.preset);
+    setFrom(next.from);
+    setTo(next.to);
   }
 
   // Summary calculations
@@ -633,18 +587,10 @@ export function ReportsPage() {
     [meterRows],
   );
 
-  const opTotalVolume = useMemo(
-    () => op.reduce((a, r) => a + r.totalLiters, 0),
-    [op],
-  );
-  const opTotalAmount = useMemo(
-    () => op.reduce((a, r) => a + r.totalAmount, 0),
-    [op],
-  );
-  const opShortOverSum = useMemo(
-    () => op.reduce((a, r) => a + r.shortOverSum, 0),
-    [op],
-  );
+  const opStaffCount = useMemo(() => new Set(op.map((r) => r.pumpBoyGirl)).size, [op]);
+  const opTotalVolume = useMemo(() => op.reduce((a, r) => a + r.totalLiters, 0), [op]);
+  const opTotalAmount = useMemo(() => op.reduce((a, r) => a + r.amounts, 0), [op]);
+  const opShortSum = useMemo(() => op.reduce((a, r) => a + r.short, 0), [op]);
 
   const creditTotalSales = useMemo(
     () => creditRows.reduce((a, r) => a + r.sales, 0),
@@ -828,126 +774,25 @@ export function ReportsPage() {
 
         {/* DATE RANGE PRESETS & CONTROLS */}
         <Box sx={{ p: { xs: 1.75, sm: 2 } }}>
-          <Stack spacing={2}>
-            {/* Presets Row */}
-            <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              justifyContent="space-between"
-              alignItems={{ xs: 'flex-start', md: 'center' }}
-              spacing={1.5}
-            >
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: 'text.secondary',
-                    fontSize: '0.7rem',
-                    mr: 0.5,
-                  }}
-                >
-                  Period
-                </Typography>
-                <ToggleButtonGroup
-                  value={preset}
-                  exclusive
-                  onChange={(_, p) => {
-                    if (p) handlePresetChange(p as DatePreset);
-                  }}
-                  size="small"
-                  sx={{
-                    flexWrap: 'wrap',
-                    gap: 0.75,
-                    '& .MuiToggleButtonGroup-grouped': {
-                      border: '1px solid !important',
-                      borderColor: 'divider !important',
-                      borderRadius: '8px !important',
-                      px: { xs: 1.25, sm: 1.5 },
-                      py: 0.5,
-                      fontSize: '0.78rem',
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      color: 'text.primary',
-                      '&.Mui-selected': {
-                        bgcolor: (t) => alpha(t.palette.primary.main, 0.12),
-                        color: 'primary.main',
-                        borderColor: 'primary.main !important',
-                        fontWeight: 700,
-                      },
-                    },
-                  }}
-                >
-                  <ToggleButton value="today">Today</ToggleButton>
-                  <ToggleButton value="yesterday">Yesterday</ToggleButton>
-                  <ToggleButton value="this_week">This Week</ToggleButton>
-                  <ToggleButton value="this_month">This Month</ToggleButton>
-                  <ToggleButton value="custom">Custom</ToggleButton>
-                </ToggleButtonGroup>
-              </Stack>
-
-              {/* Active period indicator badge */}
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.75,
-                    bgcolor: (t) => alpha(t.palette.grey[500], 0.08),
-                    px: 1.25,
-                    py: 0.5,
-                    borderRadius: 1.5,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  <CalendarTodayOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                    {formatDateRangeLabel(from, to)}
-                  </Typography>
-                </Box>
-              </Stack>
-            </Stack>
-
-            {/* Custom Dates & Sub-filters area */}
-            <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              spacing={1.5}
-              alignItems={{ xs: 'stretch', md: 'center' }}
-            >
-              {preset === 'custom' ? (
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ flex: 1 }}>
-                  <TextField
-                    type="date"
-                    label="From"
-                    value={from}
-                    onChange={(e) => {
-                      setFrom(e.target.value);
-                      setPreset('custom');
-                    }}
-                    size="small"
-                    fullWidth
-                    slotProps={{ inputLabel: { shrink: true } }}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-                  />
-                  <TextField
-                    type="date"
-                    label="To"
-                    value={to}
-                    onChange={(e) => {
-                      setTo(e.target.value);
-                      setPreset('custom');
-                    }}
-                    size="small"
-                    fullWidth
-                    slotProps={{ inputLabel: { shrink: true } }}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-                  />
-                </Stack>
-              ) : null}
-
-              {/* Tab 4: Customer filter */}
+          <DateRangePeriodControls
+            from={from}
+            to={to}
+            preset={preset}
+            onPresetChange={handlePresetChange}
+            onFromChange={(f) => {
+              setFrom(f);
+              setPreset('custom');
+            }}
+            onToChange={(t) => {
+              setTo(t);
+              setPreset('custom');
+            }}
+            loading={loading}
+            onSubmit={() => void run()}
+            submitLabel="Generate Report"
+            submitLoadingLabel="Generating report…"
+            submitIcon={PlayArrowOutlinedIcon}
+          >
               {tab === 4 && (
                 <TextField
                   size="small"
@@ -996,35 +841,7 @@ export function ReportsPage() {
                   <option value="dipValue">Dip value register</option>
                 </TextField>
               )}
-
-              {/* Primary Action Button: Brand primary color, no red */}
-              <Box sx={{ ml: { md: 'auto' }, pt: { xs: 0.5, md: 0 } }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={() => void run()}
-                  disabled={loading}
-                  startIcon={
-                    loading ? (
-                      <CircularProgress size={16} color="inherit" />
-                    ) : (
-                      <PlayArrowOutlinedIcon />
-                    )
-                  }
-                  sx={{
-                    minWidth: { xs: '100%', sm: 180 },
-                    height: 42,
-                    borderRadius: 1.5,
-                    fontWeight: 700,
-                    textTransform: 'none',
-                    boxShadow: (t) => `0 4px 12px ${alpha(t.palette.primary.main, 0.25)}`,
-                  }}
-                >
-                  {loading ? 'Generating report…' : 'Generate Report'}
-                </Button>
-              </Box>
-            </Stack>
-          </Stack>
+          </DateRangePeriodControls>
         </Box>
       </Paper>
 
@@ -1548,8 +1365,8 @@ export function ReportsPage() {
                   <Grid size={{ xs: 6, sm: 3 }}>
                     <ReportKpiCard
                       label="Active Staff"
-                      value={op.length}
-                      subtitle="Operators evaluated"
+                      value={opStaffCount}
+                      subtitle="Staff in register"
                       icon={BadgeOutlinedIcon}
                       color="primary"
                     />
@@ -1574,11 +1391,11 @@ export function ReportsPage() {
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
                     <ReportKpiCard
-                      label="Short / Over Sum"
-                      value={fmtRupeesCell(opShortOverSum)}
-                      subtitle="Net cash discrepancy"
+                      label="Total Short"
+                      value={fmtRupeesCell(opShortSum)}
+                      subtitle="Cash shortage (SHORT column)"
                       icon={AccountBalanceWalletOutlinedIcon}
-                      color={opShortOverSum >= 0 ? 'success' : 'secondary'}
+                      color={opShortSum <= 0.005 ? 'success' : 'secondary'}
                     />
                   </Grid>
                 </Grid>
@@ -1604,7 +1421,7 @@ export function ReportsPage() {
                         Operator Performance
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {formatDateRangeLabel(from, to)} · Sales volumes and reconciliation short/over
+                        {formatDateRangeLabel(from, to)} · Daily register by pump boy/girl (reconciliation split)
                       </Typography>
                     </Box>
                     <Button
@@ -1613,9 +1430,29 @@ export function ReportsPage() {
                       startIcon={<FileDownloadOutlinedIcon />}
                       onClick={() =>
                         downloadCsv(
-                          'employee_perf.csv',
-                          ['Operator', 'Liters', 'Amount', 'ShortOverSum'],
-                          op.map((r) => [r.operatorName, r.totalLiters, r.totalAmount, r.shortOverSum]),
+                          'operator_performance.csv',
+                          [
+                            'DATE',
+                            'PUMP BOY/GIRL',
+                            'AMOUNTS',
+                            'PAYTM',
+                            'ICICI',
+                            'FLEET CARD',
+                            'CREDIT',
+                            'SHORT',
+                            'CASH',
+                          ],
+                          op.map((r) => [
+                            r.dateLabel,
+                            r.pumpBoyGirl,
+                            r.amounts,
+                            r.paytm,
+                            r.icici,
+                            r.fleetCard,
+                            r.credit,
+                            r.short,
+                            r.cash,
+                          ]),
                         )
                       }
                       sx={{ borderRadius: 1.5, fontWeight: 600, textTransform: 'none' }}
@@ -1628,23 +1465,41 @@ export function ReportsPage() {
                   <Table
                     size="small"
                     sx={{
-                      minWidth: 640,
+                      minWidth: 920,
                       '& th, & td': { borderBottom: '1px solid', borderColor: 'divider', py: 1.25 },
                     }}
                   >
                     <TableHead>
                       <TableRow sx={tableHeadRowSx}>
-                        <TableCell>Operator</TableCell>
-                        <TableCell align="right">Liters Sold</TableCell>
-                        <TableCell align="right">Amount (₹)</TableCell>
-                        <TableCell>Short / Over (Count)</TableCell>
-                        <TableCell align="right">Short / Over (Diff ₹)</TableCell>
+                        <TableCell>Date</TableCell>
+                        <TableCell>Pump boy/girl</TableCell>
+                        <TableCell align="right" sx={opAmountCellSx}>
+                          Amounts
+                        </TableCell>
+                        <TableCell align="right" sx={opAmountCellSx}>
+                          Paytm
+                        </TableCell>
+                        <TableCell align="right" sx={opAmountCellSx}>
+                          ICICI
+                        </TableCell>
+                        <TableCell align="right" sx={opAmountCellSx}>
+                          Fleet card
+                        </TableCell>
+                        <TableCell align="right" sx={opAmountCellSx}>
+                          Credit
+                        </TableCell>
+                        <TableCell align="right" sx={opAmountCellSx}>
+                          Short
+                        </TableCell>
+                        <TableCell align="right" sx={opAmountCellSx}>
+                          Cash
+                        </TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {op.map((r, idx) => (
                         <TableRow
-                          key={r.operatorId}
+                          key={`${r.dateIso}-${r.pumpBoyGirl}-${idx}`}
                           sx={{
                             bgcolor:
                               idx % 2 === 1
@@ -1653,31 +1508,37 @@ export function ReportsPage() {
                             '&:hover': { bgcolor: (t) => alpha(t.palette.action.hover, 0.7) },
                           }}
                         >
-                          <TableCell sx={{ fontWeight: 600 }}>{r.operatorName}</TableCell>
-                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                            {r.totalLiters.toFixed(2)}
+                          <TableCell sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                            {r.dateLabel}
                           </TableCell>
-                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                            {r.totalAmount.toFixed(2)}
+                          <TableCell sx={{ fontWeight: 600 }}>{r.pumpBoyGirl}</TableCell>
+                          <TableCell align="right" sx={opAmountCellSx}>
+                            {fmtInr(r.amounts)}
                           </TableCell>
-                          <TableCell>
-                            S {r.shortOverCount.short} / O {r.shortOverCount.over} / ={' '}
-                            {r.shortOverCount.zero}
+                          <TableCell align="right" sx={opAmountCellSx}>
+                            {fmtInr(r.paytm)}
+                          </TableCell>
+                          <TableCell align="right" sx={opAmountCellSx}>
+                            {fmtInr(r.icici)}
+                          </TableCell>
+                          <TableCell align="right" sx={opAmountCellSx}>
+                            {fmtInr(r.fleetCard)}
+                          </TableCell>
+                          <TableCell align="right" sx={opAmountCellSx}>
+                            {fmtInr(r.credit)}
                           </TableCell>
                           <TableCell
                             align="right"
                             sx={{
-                              fontVariantNumeric: 'tabular-nums',
-                              fontWeight: 700,
-                              color:
-                                r.shortOverSum < 0
-                                  ? 'error.main'
-                                  : r.shortOverSum > 0
-                                    ? 'success.main'
-                                    : 'text.secondary',
+                              ...opAmountCellSx,
+                              fontWeight: r.short > 0.005 ? 700 : 400,
+                              color: r.short > 0.005 ? 'warning.dark' : 'text.secondary',
                             }}
                           >
-                            {r.shortOverSum.toFixed(2)}
+                            {fmtInr(r.short)}
+                          </TableCell>
+                          <TableCell align="right" sx={{ ...opAmountCellSx, fontWeight: 600 }}>
+                            {fmtInr(r.cash)}
                           </TableCell>
                         </TableRow>
                       ))}

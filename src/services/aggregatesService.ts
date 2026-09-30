@@ -16,8 +16,9 @@ import { listAllLedgerForBalance, listExpensesInRange } from '@/services/ledgerS
 import { listActiveUsers } from '@/services/usersService';
 import { stationOutgoCategoryKey } from '@/utils/expenseReport';
 import { isStaffPayRosterUser } from '@/utils/roles';
-import { proratedMonthlySalaryInRange } from '@/utils/staffPayGross';
 import { effectiveStaffPayMode } from '@/utils/staffPayValidation';
+import { computeStaffPaySummary, resolveBaseSalaryInr } from '@/utils/staffPaySummary';
+import { differenceInCalendarDays } from 'date-fns';
 import type { LedgerEntry, Shift, StaffPayMode } from '@/types/entities';
 import { SHIFT_LABELS } from '@/types/entities';
 import { fuelStockDisplayMeta } from '@/utils/fuelStockDisplay';
@@ -359,13 +360,17 @@ export type AttendantPayrollSummaryRow = {
   userId: string | null;
   shiftsWorked: number;
   staffPayMode: StaffPayMode | null;
-  /** Per-shift rate or full monthly salary amount for display. */
-  payAmountInr: number | null;
-  payRateLabel: '/ shift' | '/ month' | null;
+  baseSalaryInr: number | null;
+  absentDays: number;
+  allowedPaidLeaves: number;
+  totalPaidDays: number;
+  dailyRateInr: number | null;
   grossDueInr: number | null;
   salaryPaidInr: number;
   advancePaidInr: number;
-  suggestedBalanceInr: number | null;
+  /** Sum of reconciliation short amounts on shifts this staff worked (pro-rated when shared). */
+  shortAmountInr: number;
+  netBalanceInr: number | null;
 };
 
 export async function getAttendantPayrollSummaryInRange(
@@ -458,47 +463,53 @@ export async function getAttendantPayrollSummaryInRange(
     ensure(normalizeStaffNameKey(roster.displayName), roster.displayName);
   }
 
+  const shortByStaffKey = new Map<string, number>();
+  const opDaily = await getOperatorPerformanceDailyInRange(from, to);
+  for (const row of opDaily) {
+    const key = normalizeStaffNameKey(row.pumpBoyGirl);
+    shortByStaffKey.set(key, roundMoney2((shortByStaffKey.get(key) ?? 0) + row.short));
+  }
+
+  const rangeStart = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const rangeEnd = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+  const calendarDaysInRange = differenceInCalendarDays(rangeEnd, rangeStart) + 1;
+
   const out: AttendantPayrollSummaryRow[] = [];
   for (const acc of byKey.values()) {
     const salaryPaidInr = roundMoney2(acc.salaryPaidInr);
     const advancePaidInr = roundMoney2(acc.advancePaidInr);
-    const mode = acc.staffPayMode ?? 'per_shift';
-    let payAmountInr: number | null = null;
-    let payRateLabel: '/ shift' | '/ month' | null = null;
-    let grossDueInr: number | null = null;
-
-    if (mode === 'monthly') {
-      payRateLabel = '/ month';
-      if (acc.monthlySalaryInr != null) {
-        payAmountInr = acc.monthlySalaryInr;
-        grossDueInr = roundMoney2(proratedMonthlySalaryInRange(acc.monthlySalaryInr, from, to));
-      }
-    } else {
-      payRateLabel = '/ shift';
-      if (acc.shiftPayRateInr != null) {
-        payAmountInr = acc.shiftPayRateInr;
-        grossDueInr = roundMoney2(acc.shiftsWorked * acc.shiftPayRateInr);
-      }
-    }
-
-    const suggestedBalanceInr =
-      grossDueInr != null ? roundMoney2(grossDueInr - salaryPaidInr - advancePaidInr) : null;
+    const shortAmountInr = shortByStaffKey.get(normalizeStaffNameKey(acc.staffName)) ?? 0;
+    const baseSalaryInr = resolveBaseSalaryInr(acc.monthlySalaryInr, acc.shiftPayRateInr);
+    const calc = computeStaffPaySummary(
+      acc.shiftsWorked,
+      baseSalaryInr,
+      salaryPaidInr,
+      advancePaidInr,
+      shortAmountInr,
+      calendarDaysInRange,
+    );
     out.push({
       staffName: acc.staffName,
       userId: acc.userId,
       shiftsWorked: acc.shiftsWorked,
       staffPayMode: acc.staffPayMode,
-      payAmountInr,
-      payRateLabel,
-      grossDueInr,
+      baseSalaryInr: calc.baseSalaryInr,
+      absentDays: calc.absentDays,
+      allowedPaidLeaves: calc.allowedPaidLeaves,
+      totalPaidDays: calc.totalPaidDays,
+      dailyRateInr: calc.dailyRateInr,
+      grossDueInr: calc.grossDueInr,
       salaryPaidInr,
       advancePaidInr,
-      suggestedBalanceInr,
+      shortAmountInr,
+      netBalanceInr: calc.netBalanceInr,
     });
   }
 
   return out.sort((a, b) => {
-    if (b.shiftsWorked !== a.shiftsWorked) return b.shiftsWorked - a.shiftsWorked;
+    const balA = a.netBalanceInr ?? -Infinity;
+    const balB = b.netBalanceInr ?? -Infinity;
+    if (balB !== balA) return balB - balA;
     return a.staffName.localeCompare(b.staffName, undefined, { sensitivity: 'base' });
   });
 }
@@ -671,59 +682,189 @@ export async function getDailySalesFuelPivot(from: Date, to: Date): Promise<Dail
   return out;
 }
 
-export type OperatorPerf = {
-  operatorId: string;
-  operatorName: string;
+/** One row per pump day × pump boy/girl — matches legacy Excel operator sheet columns. */
+export type OperatorPerformanceDailyRow = {
+  dateIso: string;
+  /** DD-MM-YYYY */
+  dateLabel: string;
+  pumpBoyGirl: string;
   totalLiters: number;
-  totalAmount: number;
-  shortOverCount: { short: number; over: number; zero: number };
-  shortOverSum: number;
+  amounts: number;
+  paytm: number;
+  icici: number;
+  fleetCard: number;
+  credit: number;
+  short: number;
+  cash: number;
 };
 
-export async function getOperatorPerformanceInRange(
+async function machineSalesByShift(
+  shiftId: string,
+): Promise<Map<string, { liters: number; amount: number }>> {
+  const readings = await listReadingsForShift(shiftId);
+  const map = new Map<string, { liters: number; amount: number }>();
+  for (const r of readings) {
+    const nozzle = await getNozzle(r.nozzleId);
+    const m = (nozzle?.machineNumber ?? '').trim().replace(/^M/i, '') || 'unknown';
+    const cur = map.get(m) ?? { liters: 0, amount: 0 };
+    cur.liters += Number(r.finalSalesLiters ?? 0);
+    cur.amount += Number(r.totalAmount ?? 0);
+    map.set(m, cur);
+  }
+  return map;
+}
+
+function attendantsOnShift(
+  sh: Shift,
+  posts: ReturnType<typeof parseAttendantPosts>,
+): { key: string; display: string }[] {
+  const seen = new Set<string>();
+  const out: { key: string; display: string }[] = [];
+  const add = (display: string) => {
+    const d = display.trim().replace(/\s+/g, ' ');
+    if (!d) return;
+    const key = normalizeStaffNameKey(d);
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ key, display: d });
+  };
+  if (posts.length > 0) {
+    for (const p of posts) add(p.name);
+    return out;
+  }
+  for (const nm of parsePumpAttendants(sh.pumpAttendants ?? '')) add(nm);
+  return out;
+}
+
+/**
+ * Daily operator / pump-staff performance with payment-mode columns from shift reconciliation.
+ * Rows are grouped by pump day and attendant name (same shape as the Excel register).
+ */
+export async function getOperatorPerformanceDailyInRange(
   from: Date,
   to: Date,
-): Promise<OperatorPerf[]> {
+): Promise<OperatorPerformanceDailyRow[]> {
   const fromD = startOfDay(from);
   const toD = endOfDay(to);
   const closed = await listClosedShiftsByPumpDayRange(fromD, toD);
-  const byOp = new Map<string, OperatorPerf>();
+  const byRow = new Map<string, OperatorPerformanceDailyRow>();
+
+  const ensure = (dateIso: string, displayName: string): OperatorPerformanceDailyRow => {
+    const rowKey = `${dateIso}|${normalizeStaffNameKey(displayName)}`;
+    let acc = byRow.get(rowKey);
+    if (!acc) {
+      acc = {
+        dateIso,
+        dateLabel: formatDateDdMmYyyy(new Date(`${dateIso}T12:00:00`)),
+        pumpBoyGirl: displayName,
+        totalLiters: 0,
+        amounts: 0,
+        paytm: 0,
+        icici: 0,
+        fleetCard: 0,
+        credit: 0,
+        short: 0,
+        cash: 0,
+      };
+      byRow.set(rowKey, acc);
+    }
+    return acc;
+  };
 
   for (const sh of closed) {
-    const u = await getUser(sh.operatorId);
-    const name = u?.name ?? sh.operatorId;
-    let p = byOp.get(sh.operatorId);
-    if (!p) {
-      p = {
-        operatorId: sh.operatorId,
-        operatorName: name,
-        totalLiters: 0,
-        totalAmount: 0,
-        shortOverCount: { short: 0, over: 0, zero: 0 },
-        shortOverSum: 0,
-      };
-      byOp.set(sh.operatorId, p);
+    const dateIso = shiftPumpDayIso(sh);
+    const posts = parseAttendantPosts(sh.attendantPosts);
+    let attendants = attendantsOnShift(sh, posts);
+    if (attendants.length === 0) {
+      const u = await getUser(sh.operatorId);
+      const display = u?.name ?? sh.operatorId;
+      attendants = [{ key: normalizeStaffNameKey(display), display }];
     }
-    p.operatorName = name;
-    const readings = await listReadingsForShift(sh.id);
-    for (const r of readings) {
-      p.totalLiters += r.finalSalesLiters;
-      p.totalAmount += r.totalAmount;
+
+    for (const a of attendants) ensure(dateIso, a.display);
+
+    const byMachine = await machineSalesByShift(sh.id);
+    let totalLitersShift = 0;
+    let totalAmountShift = 0;
+    for (const v of byMachine.values()) {
+      totalLitersShift += v.liters;
+      totalAmountShift += v.amount;
     }
-    const recon = await getReconciliationForShift(sh.id);
-    if (recon) {
-      const d = recon.difference;
-      p.shortOverSum += d;
-      if (d < 0) {
-        p.shortOverCount.short += 1;
-      } else if (d > 0) {
-        p.shortOverCount.over += 1;
-      } else {
-        p.shortOverCount.zero += 1;
+
+    const litersByKey = new Map<string, number>();
+    const weightByKey = new Map<string, number>();
+
+    if (posts.length > 0) {
+      for (const post of posts) {
+        const m = post.machineNumber.trim().replace(/^M/i, '');
+        const ms = byMachine.get(m) ?? { liters: 0, amount: 0 };
+        const k = normalizeStaffNameKey(post.name);
+        litersByKey.set(k, (litersByKey.get(k) ?? 0) + ms.liters);
+        weightByKey.set(k, (weightByKey.get(k) ?? 0) + ms.amount);
+      }
+    } else {
+      const n = attendants.length || 1;
+      const perLit = totalLitersShift / n;
+      const perAmt = totalAmountShift / n;
+      for (const a of attendants) {
+        litersByKey.set(a.key, (litersByKey.get(a.key) ?? 0) + perLit);
+        weightByKey.set(a.key, (weightByKey.get(a.key) ?? 0) + perAmt);
       }
     }
+
+    const recon = await getReconciliationForShift(sh.id);
+    const amountsBase = recon?.totalSalesAmount ?? totalAmountShift;
+    const paytm = recon?.paytmOnline ?? 0;
+    const icici = recon?.iciciCard ?? 0;
+    const fleet = recon?.fleetCard ?? 0;
+    const credit = recon?.creditAmount ?? 0;
+    const short = recon?.shortAmount ?? 0;
+    const cash = recon?.cashAmount ?? 0;
+
+    const weightSum = [...weightByKey.values()].reduce((s, v) => s + v, 0);
+    const n = attendants.length || 1;
+
+    for (const a of attendants) {
+      const acc = ensure(dateIso, a.display);
+      acc.totalLiters += litersByKey.get(a.key) ?? 0;
+      const ratio = weightSum > 0.005 ? (weightByKey.get(a.key) ?? 0) / weightSum : 1 / n;
+      acc.amounts += amountsBase * ratio;
+      acc.paytm += paytm * ratio;
+      acc.icici += icici * ratio;
+      acc.fleetCard += fleet * ratio;
+      acc.credit += credit * ratio;
+      acc.short += short * ratio;
+      acc.cash += cash * ratio;
+    }
   }
-  return Array.from(byOp.values());
+
+  const rows = Array.from(byRow.values()).map((r) => ({
+    ...r,
+    totalLiters: roundMoney2(r.totalLiters),
+    amounts: roundMoney2(r.amounts),
+    paytm: roundMoney2(r.paytm),
+    icici: roundMoney2(r.icici),
+    fleetCard: roundMoney2(r.fleetCard),
+    credit: roundMoney2(r.credit),
+    short: roundMoney2(r.short),
+    cash: roundMoney2(r.cash),
+  }));
+
+  rows.sort((a, b) => {
+    const byDay = a.dateIso.localeCompare(b.dateIso);
+    if (byDay !== 0) return byDay;
+    return a.pumpBoyGirl.localeCompare(b.pumpBoyGirl, undefined, { sensitivity: 'base' });
+  });
+
+  return rows;
+}
+
+/** @deprecated Use getOperatorPerformanceDailyInRange — kept as alias for older imports. */
+export async function getOperatorPerformanceInRange(
+  from: Date,
+  to: Date,
+): Promise<OperatorPerformanceDailyRow[]> {
+  return getOperatorPerformanceDailyInRange(from, to);
 }
 
 const SALES_EPS = 0.01;

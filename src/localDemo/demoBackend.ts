@@ -33,7 +33,7 @@ import {
   creditPaymentModeLabel,
   creditPaymentModeLedgerChannel,
   normalizeCreditPaymentMode,
-  parseLedgerPaymentChannel,
+  resolveLedgerPaymentChannel,
 } from '@/types/entities';
 import { parseUserRole } from '@/utils/roles';
 import { parseAttendantPosts } from '@/utils/attendantPosts';
@@ -1695,7 +1695,7 @@ function mapLed(id: string, e: StoredLedger): LedgerEntry {
     id,
     date: Timestamp.fromMillis(e.dateMs),
     type: (e.type as LedgerType) ?? 'expense',
-    paymentChannel: parseLedgerPaymentChannel(e.paymentChannel),
+    paymentChannel: resolveLedgerPaymentChannel(e.paymentChannel),
     paidToOrReceivedFrom: e.paidToOrReceivedFrom,
     particulars: e.particulars,
     category: e.category,
@@ -1980,10 +1980,35 @@ export async function demoListLubricantSales(
   return sales.sort((a, b) => b.recordedAt.toMillis() - a.recordedAt.toMillis());
 }
 
+const LEDGER_LIST_SETTINGS_KEY = 'pumpstock-ledger-list-settings-v1';
+
+export function demoGetLedgerListSettings(): import('@/utils/ledgerListDefaults').LedgerListSettings | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LEDGER_LIST_SETTINGS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as import('@/utils/ledgerListDefaults').LedgerListSettings;
+  } catch {
+    return null;
+  }
+}
+
+export function demoSaveLedgerListSettings(
+  settings: import('@/utils/ledgerListDefaults').LedgerListSettings,
+): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(LEDGER_LIST_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function demoResetStores(): void {
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(TANK_STOCK_CLEAN_FLAG);
+    localStorage.removeItem(LEDGER_LIST_SETTINGS_KEY);
   }
   seed();
   persist();
