@@ -209,7 +209,7 @@ export function OwnerOverviewKpis({ pumpDayIso }: Props) {
           label="Today's sales"
           value={fmtInrCompact(sales, 0)}
           to={withPumpDayQuery('/owner/shift-sales', pumpDayIso)}
-          hint="Meter sales · View shifts →"
+          hint={sales <= 0.005 ? 'No sales recorded yet' : 'Meter sales · View shifts →'}
           icon={TrendingUpOutlinedIcon}
           tone="primary"
         />
@@ -221,7 +221,7 @@ export function OwnerOverviewKpis({ pumpDayIso }: Props) {
           label="Today's collection"
           value={fmtInrCompact(collection, 2)}
           to={withPumpDayQuery('/manager/daily-sheet', pumpDayIso)}
-          hint="All payment modes"
+          hint={collection <= 0.005 ? 'No collections recorded yet' : 'All payment modes'}
           icon={AccountBalanceWalletOutlinedIcon}
           tone="success"
         />

@@ -8,6 +8,12 @@ type Props = {
   maxIso: string;
   minIso?: string;
   onDateIsoChange: (iso: string) => void;
+  /** Upper caption above the date label. Default: Pump day */
+  caption?: string;
+  /** Smaller padding and typography for nested panels */
+  compact?: boolean;
+  /** Hide the upper caption (e.g. snapshot shows only the date) */
+  hideCaption?: boolean;
 };
 
 function openNativeDatePicker(input: HTMLInputElement) {
@@ -23,7 +29,16 @@ function openNativeDatePicker(input: HTMLInputElement) {
   input.click();
 }
 
-export function PumpDayPicker({ label, dateIso, maxIso, minIso, onDateIsoChange }: Props) {
+export function PumpDayPicker({
+  label,
+  dateIso,
+  maxIso,
+  minIso,
+  onDateIsoChange,
+  caption = 'Pump day',
+  compact = false,
+  hideCaption = false,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const triggerPicker = () => {
@@ -51,8 +66,8 @@ export function PumpDayPicker({ label, dateIso, maxIso, minIso, onDateIsoChange 
         display: 'inline-flex',
         alignItems: 'center',
         gap: 1,
-        px: 1.25,
-        py: 0.625,
+        px: compact ? 1 : 1.25,
+        py: compact ? 0.45 : 0.625,
         borderRadius: 1.5,
         border: '1px solid',
         borderColor: 'divider',
@@ -85,25 +100,29 @@ export function PumpDayPicker({ label, dateIso, maxIso, minIso, onDateIsoChange 
       }}
     >
       <Box sx={{ minWidth: 0, pointerEvents: 'none' }}>
-        <Typography
-          variant="caption"
-          sx={{
-            fontSize: '0.62rem',
-            fontWeight: 800,
-            color: 'text.secondary',
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            display: 'block',
-            lineHeight: 1,
-          }}
-        >
-          Pump day
-        </Typography>
+        {!hideCaption ? (
+          <Typography
+            variant="caption"
+            sx={{
+              fontSize: '0.62rem',
+              fontWeight: 800,
+              color: 'text.secondary',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              display: 'block',
+              lineHeight: 1,
+            }}
+          >
+            {caption}
+          </Typography>
+        ) : null}
         <Typography
           variant="body2"
           sx={{
             fontWeight: 700,
-            fontSize: { xs: '0.85rem', sm: '0.9rem' },
+            fontSize: compact
+              ? { xs: '0.78rem', sm: '0.82rem' }
+              : { xs: '0.85rem', sm: '0.9rem' },
             lineHeight: 1.25,
             mt: 0.25,
             color: 'text.primary',
@@ -115,7 +134,7 @@ export function PumpDayPicker({ label, dateIso, maxIso, minIso, onDateIsoChange 
       <CalendarMonthOutlinedIcon
         className="PumpDayPicker-icon"
         sx={{
-          fontSize: 20,
+          fontSize: compact ? 17 : 20,
           color: 'primary.main',
           ml: 0.25,
           flexShrink: 0,

@@ -12,13 +12,16 @@ import {
 import { getCashBankCollectionSummary } from '@/services/collectionSummaryService';
 import { getShiftStatusForPumpDay } from '@/services/shiftStatusService';
 import { getFuelStockOverview } from '@/services/fuelStockService';
-import { getTankStockDaySummary } from '@/services/fuelStockReconciliationService';
+import { getPumpDayOpeningVariationByFuel } from '@/services/pumpDayDipVariationService';
 import { SHIFT_STATUS_UPDATED_EVENT } from '@/utils/shiftStatusDisplay';
 import { SHIFT_SALES_UPDATED_EVENT } from '@/utils/shiftSalesDisplay';
 import { FUEL_STOCK_UPDATED_EVENT } from '@/utils/fuelStockDisplay';
-import { VARIATION_ALERT_LITERS } from '@/utils/fuelStockConstants';
 import { withPumpDayQuery } from '@/utils/dateEntryPolicy';
 import { fmtInrCompact } from '@/components/dashboard/owner/ownerPanelStyles';
+import {
+  collectFuelVariationAlerts,
+  fuelVariationReportPath,
+} from '@/components/dashboard/owner/ownerFuelVariation';
 
 export type ActionItem = {
   id: string;
@@ -42,13 +45,13 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
     setLoading(true);
     const next: ActionItem[] = [];
     try {
-      const [sales, collection, credit, shiftStatus, stockOverview, tankDay] = await Promise.all([
+      const [sales, collection, credit, shiftStatus, stockOverview, variationRows] = await Promise.all([
         getPumpDaySalesOverview(pumpDayIso),
         getCashBankCollectionSummary(pumpDayIso, pumpDayIso),
         getOverdueCreditSummary(),
         getShiftStatusForPumpDay(pumpDayIso),
         getFuelStockOverview(),
-        getTankStockDaySummary(pumpDayIso).catch(() => null),
+        getPumpDayOpeningVariationByFuel(pumpDayIso).catch(() => []),
       ]);
 
       if (sales.shortageAmount > 0.005) {
@@ -119,19 +122,16 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
         });
       }
 
-      if (tankDay) {
-        for (const row of tankDay.rows) {
-          if (row.variationAlert && row.variationLiters != null && Math.abs(row.variationLiters) >= VARIATION_ALERT_LITERS) {
-            next.push({
-              id: `var-${row.shortCode}`,
-              title: `${row.shortCode} dip variation`,
-              detail: `${row.variationLiters > 0 ? '+' : ''}${row.variationLiters.toLocaleString('en-IN')} L variance`,
-              actionText: 'View dip →',
-              to: withPumpDayQuery('/manager/fuel-stock/daily', pumpDayIso),
-              severity: 'warning',
-            });
-          }
-        }
+      const variationAlerts = collectFuelVariationAlerts(variationRows);
+      if (variationAlerts.length > 0) {
+        next.unshift({
+          id: 'fuel-variation',
+          title: 'Fuel variation detected',
+          detail: variationAlerts.map((v) => v.label).join(' • '),
+          actionText: 'View Variation →',
+          to: fuelVariationReportPath(pumpDayIso),
+          severity: 'error',
+        });
       }
     } catch {
       /* empty */

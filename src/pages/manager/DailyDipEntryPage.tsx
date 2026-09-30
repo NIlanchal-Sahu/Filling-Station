@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 
 import {
@@ -223,6 +223,29 @@ export function DailyDipEntryPage() {
       setPumpDayIso(clampEntryDateForRole(profile?.role, recalled));
     }
   }, [searchParams, profile?.role]);
+
+  const registerSectionRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const fuel = searchParams.get('fuel')?.trim().toUpperCase();
+    if (fuel === 'MS' || fuel === 'HSD' || fuel === 'XP') {
+      setRegisterTab(fuel);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get('view') !== 'register') {
+      return;
+    }
+    const el = registerSectionRef.current;
+    if (!el) {
+      return;
+    }
+    const id = window.setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, loading ? 400 : 80);
+    return () => window.clearTimeout(id);
+  }, [searchParams, loading, registerTab]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -599,7 +622,13 @@ export function DailyDipEntryPage() {
 
       <Divider sx={{ my: 1 }} />
 
-      <Paper component="section" variant="outlined" sx={{ borderRadius: 2, p: { xs: 2, sm: 2.5 } }}>
+      <Paper
+        ref={registerSectionRef}
+        component="section"
+        id="daily-dip-register"
+        variant="outlined"
+        sx={{ borderRadius: 2, p: { xs: 2, sm: 2.5 } }}
+      >
         <Stack
           direction="row"
           spacing={1.5}

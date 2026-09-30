@@ -11,17 +11,43 @@ import {
 } from '@/services/aggregatesService';
 import { resolveSalesByFuelRange } from '@/utils/fuelSalesChartDisplay';
 import { fmtInrCompact } from '@/components/dashboard/owner/ownerPanelStyles';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 type PeriodRow = { label: string; amount: number };
 
-const TREND_CHART_INNER_PX = 56;
+const CHART_PLOT_HEIGHT = { xs: 92, sm: 108 };
+/** Max bar height inside plot area (proportional to maxTrend). */
+const TREND_BAR_SCALE_PX = 76;
+const ZERO_BAR_PX = 5;
+const MIN_POSITIVE_BAR_PX = 8;
 
 type Props = {
   pumpDayIso: string;
 };
 
+function TrendChartTooltip({ dateLabel, amount }: { dateLabel: string; amount: number }) {
+  const heading = dateLabel.replace('-', ' ');
+  return (
+    <Stack spacing={0.25} sx={{ py: 0.25, px: 0.5, minWidth: 112, textAlign: 'center' }}>
+      <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.02em', color: 'common.white' }}>
+        {heading}
+      </Typography>
+      <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'grey.300', fontWeight: 600 }}>
+        Sales
+      </Typography>
+      <Typography
+        variant="body2"
+        sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'common.white', lineHeight: 1.3 }}
+      >
+        {fmtInrCompact(amount, 0)}
+      </Typography>
+    </Stack>
+  );
+}
+
 export function OwnerBusinessPerformance({ pumpDayIso }: Props) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const [loading, setLoading] = useState(true);
   const [periods, setPeriods] = useState<PeriodRow[]>([]);
   const [trend, setTrend] = useState<{ label: string; amount: number }[]>([]);
@@ -64,56 +90,50 @@ export function OwnerBusinessPerformance({ pumpDayIso }: Props) {
   const todayAmount = periods.find((p) => p.label === 'Today')?.amount ?? 0;
   const yesterdayAmount = periods.find((p) => p.label === 'Yesterday')?.amount ?? 0;
 
-  // Real comparison calculation only if yesterday had positive sales
   const vsYesterdayPct = useMemo(() => {
     if (yesterdayAmount <= 0) return null;
     const diff = todayAmount - yesterdayAmount;
     return (diff / yesterdayAmount) * 100;
   }, [todayAmount, yesterdayAmount]);
 
+  const sectionPaperSx = {
+    p: { xs: 2, sm: 2.5 },
+    borderRadius: 3.5,
+    border: '1px solid',
+    borderColor: 'divider',
+    bgcolor: 'background.paper',
+    boxShadow: (t: typeof theme) =>
+      t.palette.mode === 'dark'
+        ? '0 4px 24px rgba(0,0,0,0.35)'
+        : '0 4px 20px rgba(15, 23, 42, 0.06)',
+  } as const;
+
   if (loading) {
     return (
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2,
-          borderRadius: 3.5,
-          border: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-          minHeight: 180,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
+      <Paper elevation={0} sx={{ ...sectionPaperSx, minHeight: 180, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <CircularProgress size={24} />
       </Paper>
     );
   }
 
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: { xs: 2, sm: 2.25 },
-        borderRadius: 3.5,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'background.paper',
-        boxShadow: (t) =>
-          t.palette.mode === 'dark' ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.03)',
-      }}
-    >
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+    <Paper elevation={0} sx={sectionPaperSx}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ mb: { xs: 1.75, sm: 2 }, gap: 1 }}
+      >
         <Typography
           variant="caption"
+          component="h2"
           sx={{
             fontWeight: 800,
             textTransform: 'uppercase',
-            letterSpacing: '0.06em',
+            letterSpacing: '0.1em',
             color: 'text.secondary',
-            fontSize: '0.68rem',
+            fontSize: { xs: '0.7rem', sm: '0.72rem' },
+            lineHeight: 1.2,
           }}
         >
           BUSINESS PERFORMANCE
@@ -123,38 +143,48 @@ export function OwnerBusinessPerformance({ pumpDayIso }: Props) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 28,
-            height: 28,
+            width: 32,
+            height: 32,
             borderRadius: 2,
-            bgcolor: (t) => alpha(t.palette.primary.main, 0.08),
+            flexShrink: 0,
+            bgcolor: (t) => alpha(t.palette.primary.main, 0.1),
             color: 'primary.main',
+            border: '1px solid',
+            borderColor: (t) => alpha(t.palette.primary.main, 0.18),
           }}
         >
-          <BarChartOutlinedIcon sx={{ fontSize: 16 }} />
+          <BarChartOutlinedIcon sx={{ fontSize: 17 }} />
         </Box>
       </Stack>
 
-      {/* 4 Periods Grid */}
       <Box
         sx={{
           display: 'grid',
           gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' },
-          gap: 1.25,
-          mb: 2,
+          gap: { xs: 1.25, sm: 1.5 },
+          mb: { xs: 1.75, sm: 2 },
         }}
       >
         {periods.map((p) => {
           const isToday = p.label === 'Today';
+          const comparisonUp = vsYesterdayPct != null && vsYesterdayPct >= 0;
+          const comparisonColor = comparisonUp ? 'success.main' : 'error.main';
+
           return (
             <Box
               key={p.label}
               sx={{
-                p: 1.25,
-                borderRadius: 2,
+                p: { xs: 1.35, sm: 1.5 },
+                minHeight: { xs: 88, sm: 96 },
+                display: 'flex',
+                flexDirection: 'column',
+                borderRadius: '15px',
                 bgcolor: (t) =>
-                  t.palette.mode === 'dark' ? alpha(t.palette.common.white, 0.04) : '#f8fafc',
+                  t.palette.mode === 'dark' ? alpha(t.palette.common.white, 0.04) : '#f9fafb',
                 border: '1px solid',
-                borderColor: 'divider',
+                borderColor: (t) => alpha(t.palette.divider, t.palette.mode === 'dark' ? 0.55 : 1),
+                boxShadow: (t) =>
+                  t.palette.mode === 'dark' ? 'none' : '0 1px 3px rgba(15, 23, 42, 0.04)',
               }}
             >
               <Typography
@@ -162,8 +192,10 @@ export function OwnerBusinessPerformance({ pumpDayIso }: Props) {
                 sx={{
                   color: 'text.secondary',
                   fontWeight: 600,
-                  fontSize: '0.72rem',
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.02em',
                   display: 'block',
+                  mb: 0.5,
                 }}
               >
                 {p.label}
@@ -173,49 +205,73 @@ export function OwnerBusinessPerformance({ pumpDayIso }: Props) {
                 sx={{
                   fontWeight: 800,
                   fontVariantNumeric: 'tabular-nums',
-                  fontSize: { xs: '1rem', sm: '1.1rem' },
-                  lineHeight: 1.25,
-                  mt: 0.25,
+                  fontSize: { xs: '1.05rem', sm: '1.2rem' },
+                  lineHeight: 1.15,
+                  letterSpacing: '-0.02em',
+                  color: 'text.primary',
+                  flex: '0 0 auto',
                 }}
               >
                 {fmtInrCompact(p.amount, 0)}
               </Typography>
+              <Box sx={{ flex: 1, minHeight: 4 }} />
               {isToday && vsYesterdayPct != null ? (
-                <Stack direction="row" alignItems="center" spacing={0.25} sx={{ mt: 0.5 }}>
-                  {vsYesterdayPct >= 0 ? (
-                    <TrendingUpIcon sx={{ fontSize: 13, color: 'success.main' }} />
+                <Box
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    alignSelf: 'flex-start',
+                    gap: 0.35,
+                    mt: 'auto',
+                    px: 0.85,
+                    py: 0.35,
+                    borderRadius: 999,
+                    bgcolor: (t) => alpha(t.palette[comparisonUp ? 'success' : 'error'].main, 0.08),
+                    border: '1px solid',
+                    borderColor: (t) => alpha(t.palette[comparisonUp ? 'success' : 'error'].main, 0.22),
+                  }}
+                >
+                  {comparisonUp ? (
+                    <TrendingUpIcon sx={{ fontSize: 14, color: comparisonColor }} />
                   ) : (
-                    <TrendingDownIcon sx={{ fontSize: 13, color: 'error.main' }} />
+                    <TrendingDownIcon sx={{ fontSize: 14, color: comparisonColor }} />
                   )}
                   <Typography
                     variant="caption"
                     sx={{
                       fontWeight: 700,
-                      fontSize: '0.68rem',
-                      color: vsYesterdayPct >= 0 ? 'success.main' : 'error.main',
+                      fontSize: '0.65rem',
+                      color: comparisonColor,
+                      fontVariantNumeric: 'tabular-nums',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    {vsYesterdayPct >= 0 ? '↑' : '↓'} {Math.abs(vsYesterdayPct).toFixed(1)}% vs y'day
+                    {comparisonUp ? '↑' : '↓'} {Math.abs(vsYesterdayPct).toFixed(1)}% vs y'day
                   </Typography>
-                </Stack>
+                </Box>
               ) : null}
             </Box>
           );
         })}
       </Box>
 
-      {/* 7-day sales chart or compact empty state */}
-      <Box sx={{ pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+      <Box
+        sx={{
+          pt: { xs: 1.25, sm: 1.5 },
+          borderTop: '1px solid',
+          borderColor: (t) => alpha(t.palette.divider, 0.85),
+        }}
+      >
         <Typography
           variant="caption"
           sx={{
-            fontWeight: 700,
-            letterSpacing: '0.05em',
+            fontWeight: 800,
+            letterSpacing: '0.08em',
             color: 'text.secondary',
             fontSize: '0.65rem',
             textTransform: 'uppercase',
             display: 'block',
-            mb: 1,
+            mb: { xs: 1.25, sm: 1.5 },
           }}
         >
           SALES TREND (7 DAYS)
@@ -224,11 +280,11 @@ export function OwnerBusinessPerformance({ pumpDayIso }: Props) {
         {!hasTrendData ? (
           <Box
             sx={{
-              py: 2,
+              py: 2.25,
               px: 1.5,
-              borderRadius: 2,
+              borderRadius: '15px',
               bgcolor: (t) =>
-                t.palette.mode === 'dark' ? alpha(t.palette.common.white, 0.04) : '#f8fafc',
+                t.palette.mode === 'dark' ? alpha(t.palette.common.white, 0.04) : '#f9fafb',
               border: '1px solid',
               borderColor: 'divider',
               textAlign: 'center',
@@ -239,65 +295,126 @@ export function OwnerBusinessPerformance({ pumpDayIso }: Props) {
             </Typography>
           </Box>
         ) : (
-          <Stack
-            direction="row"
-            alignItems="flex-end"
-            spacing={0.75}
-            sx={{
-              height: { xs: 56, sm: 64 },
-              px: 0.5,
-            }}
-          >
-            {trend.map((bar) => {
-              const barPx =
-                bar.amount > 0
-                  ? Math.max(6, Math.round((bar.amount / maxTrend) * TREND_CHART_INNER_PX))
-                  : 4;
-              return (
-                <Stack key={bar.label} alignItems="center" sx={{ flex: 1, minWidth: 0, height: '100%' }}>
-                  <Box
-                    sx={{
-                      flex: 1,
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'flex-end',
-                      justifyContent: 'center',
-                      minHeight: 0,
-                    }}
-                  >
-                    <Tooltip
-                      title={`${bar.label}: ${fmtInrCompact(bar.amount, 0)}`}
-                      arrow
-                      placement="top"
-                    >
+          <Box sx={{ px: { xs: 0.25, sm: 0.5 } }}>
+            <Box
+              sx={{
+                position: 'relative',
+                height: CHART_PLOT_HEIGHT,
+                display: 'flex',
+                alignItems: 'flex-end',
+                borderBottom: '2px solid',
+                borderColor: (t) => alpha(t.palette.divider, 0.9),
+                pb: 0,
+              }}
+            >
+              <Stack
+                direction="row"
+                alignItems="flex-end"
+                spacing={{ xs: 0.5, sm: 0.75 }}
+                sx={{ width: '100%', height: '100%' }}
+              >
+                {trend.map((bar, index) => {
+                  const barPx =
+                    bar.amount > 0
+                      ? Math.max(
+                          MIN_POSITIVE_BAR_PX,
+                          Math.round((bar.amount / maxTrend) * TREND_BAR_SCALE_PX),
+                        )
+                      : ZERO_BAR_PX;
+                  const isPeak = bar.amount > 0 && bar.amount === maxTrend;
+
+                  return (
+                    <Stack key={bar.label} alignItems="center" sx={{ flex: 1, minWidth: 0, height: '100%' }}>
                       <Box
                         sx={{
-                          width: '75%',
-                          maxWidth: 28,
-                          height: barPx,
-                          borderRadius: '4px 4px 1px 1px',
-                          bgcolor: bar.amount > 0 ? 'primary.main' : alpha(theme.palette.divider, 0.9),
-                          transition: 'height 0.2s ease, opacity 0.15s ease',
-                          cursor: 'pointer',
-                          '&:hover': {
-                            bgcolor: 'primary.dark',
-                          },
+                          flex: 1,
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'flex-end',
+                          justifyContent: 'center',
+                          minHeight: 0,
                         }}
-                      />
-                    </Tooltip>
-                  </Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ fontSize: '0.65rem', mt: 0.5, maxWidth: '100%', fontVariantNumeric: 'tabular-nums' }}
-                    noWrap
-                  >
-                    {bar.label}
-                  </Typography>
-                </Stack>
-              );
-            })}
-          </Stack>
+                      >
+                        <Tooltip
+                          title={<TrendChartTooltip dateLabel={bar.label} amount={bar.amount} />}
+                          arrow
+                          placement="top"
+                          enterTouchDelay={0}
+                          slotProps={{
+                            tooltip: {
+                              sx: {
+                                bgcolor: 'grey.900',
+                                borderRadius: 2,
+                                px: 1.25,
+                                py: 1,
+                                boxShadow: '0 8px 24px rgba(15, 23, 42, 0.28)',
+                                '& .MuiTooltip-arrow': { color: 'grey.900' },
+                              },
+                            },
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              width: { xs: '68%', sm: '72%' },
+                              maxWidth: 36,
+                              height: barPx,
+                              borderRadius: '8px 8px 3px 3px',
+                              bgcolor:
+                                bar.amount > 0
+                                  ? isPeak
+                                    ? 'primary.main'
+                                    : alpha(theme.palette.primary.main, 0.82)
+                                  : alpha(theme.palette.text.primary, 0.12),
+                              cursor: 'pointer',
+                              transformOrigin: 'bottom center',
+                              transition: 'background-color 0.18s ease, transform 0.18s ease',
+                              animation: reducedMotion
+                                ? 'none'
+                                : `ownerTrendBarGrow 0.5s cubic-bezier(0.22, 1, 0.36, 1) ${index * 0.05}s both`,
+                              '@keyframes ownerTrendBarGrow': {
+                                from: { transform: 'scaleY(0)', opacity: 0.35 },
+                                to: { transform: 'scaleY(1)', opacity: 1 },
+                              },
+                              '&:hover': {
+                                bgcolor: bar.amount > 0 ? 'primary.dark' : alpha(theme.palette.text.primary, 0.2),
+                                transform: bar.amount > 0 ? 'scaleY(1.03)' : 'none',
+                              },
+                            }}
+                          />
+                        </Tooltip>
+                      </Box>
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            </Box>
+
+            <Stack
+              direction="row"
+              spacing={{ xs: 0.5, sm: 0.75 }}
+              sx={{ mt: 1, width: '100%' }}
+            >
+              {trend.map((bar) => (
+                <Typography
+                  key={`${bar.label}-axis`}
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    textAlign: 'center',
+                    fontSize: { xs: '0.62rem', sm: '0.68rem' },
+                    fontWeight: 600,
+                    fontVariantNumeric: 'tabular-nums',
+                    letterSpacing: '0.01em',
+                  }}
+                  noWrap
+                >
+                  {bar.label}
+                </Typography>
+              ))}
+            </Stack>
+          </Box>
         )}
       </Box>
     </Paper>

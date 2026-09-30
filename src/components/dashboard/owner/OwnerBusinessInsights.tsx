@@ -8,7 +8,11 @@ import {
   getOverdueCreditSummary,
   getPumpDaySalesOverview,
 } from '@/services/aggregatesService';
+import { getPumpDayOpeningVariationByFuel } from '@/services/pumpDayDipVariationService';
+import { listExpensesInRange } from '@/services/ledgerService';
+import { buildExpenseReportRows, expenseGrandTotal } from '@/utils/expenseReport';
 import { fmtInrCompact } from '@/components/dashboard/owner/ownerPanelStyles';
+import { collectFuelVariationAlerts } from '@/components/dashboard/owner/ownerFuelVariation';
 
 type InsightType = 'error' | 'warning' | 'info' | 'success';
 
@@ -43,14 +47,35 @@ export function OwnerBusinessInsights({ pumpDayIso }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [coll, credit, shifts, sales] = await Promise.all([
+      const dayFrom = new Date(`${pumpDayIso}T00:00:00`);
+      const dayTo = new Date(`${pumpDayIso}T23:59:59.999`);
+      const [coll, credit, shifts, sales, variationRows, expenseEntries] = await Promise.all([
         getCashBankCollectionSummary(pumpDayIso, pumpDayIso),
         getOverdueCreditSummary(),
         getShiftStatusForPumpDay(pumpDayIso),
         getPumpDaySalesOverview(pumpDayIso),
+        getPumpDayOpeningVariationByFuel(pumpDayIso).catch(() => []),
+        listExpensesInRange(dayFrom, dayTo),
       ]);
 
       const items: InsightItem[] = [];
+      const variationAlerts = collectFuelVariationAlerts(variationRows);
+      if (variationAlerts.length > 0) {
+        items.push({
+          id: 'fuel-variation',
+          type: 'error',
+          text: `Fuel variation: ${variationAlerts.map((v) => v.label.replace(': ', ' ')).join(', ')} — review dip reconciliation`,
+        });
+      }
+
+      const todayExpenses = expenseGrandTotal(buildExpenseReportRows(expenseEntries));
+      if (todayExpenses > 0.005) {
+        items.push({
+          id: 'expenses-today',
+          type: 'info',
+          text: `Today's expenses: ${fmtInrCompact(todayExpenses, 0)}`,
+        });
+      }
 
       // 1. Critical credit alerts
       if (credit.overdueCount > 0) {

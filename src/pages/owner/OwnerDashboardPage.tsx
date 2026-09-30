@@ -1,12 +1,12 @@
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import { Stack } from '@mui/material';
-import Grid from '@mui/material/Grid2';
 import { format, isSameDay } from 'date-fns';
 import { OwnerDashboardHeader } from '@/components/dashboard/owner/OwnerDashboardHeader';
 import { OwnerOverviewKpis } from '@/components/dashboard/owner/OwnerOverviewKpis';
 import { OwnerAttentionRequired } from '@/components/dashboard/owner/OwnerAttentionRequired';
 import { OwnerCreditAttention } from '@/components/dashboard/owner/OwnerCreditAttention';
 import { OwnerBusinessPerformance } from '@/components/dashboard/owner/OwnerBusinessPerformance';
+import { OwnerFinancialSnapshot } from '@/components/dashboard/owner/OwnerFinancialSnapshot';
 import { OwnerSalesFuelSummary } from '@/components/dashboard/owner/OwnerSalesFuelSummary';
 import { OwnerCollectionsSummary } from '@/components/dashboard/owner/OwnerCollectionsSummary';
 import { OwnerFuelInventorySummary } from '@/components/dashboard/owner/OwnerFuelInventorySummary';
@@ -72,37 +72,36 @@ export function OwnerDashboardPage() {
         {/* Priority 4: Attention Required Action Center */}
         <OwnerAttentionRequired key={`attn-${reportIso}-${refreshKey}`} pumpDayIso={reportIso} />
 
-        {/* Desktop Multi-column Layout: 2-column paired grid on md+ screens */}
-        <Grid container spacing={2.5} sx={{ width: '100%', minWidth: 0 }}>
-          {/* Column 1: Performance, Sales by Fuel, Fuel & Inventory */}
-          <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <OwnerBusinessPerformance
-              key={`perf-${reportIso}-${refreshKey}`}
-              pumpDayIso={reportIso}
-            />
-            <OwnerSalesFuelSummary
-              key={`sales-fuel-${reportIso}-${refreshKey}`}
-              pumpDayIso={reportIso}
-            />
-            <OwnerFuelInventorySummary
-              key={`inventory-${reportIso}-${refreshKey}`}
-              pumpDayIso={reportIso}
-            />
-          </Grid>
+        <OwnerBusinessPerformance
+          key={`perf-${reportIso}-${refreshKey}`}
+          pumpDayIso={reportIso}
+        />
 
-          {/* Column 2: Credit Overview, Collections Breakdown, Shift Overview */}
-          <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <OwnerCreditAttention key={`credit-${refreshKey}`} />
-            <OwnerCollectionsSummary
-              key={`collections-${reportIso}-${refreshKey}`}
-              pumpDayIso={reportIso}
-            />
-            <OwnerShiftOverview
-              key={`shifts-${reportIso}-${refreshKey}`}
-              pumpDayIso={reportIso}
-            />
-          </Grid>
-        </Grid>
+        <OwnerFinancialSnapshot
+          key={`financial-${reportIso}-${refreshKey}`}
+          pumpDayIso={reportIso}
+          maxSelectableIso={maxSelectableIso}
+        />
+
+        <OwnerSalesFuelSummary
+          key={`sales-fuel-${reportIso}-${refreshKey}`}
+          pumpDayIso={reportIso}
+        />
+
+        <OwnerFuelInventorySummary
+          key={`inventory-${reportIso}-${refreshKey}`}
+          pumpDayIso={reportIso}
+          maxSelectableIso={maxSelectableIso}
+        />
+
+        <OwnerCreditAttention key={`credit-${refreshKey}`} />
+
+        <OwnerCollectionsSummary
+          key={`collections-${reportIso}-${refreshKey}`}
+          pumpDayIso={reportIso}
+        />
+
+        <OwnerShiftOverview key={`shifts-${reportIso}-${refreshKey}`} pumpDayIso={reportIso} />
 
         {/* Priority 12: Business Insights ABOVE Detailed Reports */}
         <OwnerBusinessInsights
