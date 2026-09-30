@@ -15,7 +15,6 @@ import {
 } from '@mui/material';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import { format, isSameDay } from 'date-fns';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { usePermissions } from '@/hooks/usePermissions';
 import { getShiftActivityForSlot, type ShiftMachineHolder, type ShiftStatusRow } from '@/services/shiftStatusService';
 import { parsePumpDayParam, withPumpDayQuery } from '@/utils/dateEntryPolicy';
@@ -203,7 +202,7 @@ function ShiftDetailCard(props: {
 }
 
 export function ShiftActivityPage() {
-  const { role, readOnlyOps } = usePermissions();
+  const { role } = usePermissions();
   const useScheduledTimes = role === 'admin';
   const location = useLocation();
   const nav = useNavigate();
@@ -256,7 +255,6 @@ export function ShiftActivityPage() {
 
   return (
     <Stack spacing={2.5} sx={{ pb: 4 }}>
-      {readOnlyOps ? <ReadOnlyBanner /> : null}
 
       <Paper
         elevation={0}

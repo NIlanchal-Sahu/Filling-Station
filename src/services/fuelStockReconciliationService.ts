@@ -3,7 +3,7 @@ import { addDays, format, parseISO } from 'date-fns';
 import { listReadingsForShift } from '@/services/shiftReadingsService';
 import { getNozzle } from '@/services/nozzlesService';
 import { listFuelTypes } from '@/services/fuelTypesService';
-import { listClosedShiftsByPumpDayRange } from '@/services/shiftsService';
+import { listClosedShiftsByPumpDayRange, shiftPumpDayIso } from '@/services/shiftsService';
 import { listFuelTankDipsInRange } from '@/services/fuelStockService';
 import { sumFuelReceiptLitersForDay } from '@/services/fuelReceiptsService';
 import { listDipValueLedgerForDay } from '@/services/dipValueLedgerService';
@@ -45,6 +45,41 @@ export async function getMeterSalesLitersByFuelTypeId(
 
   for (const id of Object.keys(out)) {
     out[id] = roundLiters(out[id]);
+  }
+  return out;
+}
+
+/** Closed-shift meter sales by pump day and fuel type (yyyy-MM-dd → fuelTypeId → L). */
+export async function getMeterSalesLitersByPumpDayInRange(
+  fromIso: string,
+  toIso: string,
+): Promise<Record<string, Record<string, number>>> {
+  const from = parseISO(`${fromIso}T12:00:00`);
+  const to = parseISO(`${toIso}T12:00:00`);
+  const shifts = await listClosedShiftsByPumpDayRange(from, to);
+  const out: Record<string, Record<string, number>> = {};
+  const nozzleCache = new Map<string, Awaited<ReturnType<typeof getNozzle>> | null>();
+
+  for (const sh of shifts) {
+    const dayIso = shiftPumpDayIso(sh);
+    const readings = await listReadingsForShift(sh.id);
+    for (const r of readings) {
+      let nozzle = nozzleCache.get(r.nozzleId);
+      if (nozzle === undefined) {
+        nozzle = await getNozzle(r.nozzleId);
+        nozzleCache.set(r.nozzleId, nozzle);
+      }
+      if (!nozzle) continue;
+      const bucket = out[dayIso] ?? {};
+      bucket[nozzle.fuelTypeId] = (bucket[nozzle.fuelTypeId] ?? 0) + Number(r.finalSalesLiters ?? 0);
+      out[dayIso] = bucket;
+    }
+  }
+
+  for (const dayIso of Object.keys(out)) {
+    for (const fuelId of Object.keys(out[dayIso]!)) {
+      out[dayIso]![fuelId] = roundLiters(out[dayIso]![fuelId]!);
+    }
   }
   return out;
 }

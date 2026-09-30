@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Chip, IconButton, Stack, Tooltip, Typography, alpha } from '@mui/material';
-import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import { PumpDayPicker } from '@/components/ui/PumpDayPicker';
 
 type Props = {
   reportLabel: string;
@@ -120,81 +120,12 @@ export function ManagerDashboardHeader(props: Props) {
         </Stack>
       </Box>
 
-      <Box
-        component="label"
-        sx={{
-          flexShrink: 0,
-          width: 'fit-content',
-          maxWidth: '100%',
-          alignSelf: { xs: 'flex-start', sm: 'center' },
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1.25,
-          py: 0.625,
-          borderRadius: 1.5,
-          border: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-          cursor: 'pointer',
-          position: 'relative',
-          boxShadow: (t) =>
-            t.palette.mode === 'dark' ? '0 1px 4px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.03)',
-          transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
-          '&:hover': {
-            borderColor: 'primary.main',
-            boxShadow: (t) => `0 2px 8px ${alpha(t.palette.primary.main, 0.15)}`,
-          },
-        }}
-      >
-        <Box sx={{ minWidth: 0 }}>
-          <Typography
-            variant="caption"
-            sx={{
-              fontSize: '0.62rem',
-              fontWeight: 800,
-              color: 'text.secondary',
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              display: 'block',
-              lineHeight: 1,
-            }}
-          >
-            Pump day
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              fontWeight: 700,
-              fontSize: { xs: '0.85rem', sm: '0.9rem' },
-              lineHeight: 1.25,
-              mt: 0.25,
-              color: 'text.primary',
-            }}
-          >
-            {reportLabel}
-          </Typography>
-        </Box>
-        <CalendarMonthOutlinedIcon sx={{ fontSize: 18, color: 'primary.main', ml: 0.5, flexShrink: 0 }} />
-        <input
-          type="date"
-          aria-label="Select pump day"
-          max={maxSelectableIso}
-          value={reportIso}
-          onChange={(e) => {
-            const next = e.target.value;
-            if (next && next <= maxSelectableIso) onReportIsoChange(next);
-          }}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            opacity: 0,
-            cursor: 'pointer',
-            border: 'none',
-            margin: 0,
-          }}
+      <Box sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}>
+        <PumpDayPicker
+          label={reportLabel}
+          dateIso={reportIso}
+          maxIso={maxSelectableIso}
+          onDateIsoChange={onReportIsoChange}
         />
       </Box>
     </Stack>

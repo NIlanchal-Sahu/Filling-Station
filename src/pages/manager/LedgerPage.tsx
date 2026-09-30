@@ -42,7 +42,6 @@ import { useLedgerListSettings } from '@/hooks/useLedgerListSettings';
 import { DEFAULT_LEDGER_CATEGORIES } from '@/utils/ledgerListDefaults';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -414,9 +413,6 @@ export function LedgerPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      {readOnlyOps ? (
-        <ReadOnlyBanner message="You can review the cash book. Staff post paid/received lines." />
-      ) : null}
       <PageHeader
         title="Cash & expense ledger"
         action={

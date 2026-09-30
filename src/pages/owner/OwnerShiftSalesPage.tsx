@@ -4,7 +4,6 @@ import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined
 import { format, isSameDay } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { TodaySalesByShiftSection } from '@/pages/manager/TodaySalesByShiftSection';
 import { parsePumpDayParam } from '@/utils/dateEntryPolicy';
 
@@ -37,7 +36,6 @@ export function OwnerShiftSalesPage() {
 
   return (
     <Stack spacing={3.5} sx={{ pb: 4 }}>
-      <ReadOnlyBanner />
       <PageHeader
         title="Shift sales"
         subtitle={`${reportLabel}${isSelectedToday ? ' · Today' : ''}`}

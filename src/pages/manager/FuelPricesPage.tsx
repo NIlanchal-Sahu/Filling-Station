@@ -16,7 +16,6 @@ import Grid from '@mui/material/Grid2';
 import LocalGasStationOutlinedIcon from '@mui/icons-material/LocalGasStationOutlined';
 import PlaylistAddOutlinedIcon from '@mui/icons-material/PlaylistAddOutlined';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { KpiStatSkeleton } from '@/components/ui/KpiStatSkeleton';
 import { DashboardSection } from '@/components/ui/DashboardSection';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -93,15 +92,7 @@ export function FuelPricesPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      {!canEditFuel ? <ReadOnlyBanner /> : null}
-      <PageHeader
-        title="Fuel prices"
-        subtitle={
-          canEditFuel
-            ? 'Current selling rate per litre. Save a change before that day’s End meters.'
-            : 'Current selling rate per litre. Rates are set by the manager.'
-        }
-      />
+      <PageHeader title="Fuel prices" />
 
       {err && <Alert severity="error">{err}</Alert>}
 

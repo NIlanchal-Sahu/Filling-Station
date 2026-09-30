@@ -50,9 +50,7 @@ import {
 import { downloadCashBookCsv, downloadCashBookExcel, downloadCashBookPdf } from '@/utils/cashBookExport';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
-import { usePermissions } from '@/hooks/usePermissions';
 import { parsePumpDayParam, recalledAdminPumpDay } from '@/utils/dateEntryPolicy';
 import { useAuth } from '@/context/AuthContext';
 
@@ -82,7 +80,6 @@ const cellSx = {
 export function DailyCashSheetPage() {
   const theme = useTheme();
   const { profile } = useAuth();
-  const { readOnlyOps } = usePermissions();
   const [searchParams] = useSearchParams();
   const [fromIso, setFromIso] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [toIso, setToIso] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -261,9 +258,6 @@ export function DailyCashSheetPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4, minWidth: 0, width: '100%', maxWidth: '100%' }}>
-      {readOnlyOps ? (
-        <ReadOnlyBanner message="You can review and export the daily sheet. Staff post the underlying ledger and shifts." />
-      ) : null}
       <PageHeader title="Daily cash sheet" />
 
       <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>

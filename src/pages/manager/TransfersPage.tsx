@@ -26,10 +26,8 @@ import { format } from 'date-fns';
 import { useSearchParams } from 'react-router-dom';
 import { DateRangePeriodControls } from '@/components/ui/DateRangePeriodControls';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
-import { usePermissions } from '@/hooks/usePermissions';
 import { listLedgerInRange } from '@/services/ledgerService';
 import type { LedgerEntry } from '@/types/entities';
 import {
@@ -96,7 +94,6 @@ function BookField({ label, value, strong }: { label: string; value: string; str
 
 export function TransfersPage() {
   const { profile } = useAuth();
-  const { readOnlyOps } = usePermissions();
   const theme = useTheme();
   const compact = useMediaQuery(theme.breakpoints.down('md'));
   const [searchParams, setSearchParams] = useSearchParams();
@@ -269,7 +266,6 @@ export function TransfersPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      {readOnlyOps ? <ReadOnlyBanner message="You can review transfer books." /> : null}
       <PageHeader title="Transfers" />
 
       {err ? <Alert severity="error">{err}</Alert> : null}

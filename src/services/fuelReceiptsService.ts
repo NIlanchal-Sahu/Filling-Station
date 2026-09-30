@@ -98,6 +98,31 @@ export async function sumFuelReceiptLitersForDay(
   return rows.reduce((sum, r) => sum + r.liters, 0);
 }
 
+/** Sum purchase receipt liters by fuel for one pump day (KL entries stored as liters). */
+export async function sumFuelReceiptLitersByFuelForDay(
+  pumpDayIso: string,
+): Promise<Record<string, number>> {
+  const rows = await listAllFuelReceiptsForPumpDay(pumpDayIso);
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    out[r.fuelTypeId] = (out[r.fuelTypeId] ?? 0) + r.liters;
+  }
+  return out;
+}
+
+/** pumpDayIso → fuelTypeId → total purchase liters in range. */
+export function aggregateFuelReceiptLitersByPumpDay(
+  receipts: FuelReceipt[],
+): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const r of receipts) {
+    const day = out[r.pumpDayIso] ?? {};
+    day[r.fuelTypeId] = (day[r.fuelTypeId] ?? 0) + r.liters;
+    out[r.pumpDayIso] = day;
+  }
+  return out;
+}
+
 /** Upsert total receipt liters for a fuel × day (single consolidated row). */
 export async function setFuelReceiptLitersForDay(input: {
   fuelTypeId: string;

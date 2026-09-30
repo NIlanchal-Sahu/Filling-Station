@@ -137,7 +137,12 @@ export function canAccessRoute(role: UserRole | null | undefined, pathname: stri
 
 export function routeRequiresPermission(pathname: string): Permission | null {
   const path = pathname.split('?')[0] ?? pathname;
-  if (path.startsWith('/admin/team') || path.startsWith('/manager/team')) {
+  if (
+    path.startsWith('/admin/team') ||
+    path.startsWith('/manager/team') ||
+    path.startsWith('/admin/staff-pay') ||
+    path.startsWith('/manager/staff-pay')
+  ) {
     return 'manage:team';
   }
   if (path.startsWith('/admin/settings') || path.startsWith('/admin/pump-setup')) {

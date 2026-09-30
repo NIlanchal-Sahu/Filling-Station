@@ -18,7 +18,6 @@ import { Link as RouterLink } from 'react-router-dom';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { usePermissions } from '@/hooks/usePermissions';
 import { listPendingReconciliations, setReconciliationStatus } from '@/services/reconciliationService';
 import { getUser } from '@/services/usersService';
@@ -59,9 +58,6 @@ export function ReconciliationReviewPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      {readOnlyOps ? (
-        <ReadOnlyBanner message="You can approve or reject. Staff enter the numbers." />
-      ) : null}
       <PageHeader
         title="Reconciliations"
         action={

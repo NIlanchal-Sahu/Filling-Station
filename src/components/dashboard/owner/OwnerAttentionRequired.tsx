@@ -17,6 +17,7 @@ import { SHIFT_STATUS_UPDATED_EVENT } from '@/utils/shiftStatusDisplay';
 import { SHIFT_SALES_UPDATED_EVENT } from '@/utils/shiftSalesDisplay';
 import { FUEL_STOCK_UPDATED_EVENT } from '@/utils/fuelStockDisplay';
 import { VARIATION_ALERT_LITERS } from '@/utils/fuelStockConstants';
+import { withPumpDayQuery } from '@/utils/dateEntryPolicy';
 import { fmtInrCompact } from '@/components/dashboard/owner/ownerPanelStyles';
 
 export type ActionItem = {
@@ -56,7 +57,7 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
           title: 'Cash mismatch / shortage',
           detail: `${fmtInrCompact(sales.shortageAmount, 0)} on this pump day`,
           actionText: 'Review recon →',
-          to: '/manager/reconciliation',
+          to: withPumpDayQuery('/manager/reconciliations', pumpDayIso),
           severity: 'error',
         });
       }
@@ -79,7 +80,7 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
             title: `${row.displayName} overdue`,
             detail: 'Shift closing meters pending',
             actionText: 'View shift →',
-            to: '/manager/shift-activity',
+            to: withPumpDayQuery('/owner/shift-activity', pumpDayIso),
             severity: 'warning',
           });
         } else if (row.status === 'reconciliation_pending') {
@@ -88,7 +89,7 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
             title: `${row.displayName} reconciliation pending`,
             detail: 'Closed shift awaits manager review',
             actionText: 'Review recon →',
-            to: '/manager/reconciliation',
+            to: withPumpDayQuery('/manager/reconciliations', pumpDayIso),
             severity: 'warning',
           });
         }
@@ -102,7 +103,7 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
           title: isCritical ? 'Collection mismatch' : 'Collection alert',
           detail: msg,
           actionText: 'Daily sheet →',
-          to: '/manager/daily-sheet',
+          to: withPumpDayQuery('/manager/daily-sheet', pumpDayIso),
           severity: isCritical ? 'error' : 'warning',
         });
       }
@@ -113,7 +114,7 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
           title: `Low ${t.shortCode} stock`,
           detail: `${Math.round(t.availablePercent)}% capacity (${Math.round(t.currentStockLiters).toLocaleString('en-IN')} L)`,
           actionText: 'View stock →',
-          to: '/manager/fuel-stock',
+          to: withPumpDayQuery('/manager/fuel-stock/daily', pumpDayIso),
           severity: t.health === 'critical' ? 'error' : 'warning',
         });
       }
@@ -126,7 +127,7 @@ export function OwnerAttentionRequired({ pumpDayIso }: Props) {
               title: `${row.shortCode} dip variation`,
               detail: `${row.variationLiters > 0 ? '+' : ''}${row.variationLiters.toLocaleString('en-IN')} L variance`,
               actionText: 'View dip →',
-              to: '/manager/daily-dip',
+              to: withPumpDayQuery('/manager/fuel-stock/daily', pumpDayIso),
               severity: 'warning',
             });
           }

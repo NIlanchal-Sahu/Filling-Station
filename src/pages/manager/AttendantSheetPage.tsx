@@ -21,9 +21,7 @@ import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
 import { format } from 'date-fns';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
-import { usePermissions } from '@/hooks/usePermissions';
 import {
   getAttendantPayrollSummaryInRange,
   getPumpAttendantAttendanceRowsInRange,
@@ -127,7 +125,6 @@ const tableHeadRowSx = {
 };
 
 export function AttendantSheetPage() {
-  const { readOnlyOps } = usePermissions();
   const [searchParams] = useSearchParams();
   const [viewTab, setViewTab] = useState<ViewTab>('register');
   const [from, setFrom] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -218,13 +215,9 @@ export function AttendantSheetPage() {
         },
       }}
     >
-      {readOnlyOps ? <ReadOnlyBanner /> : null}
 
       <Box className="no-print">
-        <PageHeader
-          title="Attendant sheet"
-          subtitle="Shift register and staff pay summary (30-day month, +2 paid leaves, net balance after short). Set base salary on Team or Staff pay."
-        />
+        <PageHeader title="Attendant sheet" />
       </Box>
 
       {err ? (
@@ -382,10 +375,6 @@ export function AttendantSheetPage() {
           <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
               Pay summary
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block">
-              {from === to ? from : `${from} — ${to}`} · Gross = (shifts + 2 paid leaves) × (base ÷ 30) · Net = gross −
-              paid − short
             </Typography>
           </Box>
           <ResponsiveTableContainer stickyFirstColumn stickyLastColumn>

@@ -25,7 +25,6 @@ import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { format } from 'date-fns';
 
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/context/AuthContext';
@@ -146,7 +145,6 @@ export function FuelStockHistoryPage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      {readOnlyOps ? <ReadOnlyBanner /> : null}
       <PageHeader title={displayMeta.displayName} />
       <FuelStockSubNav />
 

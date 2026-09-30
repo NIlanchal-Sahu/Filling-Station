@@ -62,7 +62,6 @@ import { ManualCreditSaleFormCard } from '@/pages/manager/ManualCreditSaleFormCa
 import { trimNumberDisplay } from '@/pages/manager/creditRegisterFormatters';
 import { FilterToolbar } from '@/components/ui/FilterToolbar';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -365,9 +364,6 @@ export function CreditCustomersPage() {
         pb: { xs: 10, md: 4 },
       }}
     >
-      {readOnlyOps ? (
-        <ReadOnlyBanner message="You can review parties and the credit register. Staff post sales and new accounts." />
-      ) : null}
       <PageHeader title="Credit" />
 
       <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>

@@ -19,7 +19,6 @@ import {
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -282,7 +281,6 @@ export function FuelPurchasePage() {
 
   return (
     <Stack spacing={3} sx={{ pb: 4 }}>
-      {readOnlyOps ? <ReadOnlyBanner /> : null}
       <FuelStockSubNav />
 
       <PageHeader title="Fuel purchase" />

@@ -42,9 +42,7 @@ import FolderOffOutlinedIcon from '@mui/icons-material/FolderOffOutlined';
 import { DateRangePeriodControls } from '@/components/ui/DateRangePeriodControls';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { ResponsiveTableContainer } from '@/components/ui/ResponsiveTableContainer';
-import { usePermissions } from '@/hooks/usePermissions';
 import { format } from 'date-fns';
 import {
   applyPeriodPreset,
@@ -301,7 +299,6 @@ const tableHeadRowSx = {
 };
 
 export function ReportsPage() {
-  const { readOnlyOps } = usePermissions();
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<TabId>(0);
   const [from, setFrom] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -651,7 +648,6 @@ export function ReportsPage() {
 
   return (
     <Stack spacing={{ xs: 2, sm: 2.5, md: 3 }} sx={{ pb: { xs: 12, sm: 8, md: 6 } }}>
-      {readOnlyOps ? <ReadOnlyBanner /> : null}
 
       {/* HEADER */}
       <PageHeader

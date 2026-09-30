@@ -132,6 +132,7 @@ export default function App() {
               <Route path="operations" element={<ManagerOperationsHubPage />} />
               <Route path="menu" element={<ManagerMenuHubPage />} />
               <Route path="team" element={<TeamPage />} />
+              <Route path="staff-pay" element={<AdminStaffPayPage />} />
               <Route path="credit" element={<CreditCustomersPage />} />
               <Route path="credit/:id" element={<CustomerDetailPage />} />
               <Route path="ledger" element={<LedgerPage />} />

@@ -31,7 +31,6 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { ReadOnlyBanner } from '@/components/ui/ReadOnlyBanner';
 import { format } from 'date-fns';
 import { getCustomer, updateCustomer } from '@/services/creditCustomersService';
 import { listSalesForCustomer } from '@/services/creditSalesService';
@@ -259,9 +258,6 @@ export function CustomerDetailPage() {
       spacing={3}
       sx={{ width: '100%', minWidth: 0, boxSizing: 'border-box', pb: { xs: 10, md: 4 } }}
     >
-      {readOnlyOps ? (
-        <ReadOnlyBanner message="You can review this party's ledger. Staff record payments and credit sales." />
-      ) : null}
       <PageHeader
         title={c.name}
         action={

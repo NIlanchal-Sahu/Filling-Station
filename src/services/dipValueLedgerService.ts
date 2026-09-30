@@ -17,7 +17,11 @@ import {
   demoListDipValueLedgerInRange,
   demoUpsertDipValueLedgerEntry,
 } from '@/localDemo/demoBackend';
-import { nextPumpDayIso, priorPumpDayIso } from '@/utils/dipValueRegister';
+import {
+  closingBookLitersFromEntry,
+  computeOpeningVariationLiters,
+  priorPumpDayIso,
+} from '@/utils/dipValueRegister';
 import { setFuelTypeCurrentStockLiters } from '@/services/fuelStockService';
 
 function ledgerDocId(fuelTypeId: string, pumpDayIso: string): string {
@@ -91,6 +95,8 @@ export type UpsertDipValueLedgerInput = {
   openingStockLiters: number;
   receiptLiters: number;
   salesLiters: number;
+  /** When set, stored as closing book (physical / dip liters). Otherwise opening + receipt − sales. */
+  closingBookLiters?: number;
   updatedBy?: string;
 };
 
@@ -99,7 +105,14 @@ export async function upsertDipValueLedgerEntry(input: UpsertDipValueLedgerInput
   const receiptLiters = roundLiters(input.receiptLiters);
   const salesLiters = roundLiters(input.salesLiters);
   const totalStockLiters = roundLiters(openingStockLiters + receiptLiters);
-  const closingBookLiters = roundLiters(totalStockLiters - salesLiters);
+  const closingBookLiters =
+    input.closingBookLiters != null && Number.isFinite(input.closingBookLiters)
+      ? roundLiters(input.closingBookLiters)
+      : roundLiters(totalStockLiters - salesLiters);
+
+  const prior = await getDipValueLedgerEntry(input.fuelTypeId, priorPumpDayIso(input.pumpDayIso));
+  const priorClosing = prior ? closingBookLitersFromEntry(prior) : null;
+  const variationLiters = computeOpeningVariationLiters(openingStockLiters, priorClosing);
 
   if (LOCAL_DEMO) {
     await demoUpsertDipValueLedgerEntry({
@@ -109,9 +122,9 @@ export async function upsertDipValueLedgerEntry(input: UpsertDipValueLedgerInput
       salesLiters,
       totalStockLiters,
       closingBookLiters,
+      variationLiters,
     });
-    await setFuelTypeCurrentStockLiters(input.fuelTypeId, openingStockLiters);
-    await linkVariationChain(input.fuelTypeId, input.pumpDayIso, openingStockLiters);
+    await setFuelTypeCurrentStockLiters(input.fuelTypeId, closingBookLiters);
     return;
   }
 
@@ -126,44 +139,22 @@ export async function upsertDipValueLedgerEntry(input: UpsertDipValueLedgerInput
       totalStockLiters,
       salesLiters,
       closingBookLiters,
+      variationLiters,
       updatedAt: serverTimestamp(),
       updatedBy: input.updatedBy ?? null,
     },
     { merge: true },
   );
-  await setFuelTypeCurrentStockLiters(input.fuelTypeId, openingStockLiters);
-  await linkVariationChain(input.fuelTypeId, input.pumpDayIso, openingStockLiters);
+  await setFuelTypeCurrentStockLiters(input.fuelTypeId, closingBookLiters);
 }
 
-async function linkVariationChain(
+/** Previous calendar pump day closing book (liters), if saved. */
+export async function getPriorDayClosingBookLiters(
   fuelTypeId: string,
   pumpDayIso: string,
-  todayOpening: number,
-): Promise<void> {
-  const priorIso = priorPumpDayIso(pumpDayIso);
-  const prior = await getDipValueLedgerEntry(fuelTypeId, priorIso);
-  if (!prior) return;
-  const variationLiters = roundLiters(todayOpening - prior.closingBookLiters);
-  if (LOCAL_DEMO) {
-    await demoUpsertDipValueLedgerEntry({
-      fuelTypeId,
-      pumpDayIso: priorIso,
-      openingStockLiters: prior.openingStockLiters,
-      receiptLiters: prior.receiptLiters,
-      salesLiters: prior.salesLiters,
-      totalStockLiters: prior.totalStockLiters,
-      closingBookLiters: prior.closingBookLiters,
-      variationLiters,
-      updatedBy: prior.updatedBy,
-    });
-    return;
-  }
-  const id = ledgerDocId(fuelTypeId, priorIso);
-  await setDoc(
-    doc(getDb(), COLLECTIONS.fuelDipLedger, id),
-    { variationLiters, updatedAt: serverTimestamp() },
-    { merge: true },
-  );
+): Promise<number | null> {
+  const prior = await getDipValueLedgerEntry(fuelTypeId, priorPumpDayIso(pumpDayIso));
+  return prior ? closingBookLitersFromEntry(prior) : null;
 }
 
 /** Suggested opening when no ledger row exists yet for this day. */
@@ -174,7 +165,7 @@ export async function suggestOpeningStockLiters(
   const existing = await getDipValueLedgerEntry(fuelTypeId, pumpDayIso);
   if (existing) return existing.openingStockLiters;
   const prior = await getDipValueLedgerEntry(fuelTypeId, priorPumpDayIso(pumpDayIso));
-  if (prior) return prior.closingBookLiters;
+  if (prior) return closingBookLitersFromEntry(prior);
   return null;
 }
 
@@ -186,12 +177,3 @@ export function computeClosingBook(
   return roundLiters(openingStockLiters + receiptLiters - salesLiters);
 }
 
-export async function computeChainVariation(
-  fuelTypeId: string,
-  pumpDayIso: string,
-  closingBookLiters: number,
-): Promise<number | null> {
-  const next = await getDipValueLedgerEntry(fuelTypeId, nextPumpDayIso(pumpDayIso));
-  if (!next) return null;
-  return roundLiters(next.openingStockLiters - closingBookLiters);
-}

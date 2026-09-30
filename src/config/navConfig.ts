@@ -178,6 +178,9 @@ function resolveItemPath(item: NavItem, role: UserRole): string {
   if (item.to === '/admin/team' && role !== 'admin') {
     return '/manager/team';
   }
+  if (item.to === '/admin/staff-pay' && role !== 'admin') {
+    return '/manager/staff-pay';
+  }
   return item.to;
 }
 
