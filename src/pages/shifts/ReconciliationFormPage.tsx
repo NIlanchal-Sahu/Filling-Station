@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import {
   Alert,
   alpha,
@@ -67,6 +68,7 @@ export function ReconciliationFormPage() {
   const { shiftId = '' } = useParams();
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const isManagerEdit = searchParams.get('edit') === '1';
   const { shift, allowed, error: accessError, profile } = useShiftAccess(shiftId);
   const [operatorName, setOperatorName] = useState('');
@@ -178,7 +180,7 @@ export function ReconciliationFormPage() {
     return () => {
       ok = false;
     };
-  }, [shiftId, shift, allowed, profile?.role, isManagerEdit]);
+  }, [shiftId, shift, allowed, profile?.role, isManagerEdit, location.key]);
 
   const sumOtherChannels = useMemo(() => {
     const n = (v: string) => (Number.parseFloat(v) || 0);
@@ -454,12 +456,6 @@ export function ReconciliationFormPage() {
     <Stack spacing={3} sx={{ pb: 3, maxWidth: 960 }}>
       <PageHeader title="End-of-shift reconciliation" />
 
-      {isManagerEdit && existing?.status === 'pending' ? (
-        <Alert severity="info" sx={{ borderRadius: 2 }}>
-          Editing a pending reconciliation — save to update the queue entry, then approve or reject from Reconciliations.
-        </Alert>
-      ) : null}
-
       <Paper
         component="form"
         onSubmit={handleSubmit}
@@ -489,6 +485,25 @@ export function ReconciliationFormPage() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         Machine: <strong>{machineLabel}</strong>
       </Typography>
+      {profile?.role === 'admin' ? (
+        <Button
+          component={RouterLink}
+          to={`/shifts/${shiftId}/meters?from=reconcile`}
+          variant="outlined"
+          size="medium"
+          startIcon={<EditNoteOutlinedIcon />}
+          sx={{
+            mb: 2,
+            alignSelf: 'flex-start',
+            textTransform: 'none',
+            fontWeight: 700,
+            borderRadius: 1.5,
+            minHeight: 44,
+          }}
+        >
+          Edit meter readings
+        </Button>
+      ) : null}
       <Stack spacing={0} sx={{ '& .MuiTextField-root': { width: '100%' } }}>
       <TextField
         fullWidth

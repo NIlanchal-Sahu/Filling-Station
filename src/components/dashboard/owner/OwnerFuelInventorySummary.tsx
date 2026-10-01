@@ -58,7 +58,7 @@ function VariationFuelColumn(props: {
       sx={{
         display: 'block',
         textAlign: 'center',
-        py: 1,
+        py: 1.25,
         px: 0.5,
         borderRadius: 2,
         cursor: 'pointer',
@@ -78,26 +78,9 @@ function VariationFuelColumn(props: {
         },
       }}
     >
-      <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.85rem', letterSpacing: '0.02em' }}>
-        {code}
-      </Typography>
-      <Typography
-        variant="caption"
-        sx={{
-          display: 'block',
-          mt: 0.35,
-          color: 'text.secondary',
-          fontSize: '0.62rem',
-          fontWeight: 600,
-          lineHeight: 1.2,
-        }}
-      >
-        Pump day variation
-      </Typography>
       <Typography
         variant="body2"
         sx={{
-          mt: 0.5,
           fontWeight: 800,
           fontVariantNumeric: 'tabular-nums',
           fontSize: '0.88rem',

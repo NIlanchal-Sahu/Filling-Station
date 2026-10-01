@@ -4,16 +4,16 @@ import { Link as RouterLink } from 'react-router-dom';
 import { Box, Paper, Stack, Typography, alpha } from '@mui/material';
 import type { SvgIconComponent } from '@mui/icons-material';
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
-import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import CreditCardOutlinedIcon from '@mui/icons-material/CreditCardOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import {
   CREDIT_OVERDUE_DAYS,
   getCashInHandAfterReconciliations,
   getOverdueCreditSummary,
   getPumpDaySalesOverview,
 } from '@/services/aggregatesService';
-import { getCashBankCollectionSummary } from '@/services/collectionSummaryService';
+import { getDailyCashSheetRowForIso } from '@/services/dailyCashSheetLoader';
 import { KpiStatSkeleton } from '@/components/ui/KpiStatSkeleton';
 import { fmtInrCompact } from '@/components/dashboard/owner/ownerPanelStyles';
 import { withPumpDayQuery } from '@/utils/dateEntryPolicy';
@@ -151,7 +151,7 @@ type Props = {
 export function OwnerOverviewKpis({ pumpDayIso }: Props) {
   const [loading, setLoading] = useState(true);
   const [sales, setSales] = useState(0);
-  const [collection, setCollection] = useState(0);
+  const [expenses, setExpenses] = useState(0);
   const [overdue, setOverdue] = useState(0);
   const [overdueParties, setOverdueParties] = useState(0);
   const [cashInHand, setCashInHand] = useState(0);
@@ -161,14 +161,14 @@ export function OwnerOverviewKpis({ pumpDayIso }: Props) {
     setLoading(true);
     void Promise.all([
       getPumpDaySalesOverview(pumpDayIso),
-      getCashBankCollectionSummary(pumpDayIso, pumpDayIso),
+      getDailyCashSheetRowForIso(pumpDayIso),
       getOverdueCreditSummary(),
       getCashInHandAfterReconciliations(),
     ])
-      .then(([salesOv, coll, credit, cash]) => {
+      .then(([salesOv, sheetRow, credit, cash]) => {
         if (!ok) return;
         setSales(salesOv.meterSalesAmount);
-        setCollection(coll.totalCollection);
+        setExpenses(sheetRow?.expenses ?? 0);
         setOverdue(credit.overdueAmount);
         setOverdueParties(credit.overdueCount);
         setCashInHand(cash);
@@ -176,7 +176,7 @@ export function OwnerOverviewKpis({ pumpDayIso }: Props) {
       .catch(() => {
         if (!ok) return;
         setSales(0);
-        setCollection(0);
+        setExpenses(0);
         setOverdue(0);
         setOverdueParties(0);
         setCashInHand(0);
@@ -215,15 +215,15 @@ export function OwnerOverviewKpis({ pumpDayIso }: Props) {
         />
       </Grid>
 
-      {/* 2. Today's Collection: Positive / Neutral */}
+      {/* 2. Expenses: pump-day outgo (daily cash sheet) */}
       <Grid size={GRID_SIZE} sx={ITEM_SX}>
         <KpiCard
-          label="Today's collection"
-          value={fmtInrCompact(collection, 2)}
-          to={withPumpDayQuery('/manager/daily-sheet', pumpDayIso)}
-          hint={collection <= 0.005 ? 'No collections recorded yet' : 'All payment modes'}
-          icon={AccountBalanceWalletOutlinedIcon}
-          tone="success"
+          label="Expenses"
+          value={fmtInrCompact(expenses, 2)}
+          to={withPumpDayQuery('/manager/reports?report=expenses', pumpDayIso)}
+          hint={expenses <= 0.005 ? 'No expenses recorded yet' : 'Station outgo · View report →'}
+          icon={ReceiptLongOutlinedIcon}
+          tone="info"
         />
       </Grid>
 

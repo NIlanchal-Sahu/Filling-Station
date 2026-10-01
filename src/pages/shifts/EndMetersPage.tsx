@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   alpha,
@@ -44,7 +44,11 @@ const meterHeadCellSx = {
 export function EndMetersPage() {
   const { shiftId = '' } = useParams();
   const nav = useNavigate();
-  const { shift, allowed, error: accessError } = useShiftAccess(shiftId);
+  const [searchParams] = useSearchParams();
+  const { shift, allowed, error: accessError, profile } = useShiftAccess(shiftId);
+  const isAdmin = profile?.role === 'admin';
+  const adminReconcileReturn = isAdmin && searchParams.get('from') === 'reconcile';
+  const canEditOpening = isAdmin;
   const [rows, setRows] = useState<Row[]>([]);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -178,6 +182,9 @@ export function EndMetersPage() {
   }
 
   async function handleSave() {
+    if (!shift) {
+      return;
+    }
     setFormError(null);
     const updates: {
       id: string;
@@ -224,8 +231,16 @@ export function EndMetersPage() {
     setSaving(true);
     try {
       await updateReadingsOnEnd(updates);
-      await setShiftReadingsComplete(shiftId);
-      nav(`/shifts/${shiftId}/reconcile`);
+      if (!shift.readingsCompleteAt) {
+        await setShiftReadingsComplete(shiftId);
+        nav(`/shifts/${shiftId}/reconcile`);
+      } else if (adminReconcileReturn) {
+        nav(`/shifts/${shiftId}/reconcile?edit=1`);
+      } else if (isAdmin) {
+        nav(`/shifts/${shiftId}/reconcile?edit=1`);
+      } else {
+        nav(`/shifts/${shiftId}/reconcile`);
+      }
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -271,10 +286,15 @@ export function EndMetersPage() {
       </Typography>
       {!shift.readingsCompleteAt && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          <strong>Opening</strong> carries from the latest saved closing. <strong>Closing</strong> is empty until you type
-          it.
+          <strong>Opening</strong> carries from the latest saved closing
+          {canEditOpening ? ' (admin can override)' : ''}. <strong>Closing</strong> is empty until you type it.
         </Typography>
       )}
+      {shift.readingsCompleteAt && isAdmin ? (
+        <Alert severity="info" sx={{ mb: 1.5, borderRadius: 2 }}>
+          Admin meter correction — update readings, then save to refresh reconciliation totals.
+        </Alert>
+      ) : null}
       <TableContainer sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
         <Table size="small">
           <TableHead>
@@ -324,7 +344,13 @@ export function EndMetersPage() {
                       size="small"
                       value={openInputs[r.id] ?? ''}
                       onChange={(e) => setOpenInputs((p) => ({ ...p, [r.id]: e.target.value }))}
-                      inputProps={{ min: 0, step: 'any' }}
+                      slotProps={{
+                        htmlInput: { min: 0, step: 'any', readOnly: !canEditOpening },
+                        input: {
+                          readOnly: !canEditOpening,
+                          sx: !canEditOpening ? { bgcolor: 'action.hover' } : undefined,
+                        },
+                      }}
                     />
                   </TableCell>
                   <TableCell align="right" sx={{ minWidth: 100 }}>
@@ -376,7 +402,11 @@ export function EndMetersPage() {
       {formError && <Alert severity="error" sx={{ mt: 2 }}>{formError}</Alert>}
       <Stack direction="row" spacing={2} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
         <MotionButton variant="contained" size="large" onClick={() => void handleSave()} disabled={saving || rows.length === 0} sx={{ borderRadius: 1.5, minHeight: 48 }}>
-          {saving ? 'Saving…' : 'Save & go to reconciliation'}
+          {saving
+            ? 'Saving…'
+            : shift.readingsCompleteAt && isAdmin
+              ? 'Save meter readings'
+              : 'Save & go to reconciliation'}
         </MotionButton>
         <Button variant="outlined" onClick={() => nav(-1)} sx={{ borderRadius: 1.5 }}>
           Back
