@@ -1,20 +1,9 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-  writeBatch,
-  type DocumentData,
-} from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { getSupabase, throwIfError } from '@/lib/supabase';
 import type { ReconciliationCreditLine, ShiftReconciliation } from '@/types/entities';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
-import { createCreditSalesForReconciliation, replaceCreditSalesForShift } from '@/services/creditSalesService';
-import { closeShift } from '@/services/shiftsService';
+import { asTimestamp } from '@/types/time';
+import { replaceCreditSalesForShift } from '@/services/creditSalesService';
+import { getShift, shiftPumpDayIso } from '@/services/shiftsService';
 import { notifyShiftSalesUpdated } from '@/utils/shiftSalesDisplay';
 import { notifyShiftStatusUpdated } from '@/utils/shiftStatusDisplay';
 import {
@@ -27,12 +16,33 @@ import {
   demoUpdatePendingReconciliation,
 } from '@/localDemo/demoBackend';
 
+type ReconRow = {
+  id: string;
+  shift_id: string | null;
+  operator_id: string | null;
+  total_sales_amount: number | null;
+  paytm_online: number | null;
+  icici_card: number | null;
+  fleet_card: number | null;
+  credit_amount: number | null;
+  short_amount: number | null;
+  cash_amount: number | null;
+  total_received: number | null;
+  difference: number | null;
+  status: string | null;
+  manager_comment: string | null;
+  locked: boolean | null;
+  credit_line_items: unknown;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 export function parseCreditLineItems(raw: unknown): ReconciliationCreditLine[] {
   if (!Array.isArray(raw)) {
     return [];
   }
   return raw.map((item): ReconciliationCreditLine => {
-    const o = item as DocumentData;
+    const o = item as Record<string, unknown>;
     return {
       customerId: String(o.customerId ?? ''),
       amount: Number(o.amount ?? 0),
@@ -43,27 +53,31 @@ export function parseCreditLineItems(raw: unknown): ReconciliationCreditLine[] {
   });
 }
 
-function mapRecon(id: string, data: DocumentData): ShiftReconciliation {
+function mapRecon(row: ReconRow): ShiftReconciliation {
   return {
-    id,
-    shiftId: String(data.shiftId ?? ''),
-    operatorId: String(data.operatorId ?? ''),
-    totalSalesAmount: Number(data.totalSalesAmount ?? 0),
-    paytmOnline: Number(data.paytmOnline ?? 0),
-    iciciCard: Number(data.iciciCard ?? 0),
-    fleetCard: Number(data.fleetCard ?? 0),
-    creditAmount: Number(data.creditAmount ?? 0),
-    shortAmount: Number(data.shortAmount ?? 0),
-    cashAmount: Number(data.cashAmount ?? 0),
-    totalReceived: Number(data.totalReceived ?? 0),
-    difference: Number(data.difference ?? 0),
-    status: (data.status as ShiftReconciliation['status']) ?? 'pending',
-    managerComment: data.managerComment ? String(data.managerComment) : undefined,
-    locked: data.locked === true,
-    creditLineItems: parseCreditLineItems(data.creditLineItems),
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt,
+    id: row.id,
+    shiftId: String(row.shift_id ?? ''),
+    operatorId: String(row.operator_id ?? ''),
+    totalSalesAmount: Number(row.total_sales_amount ?? 0),
+    paytmOnline: Number(row.paytm_online ?? 0),
+    iciciCard: Number(row.icici_card ?? 0),
+    fleetCard: Number(row.fleet_card ?? 0),
+    creditAmount: Number(row.credit_amount ?? 0),
+    shortAmount: Number(row.short_amount ?? 0),
+    cashAmount: Number(row.cash_amount ?? 0),
+    totalReceived: Number(row.total_received ?? 0),
+    difference: Number(row.difference ?? 0),
+    status: (row.status as ShiftReconciliation['status']) ?? 'pending',
+    managerComment: row.manager_comment ? String(row.manager_comment) : undefined,
+    locked: row.locked === true,
+    creditLineItems: parseCreditLineItems(row.credit_line_items),
+    createdAt: asTimestamp(row.created_at),
+    updatedAt: asTimestamp(row.updated_at),
   };
+}
+
+function localNoon(iso: string): Date {
+  return new Date(`${iso}T12:00:00`);
 }
 
 export async function getReconciliationForShift(
@@ -72,18 +86,14 @@ export async function getReconciliationForShift(
   if (LOCAL_DEMO) {
     return demoGetReconciliationForShift(shiftId);
   }
-  const ref = collection(getDb(), COLLECTIONS.shiftReconciliations);
-  const qy = query(ref, where('shiftId', '==', shiftId));
-  const snap = await getDocs(qy);
-  if (snap.empty) {
-    return null;
-  }
-  const rows = snap.docs
-    .map((d) => mapRecon(d.id, d.data()))
-    .sort(
-      (a, b) =>
-        (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0),
-    );
+  const { data, error } = await getSupabase()
+    .from('shift_reconciliations')
+    .select('*')
+    .eq('shift_id', shiftId);
+  throwIfError(error, 'Load reconciliation');
+  const rows = ((data ?? []) as ReconRow[])
+    .map(mapRecon)
+    .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
   return rows[0] ?? null;
 }
 
@@ -91,25 +101,27 @@ export async function getReconciliation(id: string): Promise<ShiftReconciliation
   if (LOCAL_DEMO) {
     return demoGetReconciliation(id);
   }
-  const snap = await getDoc(doc(getDb(), COLLECTIONS.shiftReconciliations, id));
-  if (!snap.exists()) {
-    return null;
-  }
-  return mapRecon(snap.id, snap.data());
+  const { data, error } = await getSupabase()
+    .from('shift_reconciliations')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  throwIfError(error, 'Load reconciliation');
+  return data ? mapRecon(data as ReconRow) : null;
 }
 
 export async function listPendingReconciliations(): Promise<ShiftReconciliation[]> {
   if (LOCAL_DEMO) {
     return demoListPendingReconciliations();
   }
-  const ref = collection(getDb(), COLLECTIONS.shiftReconciliations);
-  const qy = query(ref, where('status', '==', 'pending'));
-  const snap = await getDocs(qy);
-  return snap.docs
-    .map((d) => mapRecon(d.id, d.data()))
-    .sort(
-      (a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0),
-    );
+  const { data, error } = await getSupabase()
+    .from('shift_reconciliations')
+    .select('*')
+    .eq('status', 'pending');
+  throwIfError(error, 'List pending reconciliations');
+  return ((data ?? []) as ReconRow[])
+    .map(mapRecon)
+    .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
 }
 
 export async function createReconciliationWithClose(input: {
@@ -132,39 +144,18 @@ export async function createReconciliationWithClose(input: {
     notifyShiftStatusUpdated();
     return id;
   }
-  const batch = writeBatch(getDb());
-  const reconRef = doc(collection(getDb(), COLLECTIONS.shiftReconciliations));
-  batch.set(reconRef, {
-    shiftId: input.shiftId,
-    operatorId: input.operatorId,
-    totalSalesAmount: input.totalSalesAmount,
-    paytmOnline: input.paytmOnline,
-    iciciCard: input.iciciCard,
-    fleetCard: input.fleetCard,
-    creditAmount: input.creditAmount,
-    shortAmount: input.shortAmount,
-    cashAmount: input.cashAmount,
-    totalReceived: input.totalReceived,
-    difference: input.difference,
-    status: 'pending',
-    locked: false,
-    creditLineItems: input.creditLineItems,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const shift = await getShift(input.shiftId);
+  const saleDate = shift ? localNoon(shiftPumpDayIso(shift)) : new Date();
+  const { data, error } = await getSupabase().rpc('create_reconciliation_with_close', {
+    payload: {
+      ...input,
+      saleDate: saleDate.toISOString(),
+    },
   });
-  await batch.commit();
-
-  if (input.creditLineItems.length > 0) {
-    await createCreditSalesForReconciliation(
-      reconRef.id,
-      input.shiftId,
-      input.creditLineItems,
-    );
-  }
-  await closeShift(input.shiftId);
+  throwIfError(error, 'Close shift with reconciliation');
   notifyShiftSalesUpdated();
   notifyShiftStatusUpdated();
-  return reconRef.id;
+  return String(data ?? '');
 }
 
 export async function setReconciliationStatus(
@@ -177,13 +168,16 @@ export async function setReconciliationStatus(
     notifyShiftStatusUpdated();
     return;
   }
-  const r = doc(getDb(), COLLECTIONS.shiftReconciliations, id);
-  await updateDoc(r, {
-    status,
-    managerComment: managerComment ?? null,
-    locked: status === 'approved',
-    updatedAt: serverTimestamp(),
-  });
+  const { error } = await getSupabase()
+    .from('shift_reconciliations')
+    .update({
+      status,
+      manager_comment: managerComment ?? null,
+      locked: status === 'approved',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  throwIfError(error, 'Update reconciliation status');
   notifyShiftStatusUpdated();
 }
 
@@ -209,28 +203,30 @@ export async function updatePendingReconciliation(
     notifyShiftStatusUpdated();
     return;
   }
-  const r = doc(getDb(), COLLECTIONS.shiftReconciliations, id);
-  const snap = await getDoc(r);
-  if (!snap.exists()) {
+  const existing = await getReconciliation(id);
+  if (!existing) {
     throw new Error('Reconciliation not found.');
   }
-  const data = snap.data();
-  if (data.status !== 'pending') {
+  if (existing.status !== 'pending') {
     throw new Error('Only pending reconciliations can be edited.');
   }
-  await updateDoc(r, {
-    totalSalesAmount: input.totalSalesAmount,
-    paytmOnline: input.paytmOnline,
-    iciciCard: input.iciciCard,
-    fleetCard: input.fleetCard,
-    creditAmount: input.creditAmount,
-    shortAmount: input.shortAmount,
-    cashAmount: input.cashAmount,
-    totalReceived: input.totalReceived,
-    difference: input.difference,
-    creditLineItems: input.creditLineItems,
-    updatedAt: serverTimestamp(),
-  });
+  const { error } = await getSupabase()
+    .from('shift_reconciliations')
+    .update({
+      total_sales_amount: input.totalSalesAmount,
+      paytm_online: input.paytmOnline,
+      icici_card: input.iciciCard,
+      fleet_card: input.fleetCard,
+      credit_amount: input.creditAmount,
+      short_amount: input.shortAmount,
+      cash_amount: input.cashAmount,
+      total_received: input.totalReceived,
+      difference: input.difference,
+      credit_line_items: input.creditLineItems,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  throwIfError(error, 'Update reconciliation');
   await replaceCreditSalesForShift(input.shiftId, input.creditLineItems);
   notifyShiftSalesUpdated();
 }
@@ -242,6 +238,9 @@ export async function setReconciliationUnlocked(
   if (LOCAL_DEMO) {
     return demoSetReconciliationUnlocked(id, unlocked);
   }
-  const r = doc(getDb(), COLLECTIONS.shiftReconciliations, id);
-  await updateDoc(r, { locked: !unlocked, updatedAt: serverTimestamp() });
+  const { error } = await getSupabase()
+    .from('shift_reconciliations')
+    .update({ locked: !unlocked, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  throwIfError(error, 'Unlock reconciliation');
 }

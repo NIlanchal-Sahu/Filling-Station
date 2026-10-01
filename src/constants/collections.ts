@@ -1,4 +1,4 @@
-/** Firestore collection ids used by Firebase and local-demo backend */
+/** Postgres tables in `supabase/schema.sql` replace these Firestore collection ids. */
 export const COLLECTIONS = {
   users: 'users',
   fuelTypes: 'fuelTypes',

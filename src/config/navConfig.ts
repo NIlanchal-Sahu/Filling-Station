@@ -14,6 +14,7 @@ import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import type { UserRole } from '@/types/entities';
 import { homePathForRole } from '@/utils/roles';
 import { hasPermission, type Permission } from '@/utils/permissions';
@@ -155,6 +156,12 @@ const NAV_GROUPS: NavGroup[] = [
         to: '/admin/pump-setup',
         label: 'Pump setup',
         icon: LocalGasStationOutlinedIcon,
+        permission: 'manage:settings',
+      },
+      {
+        to: '/admin/about',
+        label: 'About station',
+        icon: InfoOutlinedIcon,
         permission: 'manage:settings',
       },
       {

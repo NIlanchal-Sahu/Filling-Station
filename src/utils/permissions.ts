@@ -145,7 +145,11 @@ export function routeRequiresPermission(pathname: string): Permission | null {
   ) {
     return 'manage:team';
   }
-  if (path.startsWith('/admin/settings') || path.startsWith('/admin/pump-setup')) {
+  if (
+    path.startsWith('/admin/settings') ||
+    path.startsWith('/admin/pump-setup') ||
+    path.startsWith('/admin/about')
+  ) {
     return 'manage:settings';
   }
   if (path.startsWith('/manager/credit')) {

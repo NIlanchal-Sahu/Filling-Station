@@ -17,6 +17,7 @@ import type { NavGroup } from '@/config/navConfig';
 import { DRAWER_WIDTH } from '@/theme/theme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useSidebarGroupState } from '@/hooks/useSidebarGroupState';
+import { useStationAbout } from '@/context/StationAboutContext';
 
 type Props = {
   groups: NavGroup[];
@@ -169,6 +170,8 @@ function CollapsibleNavGroup({
 }
 
 export function SidebarNav({ groups, onNavigate }: Props) {
+  const { profile: station } = useStationAbout();
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Box sx={{ px: 2.5, py: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -186,12 +189,12 @@ export function SidebarNav({ groups, onNavigate }: Props) {
         >
           <LocalGasStationOutlinedIcon />
         </Box>
-        <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
-            PumpStock
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2 }} noWrap>
+            {station.displayName}
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Filling station ops
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {station.tagline}
           </Typography>
         </Box>
       </Box>

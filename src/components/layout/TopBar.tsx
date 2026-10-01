@@ -16,7 +16,10 @@ import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import NotificationsNoneOutlinedIcon from '@mui/icons-material/NotificationsNoneOutlined';
 import { useNavigate } from 'react-router-dom';
 import { StaffAvatar } from '@/components/ui/StaffAvatar';
+import { ThemeModeToggle } from '@/components/ui/ThemeModeToggle';
+import { PwaInstallButton } from '@/components/pwa/PwaInstallButton';
 import { useAuth } from '@/context/AuthContext';
+import { useStationAbout } from '@/context/StationAboutContext';
 import { homePathForRole, roleLabel, parseUserRole } from '@/utils/roles';
 
 type Props = {
@@ -26,6 +29,7 @@ type Props = {
 
 export function TopBar({ onMenuClick, showMenuButton }: Props) {
   const { profile, signOut } = useAuth();
+  const { profile: station } = useStationAbout();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -58,9 +62,11 @@ export function TopBar({ onMenuClick, showMenuButton }: Props) {
             <MenuIcon />
           </IconButton>
         ) : null}
-        <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700, fontSize: { xs: '1rem', sm: '1.15rem' } }}>
-          PumpStock
+        <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700, fontSize: { xs: '1rem', sm: '1.15rem' } }} noWrap>
+          {station.displayName}
         </Typography>
+        <ThemeModeToggle variant="menu" />
+        <PwaInstallButton />
         {profile ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <IconButton onClick={handleNotifications} aria-label="Notifications and alerts" color="inherit" size="small">

@@ -1,20 +1,7 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-  type DocumentData,
-} from 'firebase/firestore';
 import { format, isSameDay } from 'date-fns';
 
 import { LOCAL_DEMO } from '@/config/appMode';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
+import { getSupabase, newId, throwIfError } from '@/lib/supabase';
 import {
   demoGetFuelStockOverview,
   demoListFuelTankDips,
@@ -23,33 +10,45 @@ import {
   demoUpsertFuelTankDipForDay,
 } from '@/localDemo/demoBackend';
 import type { DipKind, FuelStockOverview, FuelTankDipReading, FuelType } from '@/types/entities';
+import { asTimestamp } from '@/types/time';
 import { buildFuelStockItem, notifyFuelStockUpdated, sortFuelStockItems } from '@/utils/fuelStockDisplay';
 import { canonicalDipCm, dipCmFromLiters, litersFromDipCm } from '@/utils/fuelTankCalibration';
 import { listFuelTypes, getFuelType } from '@/services/fuelTypesService';
 
-function mapDip(id: string, data: DocumentData, fuelName = ''): FuelTankDipReading {
-  const dipLiters = Number(data.dipLiters ?? 0);
-  const dipCmRaw = data.dipCm;
+type DipRow = {
+  id: string;
+  fuel_type_id: string | null;
+  dip_cm: number | null;
+  dip_liters: number | null;
+  pump_day_iso: string | null;
+  dip_kind: string | null;
+  recorded_at: string | null;
+  recorded_by: string | null;
+  notes: string | null;
+};
+
+function mapDip(row: DipRow, fuelName = ''): FuelTankDipReading {
+  const dipLiters = Number(row.dip_liters ?? 0);
+  const recordedAt = asTimestamp(row.recorded_at);
+  const dipCmRaw = row.dip_cm;
   const dipCm =
     dipCmRaw != null ? canonicalDipCm(Number(dipCmRaw)) : (dipCmFromLiters(dipLiters, fuelName) ?? 0);
   const pumpDayIso =
-    typeof data.pumpDayIso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.pumpDayIso)
-      ? data.pumpDayIso
-      : data.recordedAt?.toDate
-        ? format(data.recordedAt.toDate(), 'yyyy-MM-dd')
-        : format(new Date(), 'yyyy-MM-dd');
-  const dipKind: DipKind = data.dipKind === 'opening' ? 'opening' : 'closing';
+    typeof row.pump_day_iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.pump_day_iso)
+      ? row.pump_day_iso
+      : format(recordedAt.toDate(), 'yyyy-MM-dd');
+  const dipKind: DipKind = row.dip_kind === 'opening' ? 'opening' : 'closing';
 
   return {
-    id,
-    fuelTypeId: String(data.fuelTypeId ?? ''),
+    id: row.id,
+    fuelTypeId: String(row.fuel_type_id ?? ''),
     dipCm,
     dipLiters,
     pumpDayIso,
     dipKind,
-    recordedAt: data.recordedAt,
-    recordedBy: data.recordedBy ? String(data.recordedBy) : undefined,
-    notes: data.notes ? String(data.notes) : undefined,
+    recordedAt,
+    recordedBy: row.recorded_by ? String(row.recorded_by) : undefined,
+    notes: row.notes ? String(row.notes) : undefined,
   };
 }
 
@@ -96,13 +95,13 @@ export async function listFuelTankDips(fuelTypeId: string): Promise<FuelTankDipR
   const fuel = await listFuelTypes().then((rows) => rows.find((f) => f.id === fuelTypeId));
   const fuelName = fuel?.name ?? '';
 
-  const q = query(
-    collection(getDb(), COLLECTIONS.fuelTankDips),
-    where('fuelTypeId', '==', fuelTypeId),
-    orderBy('recordedAt', 'desc'),
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => mapDip(d.id, d.data(), fuelName));
+  const { data, error } = await getSupabase()
+    .from('fuel_tank_dips')
+    .select('*')
+    .eq('fuel_type_id', fuelTypeId)
+    .order('recorded_at', { ascending: false });
+  throwIfError(error, 'List tank dips');
+  return ((data ?? []) as DipRow[]).map((row) => mapDip(row, fuelName));
 }
 
 export async function listFuelTankDipsInRange(
@@ -115,10 +114,13 @@ export async function listFuelTankDipsInRange(
 
   const fuels = await listFuelTypes();
   const nameById = new Map(fuels.map((f) => [f.id, f.name]));
-  const q = query(collection(getDb(), COLLECTIONS.fuelTankDips), orderBy('recordedAt', 'desc'));
-  const snap = await getDocs(q);
-  return snap.docs
-    .map((d) => mapDip(d.id, d.data(), nameById.get(String(d.data().fuelTypeId)) ?? ''))
+  const { data, error } = await getSupabase()
+    .from('fuel_tank_dips')
+    .select('*')
+    .order('recorded_at', { ascending: false });
+  throwIfError(error, 'List tank dips');
+  return ((data ?? []) as DipRow[])
+    .map((row) => mapDip(row, nameById.get(String(row.fuel_type_id ?? '')) ?? ''))
     .filter((d) => d.pumpDayIso >= fromIso && d.pumpDayIso <= toIso);
 }
 
@@ -155,31 +157,34 @@ export async function recordFuelTankDip(input: {
     return id;
   }
 
-  const ref = await addDoc(collection(getDb(), COLLECTIONS.fuelTankDips), {
-    fuelTypeId: input.fuelTypeId,
-    dipCm,
-    dipLiters,
-    pumpDayIso,
-    dipKind,
-    recordedAt: serverTimestamp(),
-    recordedBy: input.recordedBy ?? null,
+  const id = newId();
+  const { error } = await getSupabase().from('fuel_tank_dips').insert({
+    id,
+    fuel_type_id: input.fuelTypeId,
+    dip_cm: dipCm,
+    dip_liters: dipLiters,
+    pump_day_iso: pumpDayIso,
+    dip_kind: dipKind,
+    recorded_at: new Date().toISOString(),
+    recorded_by: input.recordedBy ?? null,
     notes: input.notes ?? null,
   });
+  throwIfError(error, 'Record tank dip');
 
   if (dipKind === 'closing') {
-    const fuelRef = doc(getDb(), COLLECTIONS.fuelTypes, input.fuelTypeId);
-    const fuelSnap = await getDoc(fuelRef);
-    if (fuelSnap.exists()) {
-      await updateDoc(fuelRef, {
-        currentStockLiters: dipLiters,
-        lastDipCm: dipCm,
-        lastDipAt: serverTimestamp(),
-      });
-    }
+    const { error: fuelError } = await getSupabase()
+      .from('fuel_types')
+      .update({
+        current_stock_liters: dipLiters,
+        last_dip_cm: dipCm,
+        last_dip_at: new Date().toISOString(),
+      })
+      .eq('id', input.fuelTypeId);
+    throwIfError(fuelError, 'Update fuel stock from dip');
   }
 
   notifyFuelStockUpdated();
-  return ref.id;
+  return id;
 }
 
 /** Replace opening or closing dip for a fuel × pump day. */
@@ -202,27 +207,34 @@ export async function upsertFuelTankDipForDay(input: {
   const dipCm = canonicalDipCm(input.dipCm);
   const dipLiters = litersFromDipCm(dipCm, fuel.name);
 
-  const ref = await addDoc(collection(getDb(), COLLECTIONS.fuelTankDips), {
-    fuelTypeId: input.fuelTypeId,
-    dipCm,
-    dipLiters,
-    pumpDayIso: input.pumpDayIso,
-    dipKind: input.dipKind,
-    recordedAt: serverTimestamp(),
-    recordedBy: input.recordedBy ?? null,
+  const id = newId();
+  const { error } = await getSupabase().from('fuel_tank_dips').insert({
+    id,
+    fuel_type_id: input.fuelTypeId,
+    dip_cm: dipCm,
+    dip_liters: dipLiters,
+    pump_day_iso: input.pumpDayIso,
+    dip_kind: input.dipKind,
+    recorded_at: new Date().toISOString(),
+    recorded_by: input.recordedBy ?? null,
     notes: input.notes ?? null,
   });
+  throwIfError(error, 'Save tank dip');
 
   if (input.dipKind === 'closing' && input.pumpDayIso === format(new Date(), 'yyyy-MM-dd')) {
-    await updateDoc(doc(getDb(), COLLECTIONS.fuelTypes, input.fuelTypeId), {
-      currentStockLiters: dipLiters,
-      lastDipCm: dipCm,
-      lastDipAt: serverTimestamp(),
-    });
+    const { error: fuelError } = await getSupabase()
+      .from('fuel_types')
+      .update({
+        current_stock_liters: dipLiters,
+        last_dip_cm: dipCm,
+        last_dip_at: new Date().toISOString(),
+      })
+      .eq('id', input.fuelTypeId);
+    throwIfError(fuelError, 'Update fuel stock from dip');
   }
 
   notifyFuelStockUpdated();
-  return ref.id;
+  return id;
 }
 
 export function formatFuelLiters(value: number): string {
@@ -240,12 +252,14 @@ export async function setFuelTypeCurrentStockLiters(
     notifyFuelStockUpdated();
     return;
   }
-  const fuelRef = doc(getDb(), COLLECTIONS.fuelTypes, fuelTypeId);
-  await updateDoc(fuelRef, { currentStockLiters: rounded });
+  const { error } = await getSupabase()
+    .from('fuel_types')
+    .update({ current_stock_liters: rounded })
+    .eq('id', fuelTypeId);
+  throwIfError(error, 'Update fuel stock');
   notifyFuelStockUpdated();
 }
 
 export function formatFuelPercent(value: number): string {
   return `${value.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
-

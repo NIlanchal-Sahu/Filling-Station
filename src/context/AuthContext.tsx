@@ -7,14 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  type User as FirebaseUser,
-} from 'firebase/auth';
 import { LOCAL_DEMO } from '@/config/appMode';
-import { getAuthInstance } from '@/lib/firebase';
+import { getSupabase } from '@/lib/supabase';
 import { getUser } from '@/services/usersService';
 import type { User } from '@/types/entities';
 
@@ -37,13 +31,15 @@ function emailToDemoUid(email: string): string | null {
   return null;
 }
 
-/** Minimal shape for ProtectedRoute / HomeRedirect (`uid` only). */
-function demoFirebaseUser(uid: string): FirebaseUser {
-  return { uid } as FirebaseUser;
+/** Minimal session shape for route guards (`uid` only). */
+export type SessionUser = { uid: string };
+
+function demoSessionUser(uid: string): SessionUser {
+  return { uid };
 }
 
 type AuthState = {
-  firebaseUser: FirebaseUser | null;
+  firebaseUser: SessionUser | null;
   profile: User | null;
   loading: boolean;
   error: string | null;
@@ -55,7 +51,7 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }): React.ReactElement {
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<SessionUser | null>(null);
   const [profile, setProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
           }
           return;
         }
-        setFirebaseUser(demoFirebaseUser(stored));
+        setFirebaseUser(demoSessionUser(stored));
         try {
           const u = await getUser(stored);
           if (cancelled) {
@@ -110,24 +106,31 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
     }
 
     setLoading(true);
-    const auth = getAuthInstance();
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const supabase = getSupabase();
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      const uid = session?.user?.id ?? null;
       setError(null);
-      setFirebaseUser(u);
-      if (u) {
-        try {
-          await loadProfile(u.uid);
-        } catch (e) {
-          setError(e instanceof Error ? e.message : 'Failed to load profile');
-          setProfile(null);
-        }
-      } else {
+      if (!uid) {
+        setFirebaseUser(null);
         setProfile(null);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+      setFirebaseUser({ uid });
+      // Avoid awaiting Supabase calls inside the auth callback (it can deadlock the client).
+      window.setTimeout(() => {
+        void loadProfile(uid)
+          .catch((e: unknown) => {
+            setError(e instanceof Error ? e.message : 'Failed to load profile');
+            setProfile(null);
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+      }, 0);
     });
     return () => {
-      unsub();
+      subscription.subscription.unsubscribe();
     };
   }, [loadProfile]);
 
@@ -145,11 +148,17 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
           throw new Error('Demo user not found');
         }
         sessionStorage.setItem(DEMO_SESSION_KEY, uid);
-        setFirebaseUser(demoFirebaseUser(uid));
+        setFirebaseUser(demoSessionUser(uid));
         setProfile(u);
       } else {
-        const auth = getAuthInstance();
-        await signInWithEmailAndPassword(auth, email, password);
+        const supabase = getSupabase();
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (signInError) {
+          throw new Error(signInError.message);
+        }
       }
     } catch (e) {
       const msg =
@@ -171,8 +180,11 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
       setProfile(null);
       return;
     }
-    const auth = getAuthInstance();
-    await firebaseSignOut(auth);
+    const supabase = getSupabase();
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+      throw new Error(signOutError.message);
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {

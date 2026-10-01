@@ -1,16 +1,6 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-  writeBatch,
-  type DocumentData,
-} from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { getSupabase, newId, throwIfError } from '@/lib/supabase';
 import type { ShiftReading } from '@/types/entities';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
 import {
   demoCreateInitialReadings,
   demoGetLastClosingForNozzle,
@@ -22,18 +12,37 @@ import { getNozzle } from '@/services/nozzlesService';
 import { compareNozzleOrder } from '@/utils/nozzleSort';
 import { formatMachineNumbers } from '@/utils/machineDisplay';
 
-function mapReading(id: string, data: DocumentData): ShiftReading {
+type ReadingRow = {
+  id: string;
+  shift_id: string | null;
+  nozzle_id: string | null;
+  opening_reading: number | null;
+  closing_reading: number | null;
+  test_liters: number | null;
+  total_liters: number | null;
+  final_sales_liters: number | null;
+  rate_at_sale: number | null;
+  total_amount: number | null;
+};
+
+type ShiftStampRow = {
+  status: string | null;
+  end_time: string | null;
+  readings_complete_at: string | null;
+};
+
+function mapReading(row: ReadingRow): ShiftReading {
   return {
-    id,
-    shiftId: String(data.shiftId ?? ''),
-    nozzleId: String(data.nozzleId ?? ''),
-    openingReading: Number(data.openingReading ?? 0),
-    closingReading: Number(data.closingReading ?? 0),
-    testLiters: Number(data.testLiters ?? 0),
-    totalLiters: Number(data.totalLiters ?? 0),
-    finalSalesLiters: Number(data.finalSalesLiters ?? 0),
-    rateAtSale: Number(data.rateAtSale ?? 0),
-    totalAmount: Number(data.totalAmount ?? 0),
+    id: row.id,
+    shiftId: String(row.shift_id ?? ''),
+    nozzleId: String(row.nozzle_id ?? ''),
+    openingReading: Number(row.opening_reading ?? 0),
+    closingReading: Number(row.closing_reading ?? 0),
+    testLiters: Number(row.test_liters ?? 0),
+    totalLiters: Number(row.total_liters ?? 0),
+    finalSalesLiters: Number(row.final_sales_liters ?? 0),
+    rateAtSale: Number(row.rate_at_sale ?? 0),
+    totalAmount: Number(row.total_amount ?? 0),
   };
 }
 
@@ -42,10 +51,12 @@ export async function listReadingsForShift(shiftId: string): Promise<ShiftReadin
   if (LOCAL_DEMO) {
     readings = await demoListReadingsForShift(shiftId);
   } else {
-    const ref = collection(getDb(), COLLECTIONS.shiftReadings);
-    const qy = query(ref, where('shiftId', '==', shiftId));
-    const snap = await getDocs(qy);
-    readings = snap.docs.map((d) => mapReading(d.id, d.data()));
+    const { data, error } = await getSupabase()
+      .from('shift_readings')
+      .select('*')
+      .eq('shift_id', shiftId);
+    throwIfError(error, 'List shift readings');
+    readings = ((data ?? []) as ReadingRow[]).map(mapReading);
   }
 
   const paired = await Promise.all(
@@ -63,11 +74,9 @@ export async function getReading(id: string): Promise<ShiftReading | null> {
   if (LOCAL_DEMO) {
     return demoGetReading(id);
   }
-  const snap = await getDoc(doc(getDb(), COLLECTIONS.shiftReadings, id));
-  if (!snap.exists()) {
-    return null;
-  }
-  return mapReading(snap.id, snap.data());
+  const { data, error } = await getSupabase().from('shift_readings').select('*').eq('id', id).maybeSingle();
+  throwIfError(error, 'Load shift reading');
+  return data ? mapReading(data as ReadingRow) : null;
 }
 
 /**
@@ -79,33 +88,40 @@ export async function getLastClosingForNozzle(nozzleId: string): Promise<number>
   if (LOCAL_DEMO) {
     return demoGetLastClosingForNozzle(nozzleId);
   }
-  const ref = collection(getDb(), COLLECTIONS.shiftReadings);
-  const qy = query(ref, where('nozzleId', '==', nozzleId));
-  const snap = await getDocs(qy);
-  if (snap.empty) {
+  const { data, error } = await getSupabase()
+    .from('shift_readings')
+    .select('*')
+    .eq('nozzle_id', nozzleId);
+  throwIfError(error, 'List nozzle readings');
+  const rows = (data ?? []) as ReadingRow[];
+  if (rows.length === 0) {
     return 0;
   }
   let bestTs = -1;
   let bestClosing = 0;
-  for (const d of snap.docs) {
-    const data = d.data();
-    const shiftId = String(data.shiftId ?? '');
-    const shiftDoc = await getDoc(doc(getDb(), COLLECTIONS.shifts, shiftId));
-    if (!shiftDoc.exists()) {
+  for (const row of rows) {
+    const shiftId = String(row.shift_id ?? '');
+    const { data: shift, error: shiftError } = await getSupabase()
+      .from('shifts')
+      .select('status, end_time, readings_complete_at')
+      .eq('id', shiftId)
+      .maybeSingle();
+    throwIfError(shiftError, 'Load shift for nozzle closing');
+    if (!shift) {
       continue;
     }
-    const sd = shiftDoc.data()!;
+    const sd = shift as ShiftStampRow;
     const isClosed = sd.status === 'closed';
     let ts: number | null = null;
-    if (isClosed && sd.endTime?.toMillis) {
-      ts = sd.endTime.toMillis();
-    } else if (sd.readingsCompleteAt?.toMillis) {
-      ts = sd.readingsCompleteAt.toMillis();
+    if (isClosed && sd.end_time) {
+      ts = Date.parse(sd.end_time);
+    } else if (sd.readings_complete_at) {
+      ts = Date.parse(sd.readings_complete_at);
     }
-    if (ts == null) {
+    if (ts == null || Number.isNaN(ts)) {
       continue;
     }
-    const closing = Number(data.closingReading ?? 0);
+    const closing = Number(row.closing_reading ?? 0);
     if (ts > bestTs || (ts === bestTs && closing > bestClosing)) {
       bestTs = ts;
       bestClosing = closing;
@@ -122,23 +138,26 @@ export async function createInitialReadings(
   if (LOCAL_DEMO) {
     return demoCreateInitialReadings(shiftId, nozzleIds, openingByNozzle);
   }
-  const batch = writeBatch(getDb());
-  for (const nId of nozzleIds) {
-    const open = openingByNozzle[nId] ?? 0;
-    const r = doc(collection(getDb(), COLLECTIONS.shiftReadings));
-    batch.set(r, {
-      shiftId,
-      nozzleId: nId,
-      openingReading: open,
-      closingReading: open,
-      testLiters: 0,
-      totalLiters: 0,
-      finalSalesLiters: 0,
-      rateAtSale: 0,
-      totalAmount: 0,
-    });
+  if (nozzleIds.length === 0) {
+    return;
   }
-  await batch.commit();
+  const rows = nozzleIds.map((nId) => {
+    const open = openingByNozzle[nId] ?? 0;
+    return {
+      id: newId(),
+      shift_id: shiftId,
+      nozzle_id: nId,
+      opening_reading: open,
+      closing_reading: open,
+      test_liters: 0,
+      total_liters: 0,
+      final_sales_liters: 0,
+      rate_at_sale: 0,
+      total_amount: 0,
+    };
+  });
+  const { error } = await getSupabase().from('shift_readings').insert(rows);
+  throwIfError(error, 'Create shift readings');
 }
 
 export async function updateReadingsOnEnd(
@@ -156,20 +175,11 @@ export async function updateReadingsOnEnd(
   if (LOCAL_DEMO) {
     return demoUpdateReadingsOnEnd(updates);
   }
-  const batch = writeBatch(getDb());
-  for (const u of updates) {
-    const r = doc(getDb(), COLLECTIONS.shiftReadings, u.id);
-    batch.update(r, {
-      openingReading: u.openingReading,
-      closingReading: u.closingReading,
-      testLiters: u.testLiters,
-      totalLiters: u.totalLiters,
-      finalSalesLiters: u.finalSalesLiters,
-      rateAtSale: u.rateAtSale,
-      totalAmount: u.totalAmount,
-    });
+  if (updates.length === 0) {
+    return;
   }
-  await batch.commit();
+  const { error } = await getSupabase().rpc('update_shift_readings', { updates });
+  throwIfError(error, 'Update shift readings');
 }
 
 export function computeLiters(

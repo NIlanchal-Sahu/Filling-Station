@@ -1,7 +1,7 @@
 import type { CashBookSummaryRow } from '@/utils/cashBookSummary';
 import { cashBookAmtDisplay } from '@/utils/dailyCashBookVertical';
 import { downloadCsv } from '@/utils/csvExport';
-import { DEMO_PUMP_NAME } from '@/utils/transferBookExport';
+import { getCachedPumpDisplayName } from '@/services/stationAboutService';
 
 function safeFilePart(raw: string): string {
   const t = raw.replace(/[/\\:*?"<>|]+/g, '_').trim();
@@ -147,7 +147,7 @@ function pageStream(dateLabel: string, rows: CashBookSummaryRow[], start: number
 
   const txt: string[] = [];
   txt.push('BT');
-  txt.push(centerText(DEMO_PUMP_NAME, 18, titleY, '/F2'));
+  txt.push(centerText(getCachedPumpDisplayName(), 18, titleY, '/F2'));
   if (pageIndex === 0) {
     txt.push(centerText('Cash book', 12, titleY - 22, '/F1'));
     txt.push(centerText(dateLabel, 10, titleY - 40, '/F1'));

@@ -1,6 +1,6 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { AppTimestamp } from '@/types/time';
 
-/** Auth profile stored in `users/{uid}` (id matches Firebase Auth uid). */
+/** Auth profile stored in `profiles` (id matches the Supabase Auth user id). */
 export type UserRole = 'admin' | 'owner' | 'manager' | 'operator';
 
 /** How pump-floor payroll gross is calculated on Attendant sheet → Pay summary. */
@@ -26,7 +26,7 @@ export interface FuelType {
   id: string;
   name: string;
   currentRate: number;
-  lastUpdatedAt: Timestamp;
+  lastUpdatedAt: AppTimestamp;
   /** Tank capacity in liters (optional until configured). */
   tankCapacityLiters?: number;
   /** Minimum safe stock before refill alert. */
@@ -35,7 +35,7 @@ export interface FuelType {
   currentStockLiters?: number;
   /** Latest physical dip-stick reading in centimetres. */
   lastDipCm?: number | null;
-  lastDipAt?: Timestamp | null;
+  lastDipAt?: AppTimestamp | null;
 }
 
 export type FuelStockHealth = 'healthy' | 'low' | 'critical';
@@ -52,7 +52,7 @@ export interface FuelTankDipReading {
   /** Pump business day (yyyy-MM-dd). */
   pumpDayIso: string;
   dipKind: DipKind;
-  recordedAt: Timestamp;
+  recordedAt: AppTimestamp;
   recordedBy?: string;
   notes?: string;
 }
@@ -70,7 +70,7 @@ export interface FuelReceipt {
   invoiceNo?: string;
   recordedBy?: string;
   notes?: string;
-  recordedAt: Timestamp;
+  recordedAt: AppTimestamp;
 }
 
 export interface DailyFuelStockRow {
@@ -116,7 +116,7 @@ export interface DipValueLedgerEntry {
   closingBookLiters: number;
   /** Next day opening − this closing book, when next day is saved */
   variationLiters?: number | null;
-  updatedAt: Timestamp;
+  updatedAt: AppTimestamp;
   updatedBy?: string;
 }
 
@@ -131,7 +131,7 @@ export interface FuelStockItem {
   reserveLiters: number;
   availablePercent: number;
   health: FuelStockHealth;
-  lastDipAt: Timestamp | null;
+  lastDipAt: AppTimestamp | null;
   updatedToday: boolean;
   atOrBelowReserve: boolean;
 }
@@ -163,12 +163,12 @@ export interface ShiftAttendantPost {
 export interface Shift {
   id: string;
   operatorId: string;
-  startTime: Timestamp;
-  endTime: Timestamp | null;
+  startTime: AppTimestamp;
+  endTime: AppTimestamp | null;
   shiftLabel: string;
   status: ShiftStatus;
   /** Set when end-of-meter readings are saved; reconciliation still optional while open. */
-  readingsCompleteAt: Timestamp | null;
+  readingsCompleteAt: AppTimestamp | null;
   notes?: string;
   /** Names of pump attendants / staff on duty this shift (optional). */
   pumpAttendants?: string;
@@ -221,8 +221,8 @@ export interface ShiftReconciliation {
   locked: boolean;
   /** Split of credit to customers (also mirrored as creditSales rows). */
   creditLineItems: ReconciliationCreditLine[];
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: AppTimestamp;
+  updatedAt: AppTimestamp;
 }
 
 export interface CreditCustomer {
@@ -240,7 +240,7 @@ export interface CreditSale {
   id: string;
   customerId: string;
   shiftId: string;
-  date: Timestamp;
+  date: AppTimestamp;
   amount: number;
   fuelTypeId?: string;
   liters?: number;
@@ -317,7 +317,7 @@ export function creditPaymentModeLabel(mode: unknown): string {
 export interface CreditPayment {
   id: string;
   customerId: string;
-  date: Timestamp;
+  date: AppTimestamp;
   amountReceived: number;
   mode: CreditPaymentMode;
   notes?: string;
@@ -466,7 +466,7 @@ export function creditPaymentModeLedgerChannel(mode: CreditPaymentMode): LedgerP
 
 export interface LedgerEntry {
   id: string;
-  date: Timestamp;
+  date: AppTimestamp;
   type: LedgerType;
   /** Cash drawer vs bank for display; inferred for older rows when missing. */
   paymentChannel?: LedgerPaymentChannel;
@@ -479,7 +479,7 @@ export interface LedgerEntry {
   relatedLoanId?: string;
   relatedLoanRepaymentId?: string;
   createdBy: string;
-  createdAt: Timestamp;
+  createdAt: AppTimestamp;
 }
 
 export const SHIFT_LABELS = [
@@ -516,7 +516,7 @@ export interface LubricantStockEntry {
   invoiceNo?: string;
   notes?: string;
   recordedBy?: string;
-  recordedAt: Timestamp;
+  recordedAt: AppTimestamp;
 }
 
 /** A single retail sale of one or more units. */
@@ -531,7 +531,7 @@ export interface LubricantSale {
   vehicleNumber?: string;
   notes?: string;
   recordedBy?: string;
-  recordedAt: Timestamp;
+  recordedAt: AppTimestamp;
 }
 
 export const LUBRICANT_UNITS = ['litre', '500ml', 'quart', 'kg', 'can', 'bottle'] as const;

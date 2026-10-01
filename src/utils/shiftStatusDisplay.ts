@@ -1,3 +1,5 @@
+import { isSameDay, parseISO } from 'date-fns';
+
 import { SHIFT_LABELS, type ShiftLabel } from '@/types/entities';
 import { withPumpDayQuery } from '@/utils/dateEntryPolicy';
 
@@ -127,6 +129,107 @@ export function shiftStatusChipColor(
   if (status === 'overdue') return 'error';
   if (status === 'reconciliation_pending') return 'warning';
   return 'default';
+}
+
+export type ShiftUiPhase = 'upcoming' | 'live' | 'overdue' | 'ended' | 'recon_pending' | 'idle';
+
+function scheduledStartOnPumpDay(pumpDayIso: string, meta: ShiftScheduleMeta): Date {
+  return parseISO(
+    `${pumpDayIso}T${String(meta.startHour).padStart(2, '0')}:${String(meta.startMinute).padStart(2, '0')}:00`,
+  );
+}
+
+export function shiftUiPhase(
+  status: ShiftActivityStatus,
+  pumpDayIso: string,
+  shiftLabel: string,
+  shiftId: string | null,
+  now = new Date(),
+): ShiftUiPhase {
+  if (status === 'active') return 'live';
+  if (status === 'overdue') return 'overdue';
+  if (status === 'reconciliation_pending') return 'recon_pending';
+  if (status === 'completed') return 'ended';
+
+  const meta = shiftScheduleForLabel(shiftLabel);
+  if (!meta) return 'idle';
+
+  const pumpDay = parseISO(`${pumpDayIso}T12:00:00`);
+  const isToday = isSameDay(pumpDay, now);
+  if (!isToday) {
+    return shiftId ? 'ended' : 'idle';
+  }
+
+  const schedStart = scheduledStartOnPumpDay(pumpDayIso, meta);
+  if (now.getTime() < schedStart.getTime()) {
+    return 'upcoming';
+  }
+
+  return 'idle';
+}
+
+export type ShiftUiSurface = {
+  bg: string;
+  border: string;
+  accent: string;
+  chipLabel: string;
+};
+
+export function shiftUiSurface(phase: ShiftUiPhase): ShiftUiSurface {
+  switch (phase) {
+    case 'upcoming':
+      return {
+        bg: 'rgba(22, 163, 74, 0.1)',
+        border: 'rgba(22, 163, 74, 0.38)',
+        accent: '#16a34a',
+        chipLabel: 'Upcoming',
+      };
+    case 'live':
+      return {
+        bg: 'rgba(14, 165, 233, 0.12)',
+        border: 'rgba(14, 165, 233, 0.42)',
+        accent: '#0284c7',
+        chipLabel: 'Live',
+      };
+    case 'overdue':
+      return {
+        bg: 'rgba(234, 88, 12, 0.14)',
+        border: 'rgba(234, 88, 12, 0.48)',
+        accent: '#ea580c',
+        chipLabel: 'Overdue',
+      };
+    case 'ended':
+      return {
+        bg: 'rgba(100, 116, 139, 0.1)',
+        border: 'rgba(100, 116, 139, 0.32)',
+        accent: '#64748b',
+        chipLabel: 'Ended',
+      };
+    case 'recon_pending':
+      return {
+        bg: 'rgba(217, 119, 6, 0.12)',
+        border: 'rgba(217, 119, 6, 0.42)',
+        accent: '#d97706',
+        chipLabel: 'Recon pending',
+      };
+    default:
+      return {
+        bg: 'rgba(100, 116, 139, 0.08)',
+        border: 'rgba(100, 116, 139, 0.22)',
+        accent: '#64748b',
+        chipLabel: 'Not started',
+      };
+  }
+}
+
+export function shiftLifecycleLabel(status: ShiftActivityStatus, shiftId: string | null): string {
+  if (status === 'active') return 'Live — shift started';
+  if (status === 'overdue') {
+    return shiftId ? 'Overdue — action needed' : 'Overdue — not started on time';
+  }
+  if (status === 'completed') return 'Ended — reconciled and closed';
+  if (status === 'reconciliation_pending') return 'Ended — reconciliation pending';
+  return 'Not started';
 }
 
 export function formatAttendantNames(raw: string | undefined): string {

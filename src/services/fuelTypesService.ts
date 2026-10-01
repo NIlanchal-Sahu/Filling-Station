@@ -1,17 +1,8 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  serverTimestamp,
-  updateDoc,
-  type DocumentData,
-} from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { getSupabase, newId, throwIfError } from '@/lib/supabase';
 import type { FuelType } from '@/types/entities';
+import { asTimestamp, asTimestampOrNull } from '@/types/time';
 import { DEFAULT_TANK_CAPACITY_LITERS } from '@/utils/fuelStockDisplay';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
 import {
   demoCreateFuelType,
   demoGetFuelType,
@@ -19,21 +10,33 @@ import {
   demoUpdateFuelRate,
 } from '@/localDemo/demoBackend';
 
-function mapFuelType(id: string, data: DocumentData): FuelType {
+type FuelTypeRow = {
+  id: string;
+  name: string | null;
+  current_rate: number | null;
+  last_updated_at: string | null;
+  tank_capacity_liters: number | null;
+  reserve_liters: number | null;
+  current_stock_liters: number | null;
+  last_dip_cm: number | null;
+  last_dip_at: string | null;
+};
+
+function mapFuelType(row: FuelTypeRow): FuelType {
   return {
-    id,
-    name: String(data.name ?? ''),
-    currentRate: Number(data.currentRate ?? 0),
-    lastUpdatedAt: data.lastUpdatedAt,
+    id: row.id,
+    name: String(row.name ?? ''),
+    currentRate: Number(row.current_rate ?? 0),
+    lastUpdatedAt: asTimestamp(row.last_updated_at),
     tankCapacityLiters:
-      data.tankCapacityLiters != null
-        ? Number(data.tankCapacityLiters)
+      row.tank_capacity_liters != null
+        ? Number(row.tank_capacity_liters)
         : DEFAULT_TANK_CAPACITY_LITERS,
-    reserveLiters: data.reserveLiters != null ? Number(data.reserveLiters) : undefined,
+    reserveLiters: row.reserve_liters != null ? Number(row.reserve_liters) : undefined,
     currentStockLiters:
-      data.currentStockLiters != null ? Number(data.currentStockLiters) : undefined,
-    lastDipCm: data.lastDipCm != null ? Number(data.lastDipCm) : null,
-    lastDipAt: data.lastDipAt ?? null,
+      row.current_stock_liters != null ? Number(row.current_stock_liters) : undefined,
+    lastDipCm: row.last_dip_cm != null ? Number(row.last_dip_cm) : null,
+    lastDipAt: asTimestampOrNull(row.last_dip_at),
   };
 }
 
@@ -41,40 +44,43 @@ export async function listFuelTypes(): Promise<FuelType[]> {
   if (LOCAL_DEMO) {
     return demoListFuelTypes();
   }
-  const snap = await getDocs(
-    collection(getDb(), COLLECTIONS.fuelTypes),
-  );
-  return snap.docs.map((d) => mapFuelType(d.id, d.data()));
+  const { data, error } = await getSupabase().from('fuel_types').select('*');
+  throwIfError(error, 'List fuel types');
+  return ((data ?? []) as FuelTypeRow[]).map(mapFuelType);
 }
 
 export async function getFuelType(id: string): Promise<FuelType | null> {
   if (LOCAL_DEMO) {
     return demoGetFuelType(id);
   }
-  const snap = await getDoc(doc(getDb(), COLLECTIONS.fuelTypes, id));
-  if (!snap.exists()) {
-    return null;
-  }
-  return mapFuelType(snap.id, snap.data());
+  const { data, error } = await getSupabase().from('fuel_types').select('*').eq('id', id).maybeSingle();
+  throwIfError(error, 'Load fuel type');
+  return data ? mapFuelType(data as FuelTypeRow) : null;
 }
 
 export async function createFuelType(name: string, currentRate: number): Promise<string> {
   if (LOCAL_DEMO) {
     return demoCreateFuelType(name, currentRate);
   }
-  const ref = await addDoc(collection(getDb(), COLLECTIONS.fuelTypes), {
+  const id = newId();
+  const { error } = await getSupabase().from('fuel_types').insert({
+    id,
     name,
-    currentRate,
-    tankCapacityLiters: DEFAULT_TANK_CAPACITY_LITERS,
-    lastUpdatedAt: serverTimestamp(),
+    current_rate: currentRate,
+    tank_capacity_liters: DEFAULT_TANK_CAPACITY_LITERS,
+    last_updated_at: new Date().toISOString(),
   });
-  return ref.id;
+  throwIfError(error, 'Create fuel type');
+  return id;
 }
 
 export async function updateFuelRate(id: string, currentRate: number): Promise<void> {
   if (LOCAL_DEMO) {
     return demoUpdateFuelRate(id, currentRate);
   }
-  const ref = doc(getDb(), COLLECTIONS.fuelTypes, id);
-  await updateDoc(ref, { currentRate, lastUpdatedAt: serverTimestamp() });
+  const { error } = await getSupabase()
+    .from('fuel_types')
+    .update({ current_rate: currentRate, last_updated_at: new Date().toISOString() })
+    .eq('id', id);
+  throwIfError(error, 'Update fuel rate');
 }

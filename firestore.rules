@@ -130,5 +130,10 @@ service cloud.firestore {
       allow write: if isOpsWriter();
     }
 
+    match /stationSettings/{docId} {
+      allow read: if docId == 'about' || isSignedIn();
+      allow write: if isAdmin();
+    }
+
   }
 }

@@ -1,6 +1,6 @@
 ﻿# PumpStock
 
-Web app for petrol pump operations: shifts and meter readings, end-of-shift reconciliation, credit customers, cash/expense ledger, and manager reports. Built with **React**, **TypeScript**, **Vite**, **MUI**, and **Firebase** (Auth + Firestore), with an **offline local demo** mode for development.
+Web app for petrol pump operations: shifts and meter readings, end-of-shift reconciliation, credit customers, cash/expense ledger, and manager reports. Built with **React**, **TypeScript**, **Vite**, **MUI**, and **Supabase** (Auth + Postgres), with an **offline local demo** mode for development.
 
 ## Quick start (local)
 
@@ -12,9 +12,9 @@ npm run dev
 
 Open the URL Vite prints (usually **http://localhost:5173/**).
 
-### Local demo (no Firebase)
+### Local demo (no Supabase)
 
-If you have **no** `VITE_FIREBASE_*` variables set, the app already runs in **demo** mode: data is stored in this browser (`localStorage` / `sessionStorage`).
+If you have **no** `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` set, the app already runs in **demo** mode: data is stored in this browser (`localStorage` / `sessionStorage`).
 
 Optional: copy `.env.example` to `.env` and set:
 
@@ -22,7 +22,7 @@ Optional: copy `.env.example` to `.env` and set:
 VITE_LOCAL_DEMO=true
 ```
 
-Leave all `VITE_FIREBASE_*` lines empty for demo.
+Leave both Supabase lines empty for demo.
 
 **Demo sign-in** (any password):
 
@@ -35,20 +35,13 @@ Leave all `VITE_FIREBASE_*` lines empty for demo.
 
 See [`docs/ROLES.md`](docs/ROLES.md) for the full permission matrix.
 
-### Production-style (Firebase)
+### Production-style (Supabase)
 
-1. Create a Firebase project and enable **Authentication** (Email/Password) and **Firestore**.
-2. Copy `.env.example` to `.env` and fill every `VITE_FIREBASE_*` value from **Firebase Console ΓåÆ Project settings ΓåÆ Your apps**.
-3. Set `VITE_LOCAL_DEMO=` empty or `false` (do **not** use `true` if you want real Firebase).
-4. Run `npm run firebase:sync-project` to align `.firebaserc` with `VITE_FIREBASE_PROJECT_ID`.
-5. Deploy rules and indexes when ready:
-
-   ```powershell
-   npm run firebase:deploy:firestore
-   npm run firebase:deploy:hosting
-   ```
-
-   Hosting expects `dist` from `npm run build`.
+1. Create a Supabase project (Mumbai / `ap-south-1` if it is offered). Enable **Email** auth and turn **Confirm email** off so staff can sign in immediately.
+2. In the SQL editor, run [`supabase/schema.sql`](supabase/schema.sql). That creates the tables, row level security, and the private `staff-photos` bucket.
+3. Copy `.env.example` to `.env`. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from **Project Settings → API**. Put `SUPABASE_SERVICE_ROLE_KEY` in `.env` for the seed script only — never as a `VITE_` variable.
+4. Set `VITE_LOCAL_DEMO=` empty or `false`.
+5. Seed fuel, nozzles, and staff: `npm run supabase:bootstrap`.
 
 ### Deploy on Vercel
 
@@ -58,69 +51,64 @@ This app is the **Vite** project at the **repository root**. Do not set the Verc
 2. Leave **Root Directory** empty. Framework should be **Vite** (`vercel.json` sets this).
 3. Environment variables (Vite inlines them at **build** time):
 
-   - **Demo (no Firebase):** leave all `VITE_FIREBASE_*` keys unset (or empty). The live site signs in with `admin@demo.local`, `manager@demo.local`, or `operator@demo.local` and stores data in the browser.
-   - **Real Firebase:** add every key below, then redeploy:
+   - **Demo (no Supabase):** leave `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` unset (or empty). The live site signs in with `admin@demo.local`, `owner@demo.local`, `manager@demo.local`, or `operator@demo.local` and stores data in the browser.
+   - **Real Supabase:** add the keys below, then redeploy:
 
    | Name | Notes |
    |------|--------|
-   | `VITE_FIREBASE_API_KEY` | Firebase web app config |
-   | `VITE_FIREBASE_AUTH_DOMAIN` | Firebase web app config |
-   | `VITE_FIREBASE_PROJECT_ID` | Firebase web app config |
-   | `VITE_FIREBASE_STORAGE_BUCKET` | Firebase web app config |
-   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase web app config |
-   | `VITE_FIREBASE_APP_ID` | Firebase web app config |
-   | `VITE_LOCAL_DEMO` | Leave empty/`false` when using Firebase. |
+   | `VITE_SUPABASE_URL` | Project URL |
+   | `VITE_SUPABASE_ANON_KEY` | anon public key |
+   | `VITE_LOCAL_DEMO` | Leave empty/`false` when using Supabase. |
 
-4. Deploy. For Firebase, after the first URL exists, add `your-project.vercel.app` (and any custom domain) to **Firebase Console → Authentication → Settings → Authorized domains**.
+   Do not add `SUPABASE_SERVICE_ROLE_KEY` to Vercel. It is only for `npm run supabase:bootstrap` on your machine.
+
+4. Deploy. Email/password sign-in does not need an authorized-domain list. Add the site URL under **Authentication → URL configuration** only if you later send password-reset emails.
 
 `vercel.json` rewrites unknown paths to `index.html` so React Router deep links work.
 
 ### Bootstrap data (recommended)
 
-After Auth is enabled (**Email/Password**) and you have a **service account** JSON (Console ΓåÆ Project settings ΓåÆ Service accounts ΓåÆ Generate new private key):
+After `supabase/schema.sql` has been run and `.env` has `VITE_SUPABASE_URL` plus `SUPABASE_SERVICE_ROLE_KEY`:
 
-1. Put Firebase config in `.env` (all `VITE_FIREBASE_*` values).
-2. Set an environment variable to the key file path, then run the seed script:
+```powershell
+npm run supabase:bootstrap -- --data-only
+```
 
-   ```powershell
-   $env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\your-service-account.json"
-   npm run firebase:bootstrap -- --firestore-only
-   ```
+That writes **fuel types** (PETROL / DIESEL / XP), **12 nozzles** (same layout as the local demo), and a **sample credit customer**. Safe to run more than once.
 
-   That writes **fuel types** (PETROL / DIESEL / XP), **12 nozzles** (same layout as the local demo), and a **sample credit customer** ΓÇö safe to run more than once (`merge`).
+To also create Auth users and matching `profiles` rows, add to `.env` (never commit real passwords):
 
-3. To also create **Firebase Auth** users and matching **`users/{uid}`** profiles, add to `.env` (never commit real passwords):
+- `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / optional `SEED_ADMIN_NAME`
+- `SEED_OWNER_EMAIL` / `SEED_OWNER_PASSWORD` / optional `SEED_OWNER_NAME`
+- `SEED_MANAGER_EMAIL` / `SEED_MANAGER_PASSWORD` / optional `SEED_MANAGER_NAME`
+- `SEED_OPERATOR_EMAIL` / `SEED_OPERATOR_PASSWORD` / optional `SEED_OPERATOR_NAME`
 
-   - `SEED_MANAGER_EMAIL` / `SEED_MANAGER_PASSWORD` / optional `SEED_MANAGER_NAME`
-   - `SEED_OPERATOR_EMAIL` / `SEED_OPERATOR_PASSWORD` / optional `SEED_OPERATOR_NAME`
+Then run:
 
-   Then run (same `GOOGLE_APPLICATION_CREDENTIALS` as above):
+```powershell
+npm run supabase:bootstrap
+```
 
-   ```powershell
-   npm run firebase:bootstrap
-   ```
-
-   Sign in to the app with those emails and passwords. If you skip seeding, create Auth users manually and add Firestore `users/{uid}` docs with `role` `manager` or `operator` (uid must match Auth).
+Sign in with those emails and passwords. Blank `SEED_*` emails are skipped. To add someone later, create the user in **Authentication → Users**, copy the user id, and link it on the Team page.
 
 ## Scripts
 
 | Command | Purpose |
 |--------|---------|
 | `npm run dev` | Vite dev server |
-| `npm run build` | Production build ΓåÆ `dist/` |
+| `npm run build` | Production build to `dist/` |
 | `npm run preview` | Preview production build locally |
 | `npm run typecheck` | TypeScript check |
 | `npm run lint` | ESLint |
-| `npm run firebase:sync-project` | Write `.firebaserc` from env |
-| `npm run firebase:bootstrap` | Seed Firestore (+ optional Auth users via `SEED_*` in `.env`) |
-| `npm run firebase:deploy` | Deploy Firestore + Hosting |
+| `npm run supabase:bootstrap` | Seed fuel, nozzles, sample customer, and optional Auth users |
 
 ## Project layout (high level)
 
-- `src/pages/manager/` ΓÇö dashboard, **team**, credit, ledger, fuel prices, reports, reconciliation review
-- `src/pages/operator/` ΓÇö operator home
-- `src/pages/shifts/` ΓÇö start shift, end meters, reconciliation form
-- `src/localDemo/demoBackend.ts` ΓÇö in-browser persistence when not using Firebase
+- `src/pages/manager/` — dashboard, **team**, credit, ledger, fuel prices, reports, reconciliation review
+- `src/pages/operator/` — operator home
+- `src/pages/shifts/` — start shift, end meters, reconciliation form
+- `src/localDemo/demoBackend.ts` — in-browser persistence when Supabase is not configured
+- `supabase/schema.sql` — tables, indexes, row level security, staff photo bucket
 
 ## License
 

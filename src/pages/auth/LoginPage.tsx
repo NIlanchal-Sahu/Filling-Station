@@ -3,15 +3,11 @@ import {
   alpha,
   Box,
   TextField,
-  Button,
   Typography,
-  Paper,
   Alert,
   Stack,
   Chip,
   Link,
-  useTheme,
-  useMediaQuery,
 } from '@mui/material';
 import { motion } from 'motion/react';
 import LocalGasStationOutlinedIcon from '@mui/icons-material/LocalGasStationOutlined';
@@ -24,7 +20,15 @@ import { LOCAL_DEMO } from '@/config/appMode';
 import { homePathForRole } from '@/utils/roles';
 import { HeroImage } from '@/components/ui/HeroImage';
 import { MotionBox } from '@/components/motion/MotionBox';
+import { MotionButton } from '@/components/motion/MotionButton';
+import { StaggerChildren, StaggerItem } from '@/components/motion/StaggerChildren';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { MarketingBackground } from '@/components/marketing/MarketingBackground';
+import { PwaInstallButton } from '@/components/pwa/PwaInstallButton';
+import { ThemeModeToggle } from '@/components/ui/ThemeModeToggle';
+import { useStationAbout } from '@/context/StationAboutContext';
+import { useThemeMode } from '@/context/ThemeModeContext';
+import { marketingFieldSx, marketingFontDisplay, marketingPageSx, marketingPalette } from '@/theme/marketingTheme';
 
 const DEMO_ACCOUNTS = [
   { label: 'Admin', email: 'admin@demo.local' },
@@ -50,38 +54,46 @@ function DemoChip({
   onSelect: () => void;
 }) {
   const reduced = useReducedMotion();
+  const { resolvedMode } = useThemeMode();
+  const palette = marketingPalette(resolvedMode);
+
+  const chip = (
+    <Chip
+      label={label}
+      clickable
+      variant="outlined"
+      onClick={onSelect}
+      sx={{
+        minHeight: 36,
+        fontWeight: 600,
+        borderColor: selected ? palette.cyan : palette.border,
+        bgcolor: selected ? alpha(palette.cyan, 0.15) : 'transparent',
+        color: selected ? palette.cyan : palette.textMuted,
+        '&:hover': {
+          borderColor: palette.cyan,
+          bgcolor: alpha(palette.cyan, 0.1),
+        },
+      }}
+    />
+  );
 
   if (reduced) {
-    return (
-      <Chip
-        label={label}
-        clickable
-        variant={selected ? 'filled' : 'outlined'}
-        color={selected ? 'primary' : 'default'}
-        onClick={onSelect}
-        sx={{ minHeight: 36 }}
-      />
-    );
+    return chip;
   }
 
   return (
-    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} style={{ display: 'inline-block' }}>
-      <Chip
-        label={label}
-        clickable
-        variant={selected ? 'filled' : 'outlined'}
-        color={selected ? 'primary' : 'default'}
-        onClick={onSelect}
-        sx={{ minHeight: 36 }}
-      />
+    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} style={{ display: 'inline-block' }}>
+      {chip}
     </motion.div>
   );
 }
 
 export function LoginPage() {
-  const theme = useTheme();
-  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
   const reduced = useReducedMotion();
+  const { resolvedMode } = useThemeMode();
+  const { profile: station } = useStationAbout();
+  const MARKETING = marketingPalette(resolvedMode);
+  const fieldSx = marketingFieldSx(MARKETING, resolvedMode);
   const { signIn, error, loading, profile } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
@@ -91,10 +103,7 @@ export function LoginPage() {
     if (!profile) {
       return;
     }
-    const target =
-      from && from !== '/login'
-        ? from
-        : homePathForRole(profile.role);
+    const target = from && from !== '/login' ? from : homePathForRole(profile.role);
     nav(target, { replace: true });
   }, [profile, from, nav]);
 
@@ -124,207 +133,247 @@ export function LoginPage() {
 
   const isSigningIn = localLoading || loading;
 
-  const brandPanel = (
+  return (
     <Box
       sx={{
-        display: { xs: 'none', md: 'flex' },
-        flex: 1,
-        flexDirection: 'column',
-        justifyContent: 'flex-end',
+        ...marketingPageSx(),
+        bgcolor: MARKETING.bg,
+        color: MARKETING.text,
+        display: 'flex',
+        flexDirection: { xs: 'column', md: 'row' },
+        minHeight: '100dvh',
         position: 'relative',
-        overflow: 'hidden',
-        color: 'primary.contrastText',
       }}
     >
-      <Box sx={{ position: 'absolute', inset: 0 }}>
-        <HeroImage
-          webpSrc="/hero/hero-dashboard.webp"
-          fallbackSvg="/hero/hero-dashboard-fallback.svg"
-          alt=""
-        />
-      </Box>
+      <MarketingBackground />
+
       <Box
         sx={{
-          position: 'absolute',
-          inset: 0,
-          background: (t) =>
-            `linear-gradient(180deg, ${alpha(t.palette.primary.dark, 0.75)} 0%, ${alpha(t.palette.primary.main, 0.92)} 100%)`,
+          display: { xs: 'none', md: 'flex' },
+          flex: 1,
+          position: 'relative',
+          overflow: 'hidden',
+          zIndex: 1,
         }}
-      />
-      <Box sx={{ position: 'relative', p: 5, zIndex: 1 }}>
+      >
+        <Box sx={{ position: 'absolute', inset: 0 }}>
+          <HeroImage
+            webpSrc="/hero/hero-dashboard.webp"
+            fallbackSvg="/hero/hero-dashboard-fallback.svg"
+            alt=""
+          />
+        </Box>
         <Box
           sx={{
-            width: 56,
-            height: 56,
-            borderRadius: 2,
-            bgcolor: alpha('#fff', 0.15),
+            position: 'absolute',
+            inset: 0,
+            background: `linear-gradient(180deg, ${alpha(MARKETING.bg, 0.55)} 0%, ${alpha(MARKETING.bg, 0.92)} 100%)`,
+          }}
+        />
+        <Box sx={{ position: 'relative', zIndex: 1, p: 5, mt: 'auto', maxWidth: 440 }}>
+          <MotionBox preset="fadeUp">
+            <StaggerChildren>
+              <StaggerItem>
+                <Box
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 2,
+                    bgcolor: alpha(MARKETING.cyan, 0.15),
+                    border: '1px solid',
+                    borderColor: alpha(MARKETING.cyan, 0.35),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mb: 3,
+                    color: MARKETING.cyan,
+                  }}
+                >
+                  <LocalGasStationOutlinedIcon sx={{ fontSize: 32 }} />
+                </Box>
+              </StaggerItem>
+              <StaggerItem>
+                <Typography
+                  sx={{
+                    fontFamily: marketingFontDisplay,
+                    fontWeight: 700,
+                    fontSize: '2.5rem',
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    lineHeight: 1.05,
+                    mb: 1.5,
+                  }}
+                >
+                  {station.displayName}
+                </Typography>
+              </StaggerItem>
+              <StaggerItem>
+                <Typography sx={{ color: MARKETING.textMuted, mb: 3, lineHeight: 1.7, maxWidth: 360 }}>
+                  {station.tagline}
+                </Typography>
+              </StaggerItem>
+              {BRAND_BULLETS.map((item) => (
+                <StaggerItem key={item}>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1 }}>
+                    <CheckCircleOutlineOutlinedIcon sx={{ fontSize: 20, color: MARKETING.cyan }} />
+                    <Typography variant="body2" sx={{ color: MARKETING.text }}>
+                      {item}
+                    </Typography>
+                  </Stack>
+                </StaggerItem>
+              ))}
+            </StaggerChildren>
+          </MotionBox>
+        </Box>
+      </Box>
+
+      <MotionBox
+        preset="fadeInRight"
+        style={{ flex: 1, minWidth: 0, display: 'flex', zIndex: 1, position: 'relative' }}
+      >
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            mb: 3,
+            p: { xs: 2.5, sm: 4, md: 5 },
           }}
         >
-          <LocalGasStationOutlinedIcon sx={{ fontSize: 32 }} />
-        </Box>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em', mb: 1.5 }}>
-          PumpStock
-        </Typography>
-        <Typography variant="body1" sx={{ opacity: 0.9, mb: 3, maxWidth: 360, lineHeight: 1.7 }}>
-          Modern petrol pump operations — shifts, stock, credit, and reports in one dashboard.
-        </Typography>
-        <Stack spacing={1.25}>
-          {BRAND_BULLETS.map((item) => (
-            <Stack key={item} direction="row" spacing={1} alignItems="center">
-              <CheckCircleOutlineOutlinedIcon sx={{ fontSize: 20, opacity: 0.9 }} />
-              <Typography variant="body2" sx={{ opacity: 0.95 }}>
-                {item}
-              </Typography>
-            </Stack>
-          ))}
-        </Stack>
-      </Box>
-    </Box>
-  );
-
-  const formPanel = (
-    <MotionBox preset="fadeInRight" style={{ flex: 1, minWidth: 0, display: 'flex' }}>
-      <Box
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          p: { xs: 2.5, sm: 4, md: 5 },
-          bgcolor: 'background.default',
-        }}
-      >
-        <Paper
-          elevation={0}
-          sx={{
-            width: '100%',
-            maxWidth: 420,
-            p: { xs: 2.5, sm: 3.5 },
-            borderRadius: 3,
-            border: '1px solid',
-            borderColor: 'divider',
-            boxShadow: (t) => `0 16px 48px ${alpha(t.palette.common.black, 0.08)}`,
-          }}
-        >
-          <Link
-            component={RouterLink}
-            to="/"
-            underline="hover"
+          <Box
+            component={reduced ? 'div' : motion.div}
+            {...(!reduced && {
+              initial: { opacity: 0, y: 16 },
+              animate: { opacity: 1, y: 0 },
+              transition: { duration: 0.5 },
+            })}
             sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 0.5,
-              mb: 2,
-              typography: 'body2',
-              color: 'text.secondary',
+              width: '100%',
+              maxWidth: 440,
+              p: { xs: 2.5, sm: 3.5 },
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: MARKETING.border,
+              bgcolor: MARKETING.glassStrong,
+              backdropFilter: 'blur(16px)',
+              boxShadow: `0 24px 64px ${alpha('#000', 0.35)}, 0 0 40px ${alpha(MARKETING.cyan, 0.06)}`,
             }}
           >
-            <ArrowBackOutlinedIcon sx={{ fontSize: 16 }} />
-            Back to home
-          </Link>
+            <Link
+              component={RouterLink}
+              to="/"
+              underline="hover"
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.5,
+                mb: 2,
+                typography: 'body2',
+                color: MARKETING.textMuted,
+                '&:hover': { color: MARKETING.cyan },
+              }}
+            >
+              <ArrowBackOutlinedIcon sx={{ fontSize: 16 }} />
+              Back to home
+            </Link>
 
-          {!isDesktop ? (
-            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
               <Box
                 sx={{
                   width: 44,
                   height: 44,
                   borderRadius: 2,
-                  bgcolor: (t) => alpha(t.palette.primary.main, 0.12),
-                  color: 'primary.main',
-                  display: 'flex',
+                  bgcolor: alpha(MARKETING.cyan, 0.12),
+                  color: MARKETING.cyan,
+                  display: { xs: 'flex', md: 'none' },
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
                 <LocalGasStationOutlinedIcon />
               </Box>
-              <Typography variant="h5" sx={{ fontWeight: 800 }}>
+              <Typography
+                sx={{
+                  flex: 1,
+                  fontFamily: marketingFontDisplay,
+                  fontWeight: 700,
+                  fontSize: '1.75rem',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                }}
+              >
                 Sign in
               </Typography>
+              <ThemeModeToggle marketing />
+              <PwaInstallButton marketing />
             </Stack>
-          ) : (
-            <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5 }}>
-              Sign in
-            </Typography>
-          )}
 
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
-            {LOCAL_DEMO
-              ? 'Demo mode — pick a role below or enter credentials. Any password works.'
-              : 'Sign in with your work credentials to manage shifts, credit, ledger, and reports.'}
-          </Typography>
+            {LOCAL_DEMO ? (
+              <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+                {DEMO_ACCOUNTS.map((acc) => (
+                  <DemoChip
+                    key={acc.email}
+                    label={acc.label}
+                    selected={email === acc.email}
+                    onSelect={() => setEmail(acc.email)}
+                  />
+                ))}
+              </Stack>
+            ) : null}
 
-          {LOCAL_DEMO ? (
-            <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
-              {DEMO_ACCOUNTS.map((acc) => (
-                <DemoChip
-                  key={acc.email}
-                  label={acc.label}
-                  selected={email === acc.email}
-                  onSelect={() => setEmail(acc.email)}
-                />
-              ))}
+            <Stack component="form" spacing={2.25} onSubmit={handleSubmit}>
+              <TextField
+                label="Email"
+                type="email"
+                value={email}
+                onChange={(x) => setEmail(x.target.value)}
+                autoComplete="email"
+                fullWidth
+                disabled={isSigningIn}
+                sx={fieldSx}
+              />
+              <TextField
+                label="Password"
+                type="password"
+                value={password}
+                onChange={(x) => setPassword(x.target.value)}
+                autoComplete="current-password"
+                fullWidth
+                disabled={isSigningIn}
+                sx={fieldSx}
+              />
+              {(formError || error) && (
+                <Alert severity="error" sx={{ borderRadius: 2 }}>
+                  {formError || error}
+                </Alert>
+              )}
+              <MotionButton
+                type="submit"
+                variant="contained"
+                size="large"
+                disabled={isSigningIn}
+                sx={{
+                  borderRadius: 999,
+                  py: 1.35,
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  bgcolor: MARKETING.cyan,
+                  color: MARKETING.bg,
+                  boxShadow: `0 0 32px ${alpha(MARKETING.cyan, 0.35)}`,
+                  '&:hover': { bgcolor: MARKETING.blue },
+                  '&.Mui-disabled': {
+                    bgcolor: alpha(MARKETING.cyan, 0.35),
+                    color: alpha(MARKETING.bg, 0.7),
+                  },
+                }}
+              >
+                {isSigningIn ? 'Signing in…' : 'Sign in'}
+              </MotionButton>
             </Stack>
-          ) : null}
-
-          <Stack component="form" spacing={2.25} onSubmit={handleSubmit}>
-            <TextField
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(x) => setEmail(x.target.value)}
-              autoComplete="email"
-              fullWidth
-              disabled={isSigningIn}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-            />
-            <TextField
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(x) => setPassword(x.target.value)}
-              autoComplete="current-password"
-              fullWidth
-              disabled={isSigningIn}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-            />
-            {(formError || error) && <Alert severity="error">{formError || error}</Alert>}
-            <Button
-              type="submit"
-              variant="contained"
-              size="large"
-              disabled={isSigningIn}
-              sx={{
-                borderRadius: 1.5,
-                py: 1.25,
-                ...(isSigningIn &&
-                  !reduced && {
-                    animation: 'signInPulse 1.5s ease-in-out infinite',
-                    '@keyframes signInPulse': {
-                      '0%, 100%': { opacity: 1 },
-                      '50%': { opacity: 0.85 },
-                    },
-                  }),
-              }}
-            >
-              {isSigningIn ? 'Signing in…' : 'Sign in'}
-            </Button>
-          </Stack>
-        </Paper>
-      </Box>
-    </MotionBox>
-  );
-
-  return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: { xs: 'column', md: 'row' }, overflowX: 'hidden' }}>
-      {brandPanel}
-      {formPanel}
+          </Box>
+        </Box>
+      </MotionBox>
     </Box>
   );
 }

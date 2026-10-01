@@ -14,6 +14,9 @@ const AdminDashboardPage = lazy(() =>
 const AdminSettingsPage = lazy(() =>
   import('@/pages/admin/AdminSettingsPage').then((m) => ({ default: m.AdminSettingsPage })),
 );
+const AdminAboutPage = lazy(() =>
+  import('@/pages/admin/AdminAboutPage').then((m) => ({ default: m.AdminAboutPage })),
+);
 const AdminPumpSetupPage = lazy(() =>
   import('@/pages/admin/AdminPumpSetupPage').then((m) => ({ default: m.AdminPumpSetupPage })),
 );
@@ -121,6 +124,7 @@ export default function App() {
               <Route path="team" element={<TeamPage />} />
               <Route path="staff-pay" element={<AdminStaffPayPage />} />
               <Route path="pump-setup" element={<AdminPumpSetupPage />} />
+              <Route path="about" element={<AdminAboutPage />} />
               <Route path="settings" element={<AdminSettingsPage />} />
             </Route>
           </Route>

@@ -1,20 +1,7 @@
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  Timestamp,
-  updateDoc,
-  where,
-  writeBatch,
-  type DocumentData,
-} from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { getSupabase, newId, throwIfError } from '@/lib/supabase';
 import type { CreditSale, ReconciliationCreditLine } from '@/types/entities';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
+import { AppTimestamp } from '@/types/time';
 import {
   demoCreateCreditSalesForReconciliation,
   demoCreateManualCreditSale,
@@ -28,6 +15,18 @@ import { getShift, shiftPumpDayIso } from '@/services/shiftsService';
 
 /** Sentinel shift id for credit lines posted from customer detail (not tied to shift recon). */
 export const MANAGER_CREDIT_SHIFT_ID = '__mgr_credit__';
+
+type SaleRow = {
+  id: string;
+  customer_id: string | null;
+  shift_id: string | null;
+  date: string | null;
+  amount: number | null;
+  fuel_type_id: string | null;
+  liters: number | null;
+  rate_at_sale: number | null;
+  reference: string | null;
+};
 
 function roundMoney2(x: number): number {
   return Math.round((x + Number.EPSILON) * 100) / 100;
@@ -63,21 +62,21 @@ async function applyShiftPumpDayDates(sales: CreditSale[]): Promise<CreditSale[]
     if (!sh) {
       return s;
     }
-    return { ...s, date: Timestamp.fromDate(localNoon(shiftPumpDayIso(sh))) };
+    return { ...s, date: AppTimestamp.fromDate(localNoon(shiftPumpDayIso(sh))) };
   });
 }
 
-function mapCreditSale(id: string, data: DocumentData): CreditSale {
+function mapCreditSale(row: SaleRow): CreditSale {
   return {
-    id,
-    customerId: String(data.customerId ?? ''),
-    shiftId: String(data.shiftId ?? ''),
-    date: data.date,
-    amount: Number(data.amount ?? 0),
-    fuelTypeId: data.fuelTypeId ? String(data.fuelTypeId) : undefined,
-    liters: data.liters != null ? Number(data.liters) : undefined,
-    rateAtSale: data.rateAtSale != null ? Number(data.rateAtSale) : undefined,
-    reference: data.reference ? String(data.reference) : undefined,
+    id: row.id,
+    customerId: String(row.customer_id ?? ''),
+    shiftId: String(row.shift_id ?? ''),
+    date: AppTimestamp.fromDate(row.date ? new Date(row.date) : new Date(0)),
+    amount: Number(row.amount ?? 0),
+    fuelTypeId: row.fuel_type_id ? String(row.fuel_type_id) : undefined,
+    liters: row.liters != null ? Number(row.liters) : undefined,
+    rateAtSale: row.rate_at_sale != null ? Number(row.rate_at_sale) : undefined,
+    reference: row.reference ? String(row.reference) : undefined,
   };
 }
 
@@ -88,27 +87,13 @@ export async function replaceCreditSalesForShift(
   if (LOCAL_DEMO) {
     return demoReplaceCreditSalesForShift(shiftId, lines);
   }
-  const ref = collection(getDb(), COLLECTIONS.creditSales);
-  const qy = query(ref, where('shiftId', '==', shiftId));
-  const snap = await getDocs(qy);
-  const batch = writeBatch(getDb());
-  for (const d of snap.docs) {
-    const data = d.data();
-    const refStr = data.reference ? String(data.reference) : '';
-    if (!refStr.startsWith('SHIFT_RECON:')) {
-      continue;
-    }
-    const customerId = String(data.customerId ?? '');
-    const amount = Number(data.amount ?? 0);
-    if (customerId && amount > 0) {
-      await bumpCustomerBalance(customerId, -amount);
-    }
-    batch.delete(d.ref);
-  }
-  await batch.commit();
-  if (lines.length > 0) {
-    await createCreditSalesForReconciliation('update', shiftId, lines);
-  }
+  const saleDate = await creditSaleDateForShift(shiftId);
+  const { error } = await getSupabase().rpc('replace_shift_credit_sales', {
+    p_shift_id: shiftId,
+    p_lines: lines,
+    p_sale_date: saleDate.toISOString(),
+  });
+  throwIfError(error, 'Replace shift credit sales');
 }
 
 export async function createCreditSalesForReconciliation(
@@ -119,32 +104,25 @@ export async function createCreditSalesForReconciliation(
   if (LOCAL_DEMO) {
     return demoCreateCreditSalesForReconciliation(_reconciliationId, shiftId, lines);
   }
-  const saleDate = Timestamp.fromDate(await creditSaleDateForShift(shiftId));
-  const batch = writeBatch(getDb());
-  for (const line of lines) {
-    if (line.amount <= 0) {
-      continue;
-    }
-    const r = doc(collection(getDb(), COLLECTIONS.creditSales));
-    const payload: Record<string, unknown> = {
-      customerId: line.customerId,
-      shiftId,
+  const saleDate = (await creditSaleDateForShift(shiftId)).toISOString();
+  const rows = lines
+    .filter((line) => line.amount > 0)
+    .map((line) => ({
+      id: newId(),
+      customer_id: line.customerId,
+      shift_id: shiftId,
       date: saleDate,
       amount: roundMoney2(line.amount),
+      fuel_type_id: line.fuelTypeId ?? null,
+      liters: line.liters != null && Number.isFinite(line.liters) ? line.liters : null,
+      rate_at_sale:
+        line.rateAtSale != null && Number.isFinite(line.rateAtSale) ? roundMoney2(line.rateAtSale) : null,
       reference: `SHIFT_RECON:${shiftId}`,
-    };
-    if (line.fuelTypeId) {
-      payload.fuelTypeId = line.fuelTypeId;
-    }
-    if (line.liters != null && Number.isFinite(line.liters)) {
-      payload.liters = line.liters;
-    }
-    if (line.rateAtSale != null && Number.isFinite(line.rateAtSale)) {
-      payload.rateAtSale = roundMoney2(line.rateAtSale);
-    }
-    batch.set(r, payload);
+    }));
+  if (rows.length > 0) {
+    const { error } = await getSupabase().from('credit_sales').insert(rows);
+    throwIfError(error, 'Create reconciliation credit sales');
   }
-  await batch.commit();
   for (const line of lines) {
     if (line.amount > 0) {
       await bumpCustomerBalance(line.customerId, line.amount);
@@ -153,13 +131,21 @@ export async function createCreditSalesForReconciliation(
 }
 
 async function bumpCustomerBalance(customerId: string, deltaCredit: number): Promise<void> {
-  const ref = doc(getDb(), COLLECTIONS.creditCustomers, customerId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
+  const { data, error } = await getSupabase()
+    .from('credit_customers')
+    .select('current_balance')
+    .eq('id', customerId)
+    .maybeSingle();
+  throwIfError(error, 'Load credit customer');
+  if (!data) {
     return;
   }
-  const cur = Number(snap.data()?.currentBalance ?? 0);
-  await updateDoc(ref, { currentBalance: cur + deltaCredit });
+  const cur = Number(data.current_balance ?? 0);
+  const { error: updateError } = await getSupabase()
+    .from('credit_customers')
+    .update({ current_balance: cur + deltaCredit })
+    .eq('id', customerId);
+  throwIfError(updateError, 'Update credit balance');
 }
 
 /** Manager-only: log credit sale like a cashbook line (fuel, liters × rate → amount). */
@@ -186,33 +172,37 @@ export async function createManualCreditSale(input: {
     });
   }
 
-  const r = await addDoc(collection(getDb(), COLLECTIONS.creditSales), {
-    customerId: input.customerId,
-    shiftId: MANAGER_CREDIT_SHIFT_ID,
-    date: Timestamp.fromDate(input.date),
+  const id = newId();
+  const { error } = await getSupabase().from('credit_sales').insert({
+    id,
+    customer_id: input.customerId,
+    shift_id: MANAGER_CREDIT_SHIFT_ID,
+    date: input.date.toISOString(),
     amount,
-    fuelTypeId: input.fuelTypeId,
+    fuel_type_id: input.fuelTypeId,
     liters: input.liters,
-    rateAtSale: roundMoney2(input.rateAtSale),
+    rate_at_sale: roundMoney2(input.rateAtSale),
     reference: 'MANAGER_ENTRY',
   });
+  throwIfError(error, 'Create credit sale');
   await bumpCustomerBalance(input.customerId, amount);
-  return r.id;
+  return id;
 }
 
 export async function deleteCreditSale(id: string): Promise<void> {
   if (LOCAL_DEMO) {
     return demoDeleteCreditSale(id);
   }
-  const ref = doc(getDb(), COLLECTIONS.creditSales, id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
+  const { data, error } = await getSupabase().from('credit_sales').select('*').eq('id', id).maybeSingle();
+  throwIfError(error, 'Load credit sale');
+  if (!data) {
     throw new Error('Credit sale not found.');
   }
-  const data = snap.data();
-  const customerId = String(data.customerId ?? '');
-  const amount = Number(data.amount ?? 0);
-  await deleteDoc(ref);
+  const row = data as SaleRow;
+  const customerId = String(row.customer_id ?? '');
+  const amount = Number(row.amount ?? 0);
+  const { error: deleteError } = await getSupabase().from('credit_sales').delete().eq('id', id);
+  throwIfError(deleteError, 'Delete credit sale');
   if (customerId && amount) {
     await bumpCustomerBalance(customerId, -amount);
   }
@@ -235,24 +225,28 @@ export async function updateCreditSale(
   if (LOCAL_DEMO) {
     return demoUpdateCreditSale(id, { ...input, amount });
   }
-  const ref = doc(getDb(), COLLECTIONS.creditSales, id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
+  const { data, error } = await getSupabase().from('credit_sales').select('*').eq('id', id).maybeSingle();
+  throwIfError(error, 'Load credit sale');
+  if (!data) {
     throw new Error('Credit sale not found.');
   }
-  const prev = snap.data();
-  const prevCustomer = String(prev.customerId ?? '');
+  const prev = data as SaleRow;
+  const prevCustomer = String(prev.customer_id ?? '');
   const prevAmount = Number(prev.amount ?? 0);
-  const shiftId = String(prev.shiftId ?? '');
+  const shiftId = String(prev.shift_id ?? '');
   const shiftLockedDate = Boolean(shiftId && shiftId !== MANAGER_CREDIT_SHIFT_ID);
-  await updateDoc(ref, {
-    customerId: input.customerId,
+  const patch: Record<string, unknown> = {
+    customer_id: input.customerId,
     amount,
-    fuelTypeId: input.fuelTypeId,
+    fuel_type_id: input.fuelTypeId,
     liters: input.liters,
-    rateAtSale: roundMoney2(input.rateAtSale),
-    ...(shiftLockedDate ? {} : { date: Timestamp.fromDate(input.date) }),
-  });
+    rate_at_sale: roundMoney2(input.rateAtSale),
+  };
+  if (!shiftLockedDate) {
+    patch.date = input.date.toISOString();
+  }
+  const { error: updateError } = await getSupabase().from('credit_sales').update(patch).eq('id', id);
+  throwIfError(updateError, 'Update credit sale');
   if (prevCustomer === input.customerId) {
     const delta = amount - prevAmount;
     if (delta !== 0 && prevCustomer) {
@@ -270,11 +264,13 @@ export async function listSalesForCustomer(customerId: string): Promise<CreditSa
   if (LOCAL_DEMO) {
     return applyShiftPumpDayDates(await demoListSalesForCustomer(customerId));
   }
-  const ref = collection(getDb(), COLLECTIONS.creditSales);
-  const qy = query(ref, where('customerId', '==', customerId));
-  const snap = await getDocs(qy);
-  const sales = snap.docs
-    .map((d) => mapCreditSale(d.id, d.data()))
+  const { data, error } = await getSupabase()
+    .from('credit_sales')
+    .select('*')
+    .eq('customer_id', customerId);
+  throwIfError(error, 'List credit sales');
+  const sales = ((data ?? []) as SaleRow[])
+    .map(mapCreditSale)
     .sort((a, b) => b.date.toMillis() - a.date.toMillis());
   return applyShiftPumpDayDates(sales);
 }
@@ -283,6 +279,7 @@ export async function listAllCreditSales(): Promise<CreditSale[]> {
   if (LOCAL_DEMO) {
     return applyShiftPumpDayDates(await demoListAllCreditSales());
   }
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.creditSales));
-  return applyShiftPumpDayDates(snap.docs.map((d) => mapCreditSale(d.id, d.data())));
+  const { data, error } = await getSupabase().from('credit_sales').select('*');
+  throwIfError(error, 'List credit sales');
+  return applyShiftPumpDayDates(((data ?? []) as SaleRow[]).map(mapCreditSale));
 }

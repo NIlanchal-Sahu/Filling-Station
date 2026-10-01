@@ -1,6 +1,5 @@
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
+import { getSupabase, throwIfError } from '@/lib/supabase';
 import { listAllLedgerForBalance } from '@/services/ledgerService';
 import {
   defaultLedgerListSettings,
@@ -21,15 +20,19 @@ export async function getLedgerListSettings(): Promise<LedgerListSettings> {
   if (LOCAL_DEMO) {
     return mergeLedgerListSettings(demoGetLedgerListSettings());
   }
-  const ref = doc(getDb(), COLLECTIONS.stationSettings, LEDGER_LISTS_DOC_ID);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
+  const { data, error } = await getSupabase()
+    .from('station_settings')
+    .select('data')
+    .eq('id', LEDGER_LISTS_DOC_ID)
+    .maybeSingle();
+  throwIfError(error, 'Load ledger lists');
+  if (!data?.data) {
     return defaultLedgerListSettings();
   }
-  const data = snap.data();
+  const stored = data.data as { categories?: string[]; txnTypes?: LedgerListSettings['txnTypes'] };
   return mergeLedgerListSettings({
-    categories: data.categories as string[] | undefined,
-    txnTypes: data.txnTypes as LedgerListSettings['txnTypes'] | undefined,
+    categories: stored.categories,
+    txnTypes: stored.txnTypes,
   });
 }
 
@@ -42,13 +45,19 @@ export async function saveLedgerListSettings(
     demoSaveLedgerListSettings(merged);
     return;
   }
-  const ref = doc(getDb(), COLLECTIONS.stationSettings, LEDGER_LISTS_DOC_ID);
-  await setDoc(ref, {
-    categories: merged.categories,
-    txnTypes: merged.txnTypes,
-    updatedBy,
-    updatedAt: serverTimestamp(),
-  });
+  const { error } = await getSupabase().from('station_settings').upsert(
+    {
+      id: LEDGER_LISTS_DOC_ID,
+      data: {
+        categories: merged.categories,
+        txnTypes: merged.txnTypes,
+      },
+      updated_by: updatedBy,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' },
+  );
+  throwIfError(error, 'Save ledger lists');
 }
 
 function normalizeCategoryKey(category: string): string {

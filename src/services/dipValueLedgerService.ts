@@ -1,17 +1,7 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-  type DocumentData,
-} from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
+import { getSupabase, throwIfError } from '@/lib/supabase';
 import type { DipValueLedgerEntry } from '@/types/entities';
+import { asTimestamp } from '@/types/time';
 import {
   demoGetDipValueLedgerEntry,
   demoListDipValueLedgerInRange,
@@ -32,19 +22,33 @@ function roundLiters(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-function mapEntry(id: string, data: DocumentData): DipValueLedgerEntry {
+type LedgerRow = {
+  id: string;
+  fuel_type_id: string | null;
+  pump_day_iso: string | null;
+  opening_stock_liters: number | null;
+  receipt_liters: number | null;
+  total_stock_liters: number | null;
+  sales_liters: number | null;
+  closing_book_liters: number | null;
+  variation_liters: number | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+function mapEntry(row: LedgerRow): DipValueLedgerEntry {
   return {
-    id,
-    fuelTypeId: String(data.fuelTypeId ?? ''),
-    pumpDayIso: String(data.pumpDayIso ?? ''),
-    openingStockLiters: Number(data.openingStockLiters ?? 0),
-    receiptLiters: Number(data.receiptLiters ?? 0),
-    totalStockLiters: Number(data.totalStockLiters ?? 0),
-    salesLiters: Number(data.salesLiters ?? 0),
-    closingBookLiters: Number(data.closingBookLiters ?? 0),
-    variationLiters: data.variationLiters != null ? Number(data.variationLiters) : null,
-    updatedAt: data.updatedAt,
-    updatedBy: data.updatedBy != null ? String(data.updatedBy) : undefined,
+    id: row.id,
+    fuelTypeId: String(row.fuel_type_id ?? ''),
+    pumpDayIso: String(row.pump_day_iso ?? ''),
+    openingStockLiters: Number(row.opening_stock_liters ?? 0),
+    receiptLiters: Number(row.receipt_liters ?? 0),
+    totalStockLiters: Number(row.total_stock_liters ?? 0),
+    salesLiters: Number(row.sales_liters ?? 0),
+    closingBookLiters: Number(row.closing_book_liters ?? 0),
+    variationLiters: row.variation_liters != null ? Number(row.variation_liters) : null,
+    updatedAt: asTimestamp(row.updated_at),
+    updatedBy: row.updated_by != null ? String(row.updated_by) : undefined,
   };
 }
 
@@ -56,9 +60,9 @@ export async function getDipValueLedgerEntry(
     return demoGetDipValueLedgerEntry(fuelTypeId, pumpDayIso);
   }
   const id = ledgerDocId(fuelTypeId, pumpDayIso);
-  const snap = await getDoc(doc(getDb(), COLLECTIONS.fuelDipLedger, id));
-  if (!snap.exists()) return null;
-  return mapEntry(snap.id, snap.data());
+  const { data, error } = await getSupabase().from('fuel_dip_ledger').select('*').eq('id', id).maybeSingle();
+  throwIfError(error, 'Load dip ledger');
+  return data ? mapEntry(data as LedgerRow) : null;
 }
 
 export async function listDipValueLedgerForDay(pumpDayIso: string): Promise<DipValueLedgerEntry[]> {
@@ -73,20 +77,19 @@ export async function listDipValueLedgerInRange(
   if (LOCAL_DEMO) {
     return demoListDipValueLedgerInRange(fromIso, toIso, fuelTypeId);
   }
-  const ref = collection(getDb(), COLLECTIONS.fuelDipLedger);
-  const qy = query(
-    ref,
-    where('pumpDayIso', '>=', fromIso),
-    where('pumpDayIso', '<=', toIso),
-  );
-  const snap = await getDocs(qy);
-  let list = snap.docs.map((d) => mapEntry(d.id, d.data()));
+  let query = getSupabase()
+    .from('fuel_dip_ledger')
+    .select('*')
+    .gte('pump_day_iso', fromIso)
+    .lte('pump_day_iso', toIso);
   if (fuelTypeId) {
-    list = list.filter((e) => e.fuelTypeId === fuelTypeId);
+    query = query.eq('fuel_type_id', fuelTypeId);
   }
-  return list.sort(
-    (a, b) => a.pumpDayIso.localeCompare(b.pumpDayIso) || a.fuelTypeId.localeCompare(b.fuelTypeId),
-  );
+  const { data, error } = await query;
+  throwIfError(error, 'List dip ledger');
+  return ((data ?? []) as LedgerRow[])
+    .map(mapEntry)
+    .sort((a, b) => a.pumpDayIso.localeCompare(b.pumpDayIso) || a.fuelTypeId.localeCompare(b.fuelTypeId));
 }
 
 export type UpsertDipValueLedgerInput = {
@@ -129,22 +132,23 @@ export async function upsertDipValueLedgerEntry(input: UpsertDipValueLedgerInput
   }
 
   const id = ledgerDocId(input.fuelTypeId, input.pumpDayIso);
-  await setDoc(
-    doc(getDb(), COLLECTIONS.fuelDipLedger, id),
+  const { error } = await getSupabase().from('fuel_dip_ledger').upsert(
     {
-      fuelTypeId: input.fuelTypeId,
-      pumpDayIso: input.pumpDayIso,
-      openingStockLiters,
-      receiptLiters,
-      totalStockLiters,
-      salesLiters,
-      closingBookLiters,
-      variationLiters,
-      updatedAt: serverTimestamp(),
-      updatedBy: input.updatedBy ?? null,
+      id,
+      fuel_type_id: input.fuelTypeId,
+      pump_day_iso: input.pumpDayIso,
+      opening_stock_liters: openingStockLiters,
+      receipt_liters: receiptLiters,
+      total_stock_liters: totalStockLiters,
+      sales_liters: salesLiters,
+      closing_book_liters: closingBookLiters,
+      variation_liters: variationLiters,
+      updated_at: new Date().toISOString(),
+      updated_by: input.updatedBy ?? null,
     },
-    { merge: true },
+    { onConflict: 'id' },
   );
+  throwIfError(error, 'Save dip ledger');
   await setFuelTypeCurrentStockLiters(input.fuelTypeId, closingBookLiters);
 }
 
@@ -176,4 +180,3 @@ export function computeClosingBook(
 ): number {
   return roundLiters(openingStockLiters + receiptLiters - salesLiters);
 }
-

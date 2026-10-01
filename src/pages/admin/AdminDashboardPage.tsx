@@ -20,7 +20,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { QuickActionBar } from '@/components/ui/QuickActionBar';
 import { listUsersForManager } from '@/services/usersService';
 import { getShiftStatusForPumpDay } from '@/services/shiftStatusService';
-import { TodayShiftStatusSection } from '@/pages/manager/TodayShiftStatusSection';
+import { AdminShiftStatusBoard } from '@/components/dashboard/admin/AdminShiftStatusBoard';
 import { rememberAdminPumpDay, todayIso, withPumpDayQuery } from '@/utils/dateEntryPolicy';
 
 function parseLocalYmd(iso: string): Date {
@@ -57,16 +57,16 @@ export function AdminDashboardPage() {
     setKpisLoading(true);
     void (async () => {
       try {
-        const [users, todayStatus] = await Promise.all([
+        const [users, dayStatus] = await Promise.all([
           listUsersForManager(),
-          getShiftStatusForPumpDay(liveTodayIso),
+          getShiftStatusForPumpDay(reportIso),
         ]);
         if (!ok) {
           return;
         }
         setUserCount(users.filter((u) => u.isActive).length);
-        setPendingReconToday(todayStatus.totals.pendingReconciliation);
-        setOpenShiftsToday(todayStatus.totals.active);
+        setPendingReconToday(dayStatus.totals.pendingReconciliation);
+        setOpenShiftsToday(dayStatus.totals.active);
       } catch {
         if (ok) {
           setUserCount(0);
@@ -82,7 +82,7 @@ export function AdminDashboardPage() {
     return () => {
       ok = false;
     };
-  }, [liveTodayIso]);
+  }, [reportIso]);
 
   function setPumpDay(iso: string) {
     const next = iso > maxSelectableIso ? maxSelectableIso : iso;
@@ -193,7 +193,7 @@ export function AdminDashboardPage() {
             </Grid>
             <Grid size={{ xs: 6, sm: 4 }}>
               <KpiStat
-                label="Open shifts (today)"
+                label="Open shifts"
                 value={openShiftsToday}
                 icon={PlayCircleOutlineOutlinedIcon}
                 color="success"
@@ -203,7 +203,7 @@ export function AdminDashboardPage() {
             </Grid>
             <Grid size={{ xs: 12, sm: 4 }}>
               <KpiStat
-                label="Pending recon (today)"
+                label="Pending recon"
                 value={pendingReconToday}
                 icon={FactCheckOutlinedIcon}
                 color="warning"
@@ -219,7 +219,7 @@ export function AdminDashboardPage() {
 
       <DashboardSection title="Shift status">
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <TodayShiftStatusSection
+          <AdminShiftStatusBoard
             pumpDayIso={reportIso}
             createShiftTo={withPumpDayQuery('/shifts/new', reportIso)}
           />

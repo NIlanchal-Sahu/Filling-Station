@@ -1,9 +1,8 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where, type DocumentData } from 'firebase/firestore';
-import { serverTimestamp, Timestamp } from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { getSupabase, newId, throwIfError } from '@/lib/supabase';
 import type { LedgerEntry, LedgerPaymentChannel, LedgerType } from '@/types/entities';
 import { resolveLedgerPaymentChannel } from '@/types/entities';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
+import { asTimestamp } from '@/types/time';
 import {
   demoCreateLedgerEntry,
   demoDeleteLedgerEntry,
@@ -13,29 +12,41 @@ import {
   demoUpdateLedgerEntry,
 } from '@/localDemo/demoBackend';
 
-function parsePaymentChannel(data: DocumentData): LedgerPaymentChannel | undefined {
-  return resolveLedgerPaymentChannel(data.paymentChannel ?? data.paymentMode);
-}
+type LedgerRow = {
+  id: string;
+  date: string | null;
+  type: string | null;
+  payment_channel: string | null;
+  paid_to_or_received_from: string | null;
+  particulars: string | null;
+  category: string | null;
+  amount: number | null;
+  related_credit_payment_id: string | null;
+  related_loan_id: string | null;
+  related_loan_repayment_id: string | null;
+  created_by: string | null;
+  created_at: string | null;
+};
 
-function mapLedger(id: string, data: DocumentData): LedgerEntry {
+function mapLedger(row: LedgerRow): LedgerEntry {
   return {
-    id,
-    date: data.date,
-    type: (data.type as LedgerType) ?? 'expense',
-    paymentChannel: parsePaymentChannel(data),
-    paidToOrReceivedFrom: String(data.paidToOrReceivedFrom ?? ''),
-    particulars: String(data.particulars ?? ''),
-    category: String(data.category ?? ''),
-    amount: Number(data.amount ?? 0),
-    relatedCreditPaymentId: data.relatedCreditPaymentId
-      ? String(data.relatedCreditPaymentId)
+    id: row.id,
+    date: asTimestamp(row.date),
+    type: (row.type as LedgerType) ?? 'expense',
+    paymentChannel: resolveLedgerPaymentChannel(row.payment_channel),
+    paidToOrReceivedFrom: String(row.paid_to_or_received_from ?? ''),
+    particulars: String(row.particulars ?? ''),
+    category: String(row.category ?? ''),
+    amount: Number(row.amount ?? 0),
+    relatedCreditPaymentId: row.related_credit_payment_id
+      ? String(row.related_credit_payment_id)
       : undefined,
-    relatedLoanId: data.relatedLoanId ? String(data.relatedLoanId) : undefined,
-    relatedLoanRepaymentId: data.relatedLoanRepaymentId
-      ? String(data.relatedLoanRepaymentId)
+    relatedLoanId: row.related_loan_id ? String(row.related_loan_id) : undefined,
+    relatedLoanRepaymentId: row.related_loan_repayment_id
+      ? String(row.related_loan_repayment_id)
       : undefined,
-    createdBy: String(data.createdBy ?? ''),
-    createdAt: data.createdAt,
+    createdBy: String(row.created_by ?? ''),
+    createdAt: asTimestamp(row.created_at),
   };
 }
 
@@ -55,21 +66,24 @@ export async function createLedgerEntry(input: {
   if (LOCAL_DEMO) {
     return demoCreateLedgerEntry(input);
   }
-  const ref = await addDoc(collection(getDb(), COLLECTIONS.ledgerEntries), {
-    date: Timestamp.fromDate(input.date),
+  const id = newId();
+  const { error } = await getSupabase().from('ledger_entries').insert({
+    id,
+    date: input.date.toISOString(),
     type: input.type,
-    paymentChannel: input.paymentChannel ?? null,
-    paidToOrReceivedFrom: input.paidToOrReceivedFrom,
+    payment_channel: input.paymentChannel ?? null,
+    paid_to_or_received_from: input.paidToOrReceivedFrom,
     particulars: input.particulars,
     category: input.category,
     amount: input.amount,
-    relatedCreditPaymentId: input.relatedCreditPaymentId ?? null,
-    relatedLoanId: input.relatedLoanId ?? null,
-    relatedLoanRepaymentId: input.relatedLoanRepaymentId ?? null,
-    createdBy: input.createdBy,
-    createdAt: serverTimestamp(),
+    related_credit_payment_id: input.relatedCreditPaymentId ?? null,
+    related_loan_id: input.relatedLoanId ?? null,
+    related_loan_repayment_id: input.relatedLoanRepaymentId ?? null,
+    created_by: input.createdBy,
+    created_at: new Date().toISOString(),
   });
-  return ref.id;
+  throwIfError(error, 'Create ledger entry');
+  return id;
 }
 
 export async function deleteLedgerEntry(id: string): Promise<void> {
@@ -77,7 +91,8 @@ export async function deleteLedgerEntry(id: string): Promise<void> {
     await demoDeleteLedgerEntry(id);
     return;
   }
-  await deleteDoc(doc(getDb(), COLLECTIONS.ledgerEntries, id));
+  const { error } = await getSupabase().from('ledger_entries').delete().eq('id', id);
+  throwIfError(error, 'Delete ledger entry');
 }
 
 /** Update line fields; preserves `relatedCreditPaymentId`, `createdBy`, `createdAt` on the server. */
@@ -97,15 +112,19 @@ export async function updateLedgerEntry(
     await demoUpdateLedgerEntry(id, input);
     return;
   }
-  await updateDoc(doc(getDb(), COLLECTIONS.ledgerEntries, id), {
-    date: Timestamp.fromDate(input.date),
-    type: input.type,
-    paymentChannel: input.paymentChannel,
-    paidToOrReceivedFrom: input.paidToOrReceivedFrom,
-    particulars: input.particulars,
-    category: input.category,
-    amount: input.amount,
-  });
+  const { error } = await getSupabase()
+    .from('ledger_entries')
+    .update({
+      date: input.date.toISOString(),
+      type: input.type,
+      payment_channel: input.paymentChannel,
+      paid_to_or_received_from: input.paidToOrReceivedFrom,
+      particulars: input.particulars,
+      category: input.category,
+      amount: input.amount,
+    })
+    .eq('id', id);
+  throwIfError(error, 'Update ledger entry');
 }
 
 export async function listLedgerInRange(
@@ -116,16 +135,19 @@ export async function listLedgerInRange(
   if (LOCAL_DEMO) {
     return demoListLedgerInRange(from, to, typeFilter);
   }
-  const ref = collection(getDb(), COLLECTIONS.ledgerEntries);
-  const fromTs = Timestamp.fromDate(from);
-  const toTs = Timestamp.fromDate(to);
-  const qy = query(ref, where('date', '>=', fromTs), where('date', '<=', toTs));
-  const snap = await getDocs(qy);
-  let rows = snap.docs.map((d) => mapLedger(d.id, d.data()));
+  let query = getSupabase()
+    .from('ledger_entries')
+    .select('*')
+    .gte('date', from.toISOString())
+    .lte('date', to.toISOString());
   if (typeFilter) {
-    rows = rows.filter((e) => e.type === typeFilter);
+    query = query.eq('type', typeFilter);
   }
-  return rows.sort((a, b) => a.date.toMillis() - b.date.toMillis());
+  const { data, error } = await query;
+  throwIfError(error, 'List ledger');
+  return ((data ?? []) as LedgerRow[])
+    .map(mapLedger)
+    .sort((a, b) => a.date.toMillis() - b.date.toMillis());
 }
 
 export async function listExpensesInRange(
@@ -147,9 +169,9 @@ export async function listAllLedgerForBalance(): Promise<LedgerEntry[]> {
   if (LOCAL_DEMO) {
     return demoListAllLedgerForBalance();
   }
-  const ref = collection(getDb(), COLLECTIONS.ledgerEntries);
-  const snap = await getDocs(ref);
-  return snap.docs
-    .map((d) => mapLedger(d.id, d.data()))
+  const { data, error } = await getSupabase().from('ledger_entries').select('*');
+  throwIfError(error, 'List ledger');
+  return ((data ?? []) as LedgerRow[])
+    .map(mapLedger)
     .sort((a, b) => a.date.toMillis() - b.date.toMillis());
 }

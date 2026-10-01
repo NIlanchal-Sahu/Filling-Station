@@ -178,7 +178,7 @@ export function TeamPage() {
       if (LOCAL_DEMO) {
         uid = `demo-staff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       } else {
-        const uidErr = requireNonEmpty(uid, 'User ID (Firebase Auth UID)');
+        const uidErr = requireNonEmpty(uid, 'Supabase user id');
         if (uidErr) {
           setFormError(uidErr);
           return;
@@ -328,7 +328,7 @@ export function TeamPage() {
       )}
 
       <Dialog open={dialogOpen} onClose={() => !saving && setDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{dialogMode === 'add' ? (LOCAL_DEMO ? 'Add user' : 'Link Firestore profile') : 'Edit team member'}</DialogTitle>
+        <DialogTitle>{dialogMode === 'add' ? (LOCAL_DEMO ? 'Add user' : 'Link Supabase profile') : 'Edit team member'}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {dialogMode === 'edit' && (
@@ -336,7 +336,7 @@ export function TeamPage() {
             )}
             {dialogMode === 'add' && !LOCAL_DEMO && (
               <TextField
-                label="Firebase Auth UID"
+                label="Supabase user id"
                 value={form.uid}
                 onChange={(e) => setForm((f) => ({ ...f, uid: e.target.value }))}
                 fullWidth

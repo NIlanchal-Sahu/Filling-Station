@@ -1,15 +1,6 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  updateDoc,
-  type DocumentData,
-} from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { getSupabase, newId, throwIfError } from '@/lib/supabase';
 import type { CreditCustomer } from '@/types/entities';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
 import { listAllCreditSales } from '@/services/creditSalesService';
 import { listAllCreditPayments } from '@/services/creditPaymentsService';
 import {
@@ -20,15 +11,25 @@ import {
   demoUpdateCustomer,
 } from '@/localDemo/demoBackend';
 
-function mapCustomer(id: string, data: DocumentData): CreditCustomer {
+type CustomerRow = {
+  id: string;
+  name: string | null;
+  contact_person: string | null;
+  phone: string | null;
+  vehicle_number: string | null;
+  is_active: boolean | null;
+  current_balance: number | null;
+};
+
+function mapCustomer(row: CustomerRow): CreditCustomer {
   return {
-    id,
-    name: String(data.name ?? ''),
-    contactPerson: data.contactPerson ? String(data.contactPerson) : undefined,
-    phone: data.phone ? String(data.phone) : undefined,
-    vehicleNumber: data.vehicleNumber ? String(data.vehicleNumber) : undefined,
-    isActive: data.isActive !== false,
-    currentBalance: Number(data.currentBalance ?? 0),
+    id: row.id,
+    name: String(row.name ?? ''),
+    contactPerson: row.contact_person ? String(row.contact_person) : undefined,
+    phone: row.phone ? String(row.phone) : undefined,
+    vehicleNumber: row.vehicle_number ? String(row.vehicle_number) : undefined,
+    isActive: row.is_active !== false,
+    currentBalance: Number(row.current_balance ?? 0),
   };
 }
 
@@ -36,22 +37,27 @@ export async function getCustomer(id: string): Promise<CreditCustomer | null> {
   if (LOCAL_DEMO) {
     return demoGetCustomer(id);
   }
-  const snap = await getDoc(doc(getDb(), COLLECTIONS.creditCustomers, id));
-  if (!snap.exists()) {
-    return null;
-  }
-  return mapCustomer(snap.id, snap.data());
+  const { data, error } = await getSupabase()
+    .from('credit_customers')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  throwIfError(error, 'Load credit customer');
+  return data ? mapCustomer(data as CustomerRow) : null;
 }
 
 export async function listCreditCustomers(includeInactive: boolean): Promise<CreditCustomer[]> {
   if (LOCAL_DEMO) {
     return demoListCreditCustomers(includeInactive);
   }
-  const ref = collection(getDb(), COLLECTIONS.creditCustomers);
-  const snap = await getDocs(ref);
-  return snap.docs
-    .map((d) => mapCustomer(d.id, d.data()))
-    .filter((c) => includeInactive || c.isActive)
+  let query = getSupabase().from('credit_customers').select('*');
+  if (!includeInactive) {
+    query = query.eq('is_active', true);
+  }
+  const { data, error } = await query;
+  throwIfError(error, 'List credit customers');
+  return ((data ?? []) as CustomerRow[])
+    .map(mapCustomer)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -72,11 +78,16 @@ export async function recomputeAllBalancesFromLedger(): Promise<void> {
     b.pay += p.amountReceived;
     byC.set(p.customerId, b);
   }
-  const all = await getDocs(collection(getDb(), COLLECTIONS.creditCustomers));
-  for (const d of all.docs) {
-    const t = byC.get(d.id) ?? { sales: 0, pay: 0 };
+  const { data, error } = await getSupabase().from('credit_customers').select('id');
+  throwIfError(error, 'List credit customers');
+  for (const row of data ?? []) {
+    const t = byC.get(row.id) ?? { sales: 0, pay: 0 };
     const bal = t.sales - t.pay;
-    await updateDoc(d.ref, { currentBalance: bal });
+    const { error: updateError } = await getSupabase()
+      .from('credit_customers')
+      .update({ current_balance: bal })
+      .eq('id', row.id);
+    throwIfError(updateError, 'Update credit balance');
   }
 }
 
@@ -86,15 +97,18 @@ export async function createCustomer(
   if (LOCAL_DEMO) {
     return demoCreateCustomer(input);
   }
-  const ref = await addDoc(collection(getDb(), COLLECTIONS.creditCustomers), {
+  const id = newId();
+  const { error } = await getSupabase().from('credit_customers').insert({
+    id,
     name: input.name,
-    contactPerson: input.contactPerson ?? null,
+    contact_person: input.contactPerson ?? null,
     phone: input.phone ?? null,
-    vehicleNumber: input.vehicleNumber ?? null,
-    isActive: input.isActive,
-    currentBalance: 0,
+    vehicle_number: input.vehicleNumber ?? null,
+    is_active: input.isActive,
+    current_balance: 0,
   });
-  return ref.id;
+  throwIfError(error, 'Create credit customer');
+  return id;
 }
 
 export async function updateCustomer(
@@ -104,24 +118,24 @@ export async function updateCustomer(
   if (LOCAL_DEMO) {
     return demoUpdateCustomer(id, patch);
   }
-  const r = doc(getDb(), COLLECTIONS.creditCustomers, id);
   const clean: Record<string, unknown> = {};
   if (patch.name != null) {
     clean.name = patch.name;
   }
   if (patch.contactPerson !== undefined) {
-    clean.contactPerson = patch.contactPerson ?? null;
+    clean.contact_person = patch.contactPerson ?? null;
   }
   if (patch.phone !== undefined) {
     clean.phone = patch.phone ?? null;
   }
   if (patch.vehicleNumber !== undefined) {
-    clean.vehicleNumber = patch.vehicleNumber ?? null;
+    clean.vehicle_number = patch.vehicleNumber ?? null;
   }
   if (patch.isActive != null) {
-    clean.isActive = patch.isActive;
+    clean.is_active = patch.isActive;
   }
   if (Object.keys(clean).length) {
-    await updateDoc(r, clean);
+    const { error } = await getSupabase().from('credit_customers').update(clean).eq('id', id);
+    throwIfError(error, 'Update credit customer');
   }
 }

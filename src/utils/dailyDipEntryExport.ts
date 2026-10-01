@@ -1,7 +1,7 @@
 import { format, parseISO } from 'date-fns';
 import type { DipValueRegisterRow } from '@/utils/dipValueRegister';
 import { downloadCsv } from '@/utils/csvExport';
-import { DEMO_PUMP_NAME } from '@/utils/transferBookExport';
+import { getCachedPumpDisplayName } from '@/services/stationAboutService';
 
 export type DailyDipExportRow = {
   fuelCode: string;
@@ -120,7 +120,7 @@ function pageStream(pumpDayLabel: string, rows: DailyDipExportRow[]): string {
 
   const txt: string[] = [];
   txt.push('BT');
-  txt.push(centerText(DEMO_PUMP_NAME, 16, titleY, '/F2'));
+  txt.push(centerText(getCachedPumpDisplayName(), 16, titleY, '/F2'));
   txt.push(centerText('Daily dip entry', 11, titleY - 20, '/F1'));
   txt.push(centerText(`Pump day: ${pumpDayLabel}`, 10, titleY - 36, '/F1'));
 
@@ -337,7 +337,7 @@ function registerPageStream(
 
   const txt: string[] = [];
   txt.push('BT');
-  txt.push(centerText(DEMO_PUMP_NAME, 16, titleY, '/F2'));
+  txt.push(centerText(getCachedPumpDisplayName(), 16, titleY, '/F2'));
   if (pageIndex === 0) {
     txt.push(centerText('Dip value register', 11, titleY - 20, '/F1'));
     txt.push(centerText(`${clip(fuelLabel, 48)}  |  ${monthLabel}`, 10, titleY - 36, '/F1'));

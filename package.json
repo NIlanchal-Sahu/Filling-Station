@@ -12,6 +12,7 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview",
+    "supabase:bootstrap": "node scripts/bootstrap-supabase.mjs",
     "firebase:sync-project": "node scripts/sync-firebase-project.mjs",
     "firebase:bootstrap": "node scripts/bootstrap-firebase.mjs",
     "firebase:deploy:firestore": "npx -y firebase-tools@latest deploy --only firestore",
@@ -23,8 +24,8 @@
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.0",
     "@mui/material": "^6.4.0",
+    "@supabase/supabase-js": "^2.58.0",
     "date-fns": "^4.1.0",
-    "firebase": "^11.1.0",
     "motion": "^13.2.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
@@ -43,6 +44,7 @@
     "globals": "^17.5.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vite-plugin-pwa": "^1.3.0"
   }
 }

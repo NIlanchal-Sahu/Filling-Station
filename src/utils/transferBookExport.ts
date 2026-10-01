@@ -1,4 +1,4 @@
-export const DEMO_PUMP_NAME = 'PumpStock';
+import { getCachedPumpDisplayName } from '@/services/stationAboutService';
 
 export type TransferBookExportLine = {
   date: string;
@@ -43,7 +43,7 @@ export function downloadTransferBookCsv(params: {
   rows: (string | number)[][];
 }): void {
   const lines: (string | number)[][] = [
-    [DEMO_PUMP_NAME],
+    [getCachedPumpDisplayName()],
     ['Transfer name book'],
     [`Name: ${params.partyName} · ${params.rangeLabel}`],
     [params.summaryLabel],
@@ -149,7 +149,7 @@ function pageStream(
 
   const txt: string[] = [];
   txt.push('BT');
-  txt.push(centerText(DEMO_PUMP_NAME, 18, titleY, '/F2'));
+  txt.push(centerText(getCachedPumpDisplayName(), 18, titleY, '/F2'));
   if (pageIndex === 0) {
     txt.push(centerText('Transfer name book', 11, titleY - 22, '/F1'));
     txt.push(centerText(`Name: ${partyName}  ${rangeLabel}`, 10, titleY - 40, '/F1'));

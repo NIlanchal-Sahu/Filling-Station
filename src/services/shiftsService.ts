@@ -1,24 +1,10 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-  Timestamp,
-  where,
-  type DocumentData,
-} from 'firebase/firestore';
+import { format } from 'date-fns';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { getSupabase, newId, throwIfError } from '@/lib/supabase';
 import type { Shift, ShiftAttendantPost, ShiftStatus } from '@/types/entities';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
+import { asTimestamp, asTimestampOrNull } from '@/types/time';
 import { notifyShiftStatusUpdated } from '@/utils/shiftStatusDisplay';
 import { parseAttendantPosts } from '@/utils/attendantPosts';
-import { format } from 'date-fns';
 import {
   demoCloseShift,
   demoCreateShift,
@@ -32,28 +18,41 @@ import {
   demoSetShiftReadingsComplete,
 } from '@/localDemo/demoBackend';
 
-function mapShift(id: string, data: DocumentData): Shift {
+type ShiftRow = {
+  id: string;
+  operator_id: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  shift_label: string | null;
+  status: string | null;
+  readings_complete_at: string | null;
+  notes: string | null;
+  pump_attendants: string | null;
+  attendant_posts: unknown;
+  calendar_date: string | null;
+};
+
+function mapShift(row: ShiftRow): Shift {
+  const posts = parseAttendantPosts(row.attendant_posts);
+  const calendarDate =
+    typeof row.calendar_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.calendar_date.trim())
+      ? row.calendar_date.trim()
+      : undefined;
   return {
-    id,
-    operatorId: String(data.operatorId ?? ''),
-    startTime: data.startTime,
-    endTime: data.endTime ?? null,
-    shiftLabel: String(data.shiftLabel ?? ''),
-    status: (data.status === 'closed' ? 'closed' : 'open') as ShiftStatus,
-    readingsCompleteAt: data.readingsCompleteAt ?? null,
-    notes: data.notes ? String(data.notes) : undefined,
+    id: row.id,
+    operatorId: String(row.operator_id ?? ''),
+    startTime: asTimestamp(row.start_time),
+    endTime: asTimestampOrNull(row.end_time),
+    shiftLabel: String(row.shift_label ?? ''),
+    status: (row.status === 'closed' ? 'closed' : 'open') as ShiftStatus,
+    readingsCompleteAt: asTimestampOrNull(row.readings_complete_at),
+    notes: row.notes ? String(row.notes) : undefined,
     pumpAttendants:
-      typeof data.pumpAttendants === 'string' && data.pumpAttendants.trim()
-        ? String(data.pumpAttendants).trim()
+      typeof row.pump_attendants === 'string' && row.pump_attendants.trim()
+        ? row.pump_attendants.trim()
         : undefined,
-    attendantPosts: (() => {
-      const posts = parseAttendantPosts(data.attendantPosts);
-      return posts.length > 0 ? posts : undefined;
-    })(),
-    calendarDate:
-      typeof data.calendarDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.calendarDate.trim())
-        ? data.calendarDate.trim()
-        : undefined,
+    attendantPosts: posts.length > 0 ? posts : undefined,
+    calendarDate,
   };
 }
 
@@ -61,63 +60,48 @@ export async function getShift(shiftId: string): Promise<Shift | null> {
   if (LOCAL_DEMO) {
     return demoGetShift(shiftId);
   }
-  const snap = await getDoc(doc(getDb(), COLLECTIONS.shifts, shiftId));
-  if (!snap.exists()) {
-    return null;
-  }
-  return mapShift(snap.id, snap.data());
+  const { data, error } = await getSupabase().from('shifts').select('*').eq('id', shiftId).maybeSingle();
+  throwIfError(error, 'Load shift');
+  return data ? mapShift(data as ShiftRow) : null;
 }
 
 export async function listOpenShiftsForOperator(operatorId: string): Promise<Shift[]> {
   if (LOCAL_DEMO) {
     return demoListOpenShiftsForOperator(operatorId);
   }
-  const ref = collection(getDb(), COLLECTIONS.shifts);
-  const qy = query(
-    ref,
-    where('operatorId', '==', operatorId),
-    where('status', '==', 'open'),
-  );
-  const snap = await getDocs(qy);
-  return snap.docs.map((d) => mapShift(d.id, d.data()));
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .eq('operator_id', operatorId)
+    .eq('status', 'open');
+  throwIfError(error, 'List open shifts');
+  return ((data ?? []) as ShiftRow[]).map(mapShift);
 }
 
-export async function listShiftsForDateRange(
-  from: Date,
-  to: Date,
-): Promise<Shift[]> {
+export async function listShiftsForDateRange(from: Date, to: Date): Promise<Shift[]> {
   if (LOCAL_DEMO) {
     return demoListShiftsForDateRange(from, to);
   }
-  const ref = collection(getDb(), COLLECTIONS.shifts);
-  const fromTs = Timestamp.fromDate(from);
-  const toTs = Timestamp.fromDate(to);
-  const qy = query(
-    ref,
-    where('startTime', '>=', fromTs),
-    where('startTime', '<=', toTs),
-    orderBy('startTime', 'asc'),
-  );
-  const snap = await getDocs(qy);
-  return snap.docs.map((d) => mapShift(d.id, d.data()));
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .gte('start_time', from.toISOString())
+    .lte('start_time', to.toISOString())
+    .order('start_time', { ascending: true });
+  throwIfError(error, 'List shifts');
+  return ((data ?? []) as ShiftRow[]).map(mapShift);
 }
 
-async function listShiftsByFirestoreCalendarOverlap(
-  fromIso: string,
-  toIso: string,
-): Promise<Shift[]> {
-  try {
-    const ref = collection(getDb(), COLLECTIONS.shifts);
-    const qy = query(
-      ref,
-      where('calendarDate', '>=', fromIso),
-      where('calendarDate', '<=', toIso),
-    );
-    const snap = await getDocs(qy);
-    return snap.docs.map((d) => mapShift(d.id, d.data()));
-  } catch {
+async function listShiftsByCalendarOverlap(fromIso: string, toIso: string): Promise<Shift[]> {
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .gte('calendar_date', fromIso)
+    .lte('calendar_date', toIso);
+  if (error) {
     return [];
   }
+  return ((data ?? []) as ShiftRow[]).map(mapShift);
 }
 
 /** Local calendar pump day: **calendarDate** from Start shift, else local date of **startTime**. */
@@ -159,7 +143,7 @@ export async function listShiftsForCashSheetMerge(from: Date, to: Date): Promise
   const byStartMs = await listShiftsForDateRange(from, to);
   const byCalendar = LOCAL_DEMO
     ? await demoListShiftsForCalendarDateRange(fromIso, toIso)
-    : await listShiftsByFirestoreCalendarOverlap(fromIso, toIso);
+    : await listShiftsByCalendarOverlap(fromIso, toIso);
 
   const map = new Map<string, Shift>();
   for (const s of byStartMs) {
@@ -173,26 +157,18 @@ export async function listShiftsForCashSheetMerge(from: Date, to: Date): Promise
   return [...map.values()];
 }
 
-export async function listClosedShiftsInRange(
-  from: Date,
-  to: Date,
-): Promise<Shift[]> {
+export async function listClosedShiftsInRange(from: Date, to: Date): Promise<Shift[]> {
   if (LOCAL_DEMO) {
     return demoListClosedShiftsInRange(from, to);
   }
-  const ref = collection(getDb(), COLLECTIONS.shifts);
-  const fromTs = Timestamp.fromDate(from);
-  const toTs = Timestamp.fromDate(to);
-  const qy = query(
-    ref,
-    where('status', '==', 'closed'),
-    where('endTime', '>=', fromTs),
-    where('endTime', '<=', toTs),
-  );
-  const snap = await getDocs(qy);
-  return snap.docs
-    .map((d) => mapShift(d.id, d.data()))
-    .filter((s) => s.endTime);
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .eq('status', 'closed')
+    .gte('end_time', from.toISOString())
+    .lte('end_time', to.toISOString());
+  throwIfError(error, 'List closed shifts');
+  return ((data ?? []) as ShiftRow[]).map(mapShift).filter((s) => s.endTime);
 }
 
 /**
@@ -222,47 +198,56 @@ export async function createShift(input: {
     return id;
   }
   const posts = parseAttendantPosts(input.attendantPosts);
-  const ref = await addDoc(collection(getDb(), COLLECTIONS.shifts), {
-    operatorId: input.operatorId,
-    shiftLabel: input.shiftLabel,
-    calendarDate: input.calendarDate,
-    status: 'open' as const,
-    startTime: serverTimestamp(),
-    endTime: null,
-    readingsCompleteAt: null,
+  const id = newId();
+  const { error } = await getSupabase().from('shifts').insert({
+    id,
+    operator_id: input.operatorId,
+    shift_label: input.shiftLabel,
+    calendar_date: input.calendarDate,
+    status: 'open',
+    start_time: new Date().toISOString(),
+    end_time: null,
+    readings_complete_at: null,
     notes: input.notes ?? null,
-    pumpAttendants: input.pumpAttendants?.trim() || null,
-    attendantPosts: posts.length > 0 ? posts : null,
+    pump_attendants: input.pumpAttendants?.trim() || null,
+    attendant_posts: posts.length > 0 ? posts : null,
   });
+  throwIfError(error, 'Create shift');
   notifyShiftStatusUpdated();
-  return ref.id;
+  return id;
 }
 
 export async function setShiftReadingsComplete(shiftId: string): Promise<void> {
   if (LOCAL_DEMO) {
     return demoSetShiftReadingsComplete(shiftId);
   }
-  const r = doc(getDb(), COLLECTIONS.shifts, shiftId);
-  await updateDoc(r, { readingsCompleteAt: serverTimestamp() });
+  const { error } = await getSupabase()
+    .from('shifts')
+    .update({ readings_complete_at: new Date().toISOString() })
+    .eq('id', shiftId);
+  throwIfError(error, 'Mark readings complete');
 }
 
 export async function closeShift(shiftId: string): Promise<void> {
   if (LOCAL_DEMO) {
     return demoCloseShift(shiftId);
   }
-  const r = doc(getDb(), COLLECTIONS.shifts, shiftId);
-  await updateDoc(r, {
-    status: 'closed' as const,
-    endTime: serverTimestamp(),
-  });
+  const { error } = await getSupabase()
+    .from('shifts')
+    .update({ status: 'closed', end_time: new Date().toISOString() })
+    .eq('id', shiftId);
+  throwIfError(error, 'Close shift');
 }
 
 export async function listRecentShifts(limitN: number): Promise<Shift[]> {
   if (LOCAL_DEMO) {
     return demoListRecentShifts(limitN);
   }
-  const ref = collection(getDb(), COLLECTIONS.shifts);
-  const qy = query(ref, orderBy('startTime', 'desc'), limit(limitN));
-  const snap = await getDocs(qy);
-  return snap.docs.map((d) => mapShift(d.id, d.data()));
+  const { data, error } = await getSupabase()
+    .from('shifts')
+    .select('*')
+    .order('start_time', { ascending: false })
+    .limit(limitN);
+  throwIfError(error, 'List recent shifts');
+  return ((data ?? []) as ShiftRow[]).map(mapShift);
 }

@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+import { AppTimestamp as Timestamp } from '@/types/time';
 import { format } from 'date-fns';
 import { LOCAL_DEMO } from '@/config/appMode';
 import type {
@@ -932,7 +932,7 @@ function mapDipLedger(id: string, s: StoredFuelDipLedger): import('@/types/entit
     salesLiters: s.salesLiters,
     closingBookLiters: s.closingBookLiters,
     variationLiters: s.variationLiters ?? null,
-    updatedAt: { toMillis: () => s.updatedMs, toDate: () => new Date(s.updatedMs) } as import('firebase/firestore').Timestamp,
+    updatedAt: Timestamp.fromMillis(s.updatedMs),
     updatedBy: s.updatedBy,
   };
 }
@@ -1981,6 +1981,7 @@ export async function demoListLubricantSales(
 }
 
 const LEDGER_LIST_SETTINGS_KEY = 'pumpstock-ledger-list-settings-v1';
+const STATION_ABOUT_KEY = 'pumpstock-station-about-v1';
 
 export function demoGetLedgerListSettings(): import('@/utils/ledgerListDefaults').LedgerListSettings | null {
   if (typeof localStorage === 'undefined') return null;
@@ -2004,11 +2005,34 @@ export function demoSaveLedgerListSettings(
   }
 }
 
+export function demoGetStationAbout(): import('@/utils/stationAboutDefaults').StationAboutProfile | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STATION_ABOUT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as import('@/utils/stationAboutDefaults').StationAboutProfile;
+  } catch {
+    return null;
+  }
+}
+
+export function demoSaveStationAbout(
+  profile: import('@/utils/stationAboutDefaults').StationAboutProfile,
+): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(STATION_ABOUT_KEY, JSON.stringify(profile));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function demoResetStores(): void {
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(TANK_STOCK_CLEAN_FLAG);
     localStorage.removeItem(LEDGER_LIST_SETTINGS_KEY);
+    localStorage.removeItem(STATION_ABOUT_KEY);
   }
   seed();
   persist();

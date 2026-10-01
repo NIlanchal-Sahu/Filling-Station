@@ -1,5 +1,5 @@
 import type { ExpenseReportRow } from '@/utils/expenseReport';
-import { DEMO_PUMP_NAME } from '@/utils/transferBookExport';
+import { getCachedPumpDisplayName } from '@/services/stationAboutService';
 
 function safeFilePart(raw: string): string {
   const t = raw.replace(/[/\\:*?"<>|]+/g, '_').trim();
@@ -34,7 +34,7 @@ export function expenseReportExportBasename(rangeLabel: string): string {
 
 export function downloadExpenseReportCsv(rangeLabel: string, rows: ExpenseReportRow[], grandTotal: number): void {
   const lines: (string | number)[][] = [
-    [DEMO_PUMP_NAME],
+    [getCachedPumpDisplayName()],
     ['Expenses'],
     [rangeLabel],
     [],
@@ -147,7 +147,7 @@ function pageStream(rangeLabel: string, rows: PdfLine[], start: number, pageInde
 
   const txt: string[] = [];
   txt.push('BT');
-  txt.push(centerText(DEMO_PUMP_NAME, 18, titleY, '/F2'));
+  txt.push(centerText(getCachedPumpDisplayName(), 18, titleY, '/F2'));
   if (pageIndex === 0) {
     txt.push(centerText('Expenses', 12, titleY - 22, '/F1'));
     txt.push(centerText(rangeLabel, 10, titleY - 40, '/F1'));

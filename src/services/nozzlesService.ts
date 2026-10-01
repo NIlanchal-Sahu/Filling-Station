@@ -1,17 +1,6 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  updateDoc,
-  query,
-  where,
-  type DocumentData,
-} from 'firebase/firestore';
 import { LOCAL_DEMO } from '@/config/appMode';
+import { getSupabase, newId, throwIfError } from '@/lib/supabase';
 import type { Nozzle } from '@/types/entities';
-import { COLLECTIONS, getDb } from '@/lib/firebase';
 import {
   demoCreateNozzle,
   demoDeactivateNozzlesForMachine,
@@ -22,13 +11,21 @@ import {
 } from '@/localDemo/demoBackend';
 import { compareNozzleOrder } from '@/utils/nozzleSort';
 
-function mapNozzle(id: string, data: DocumentData): Nozzle {
+type NozzleRow = {
+  id: string;
+  machine_number: string | null;
+  nozzle_number: string | null;
+  fuel_type_id: string | null;
+  is_active: boolean | null;
+};
+
+function mapNozzle(row: NozzleRow): Nozzle {
   return {
-    id,
-    machineNumber: String(data.machineNumber ?? ''),
-    nozzleNumber: String(data.nozzleNumber ?? ''),
-    fuelTypeId: String(data.fuelTypeId ?? ''),
-    isActive: data.isActive !== false,
+    id: row.id,
+    machineNumber: String(row.machine_number ?? ''),
+    nozzleNumber: String(row.nozzle_number ?? ''),
+    fuelTypeId: String(row.fuel_type_id ?? ''),
+    isActive: row.is_active !== false,
   };
 }
 
@@ -36,11 +33,14 @@ export async function listNozzles(activeOnly = true): Promise<Nozzle[]> {
   if (LOCAL_DEMO) {
     return demoListNozzles(activeOnly);
   }
-  const ref = collection(getDb(), COLLECTIONS.nozzles);
-  const qy = activeOnly ? query(ref, where('isActive', '==', true)) : ref;
-  const snap = await getDocs(qy);
-  return snap.docs
-    .map((d) => mapNozzle(d.id, d.data()))
+  let query = getSupabase().from('nozzles').select('*');
+  if (activeOnly) {
+    query = query.eq('is_active', true);
+  }
+  const { data, error } = await query;
+  throwIfError(error, 'List nozzles');
+  return ((data ?? []) as NozzleRow[])
+    .map(mapNozzle)
     .sort((a, b) => compareNozzleOrder(a, b));
 }
 
@@ -48,11 +48,9 @@ export async function getNozzle(id: string): Promise<Nozzle | null> {
   if (LOCAL_DEMO) {
     return demoGetNozzle(id);
   }
-  const snap = await getDoc(doc(getDb(), COLLECTIONS.nozzles, id));
-  if (!snap.exists()) {
-    return null;
-  }
-  return mapNozzle(snap.id, snap.data());
+  const { data, error } = await getSupabase().from('nozzles').select('*').eq('id', id).maybeSingle();
+  throwIfError(error, 'Load nozzle');
+  return data ? mapNozzle(data as NozzleRow) : null;
 }
 
 export async function createNozzle(input: {
@@ -63,21 +61,24 @@ export async function createNozzle(input: {
   if (LOCAL_DEMO) {
     return demoCreateNozzle(input);
   }
-  const ref = await addDoc(collection(getDb(), COLLECTIONS.nozzles), {
-    machineNumber: input.machineNumber,
-    nozzleNumber: input.nozzleNumber,
-    fuelTypeId: input.fuelTypeId,
-    isActive: true,
+  const id = newId();
+  const { error } = await getSupabase().from('nozzles').insert({
+    id,
+    machine_number: input.machineNumber,
+    nozzle_number: input.nozzleNumber,
+    fuel_type_id: input.fuelTypeId,
+    is_active: true,
   });
-  return ref.id;
+  throwIfError(error, 'Create nozzle');
+  return id;
 }
 
 export async function setNozzleActive(id: string, isActive: boolean): Promise<void> {
   if (LOCAL_DEMO) {
     return demoSetNozzleActive(id, isActive);
   }
-  const ref = doc(getDb(), COLLECTIONS.nozzles, id);
-  await updateDoc(ref, { isActive });
+  const { error } = await getSupabase().from('nozzles').update({ is_active: isActive }).eq('id', id);
+  throwIfError(error, 'Update nozzle');
 }
 
 export type NozzleUpdateInput = {
@@ -89,22 +90,26 @@ export type NozzleUpdateInput = {
 export async function updateNozzle(id: string, patch: NozzleUpdateInput): Promise<void> {
   const payload: Record<string, string> = {};
   if (patch.machineNumber !== undefined) {
-    payload.machineNumber = patch.machineNumber.trim();
+    payload.machine_number = patch.machineNumber.trim();
   }
   if (patch.nozzleNumber !== undefined) {
-    payload.nozzleNumber = patch.nozzleNumber.trim();
+    payload.nozzle_number = patch.nozzleNumber.trim();
   }
   if (patch.fuelTypeId !== undefined) {
-    payload.fuelTypeId = patch.fuelTypeId;
+    payload.fuel_type_id = patch.fuelTypeId;
   }
   if (Object.keys(payload).length === 0) {
     return;
   }
   if (LOCAL_DEMO) {
-    return demoUpdateNozzle(id, payload);
+    return demoUpdateNozzle(id, {
+      ...(patch.machineNumber !== undefined ? { machineNumber: patch.machineNumber.trim() } : {}),
+      ...(patch.nozzleNumber !== undefined ? { nozzleNumber: patch.nozzleNumber.trim() } : {}),
+      ...(patch.fuelTypeId !== undefined ? { fuelTypeId: patch.fuelTypeId } : {}),
+    });
   }
-  const ref = doc(getDb(), COLLECTIONS.nozzles, id);
-  await updateDoc(ref, payload);
+  const { error } = await getSupabase().from('nozzles').update(payload).eq('id', id);
+  throwIfError(error, 'Update nozzle');
 }
 
 export async function deactivateNozzlesForMachine(machineNumber: string): Promise<void> {
